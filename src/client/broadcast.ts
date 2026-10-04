@@ -111,6 +111,7 @@ export class Broadcast {
   }
 
   private paintCams() {
+    document.body.classList.toggle('view-fan', this.view3d === 'fan');
     const active = this.view3d === '3d' ? 'cam-chase' : this.view3d === 'fan' ? 'cam-fan' : `cam-${this.renderer.mode}`;
     for (const id of ['cam-overview', 'cam-leader', 'cam-chase', 'cam-fan']) {
       const on = id === active;
@@ -145,6 +146,7 @@ export class Broadcast {
     this.view3d = 'none';
     get3d()?.setVisible(false);
     this.renderer.app.stage.visible = true;
+    document.body.classList.remove('view-fan');
     this.center('');
     document.body.classList.remove('no-race', 'is-buffering', 'is-replay');
     $('feed').innerHTML = '';
@@ -320,7 +322,7 @@ export class Broadcast {
       this.play3dEvents(c3, tc, cars);
       c3.setVisible(true);
       this.renderer.app.stage.visible = false;
-      c3.render(cars, focus, playing ? dtWall : 0);
+      c3.render(cars, focus, dtWall); // the camera (walking, looking) keeps working when paused or finished
       const fc = cars[focus];
       const fan = this.view3d === 'fan';
       audio.update(playing ? fc.speed : 0, fc.flags & FLAG.braking ? 0 : 0.7, fc.slip, fan ? 1 : c3.crowdNear(cars, focus), dtWall, fan ? Math.max(0.04, 1 - c3.distanceTo(fc) / 220) : 1);

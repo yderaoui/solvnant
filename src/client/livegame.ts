@@ -169,7 +169,7 @@ export class LiveGame {
 
   stop() {
     this.active = false;
-    document.body.classList.remove('is-live', 'is-racing', 'in-lobby', 'is-spec', 'view-3d');
+    document.body.classList.remove('is-live', 'is-racing', 'in-lobby', 'is-spec', 'view-3d', 'view-fan');
     get3d()?.setVisible(false);
     this.renderer.app.stage.visible = true;
     this.audio.update(0, 0, 0, 0, 1);
@@ -538,6 +538,7 @@ export class LiveGame {
       $(id).setAttribute('aria-pressed', String(id === active));
     }
     document.body.classList.toggle('view-3d', v === '3d' || v === 'fan');
+    document.body.classList.toggle('view-fan', v === 'fan');
     $('spectate-btn').setAttribute('aria-pressed', String(v === '3d'));
     $('spectate-btn').querySelector('span')!.textContent = v === '3d' ? 'BACK TO MAP' : 'SPECTATE';
   }

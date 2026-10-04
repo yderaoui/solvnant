@@ -3,6 +3,7 @@ import { RaceRenderer } from './renderer';
 import { Broadcast, fmtTime } from './broadcast';
 import { LiveGame } from './livegame';
 import { audio, get3d } from './view3d';
+import { initFanUi } from './seatPicker';
 import { CodeViewer, escapeHtml } from './codeViewer';
 import { hydrateIcons, icon } from './icons';
 import {
@@ -27,6 +28,7 @@ await document.fonts.ready; // badges on the map measure their text, so the real
 const renderer = await RaceRenderer.create($('stage-canvas'));
 const broadcast = new Broadcast(renderer);
 const live = new LiveGame(renderer);
+initFanUi();
 const viewer = new CodeViewer();
 
 broadcast.onSelectCar = (car) => {

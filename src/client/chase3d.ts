@@ -19,11 +19,12 @@ import { FLAG, type RaceEvent } from '../sim/race';
 import { Rng } from '../sim/rng';
 import type { Obstacles } from '../sim/obstacles';
 import type { CarVisual } from './renderer';
+import { CARD_H, CARD_W, MAX_IMPACTS, MAX_CARS_UNIFORM, VARIANTS, bakeAtlas, cardMaterial, crowdUniforms, humanGeometry, humanMaterial, lookAttributes, type CrowdUniforms } from './crowd3d';
 
 const ASSET = (p: string) => `${import.meta.env.BASE_URL}assets/${p}`;
 const WALL = PHYS.runoff; // physical wall: this far beyond the track edge
-const MAX_IMPACTS = 4;
-const MAX_CARS_UNIFORM = 10;
+const NEAR_FANS = 2600; // fans drawn as full 3D people (closest to the camera)
+const NEAR_RADIUS = 70; // m
 
 type P3 = [number, number, number];
 type Pt = [number, number];
@@ -65,6 +66,28 @@ interface Person {
   dz: number;
   v: number; // look variant
   ph: number; // animation phase
+  seat: number; // 1 = sitting (grandstands)
+}
+
+/** A place spectators can watch from. The fan camera moves inside it with (u, v). */
+export interface SeatArea {
+  name: string;
+  kind: 'stand' | 'terrace' | 'platform';
+  u0: number;
+  u1: number;
+  v0: number;
+  v1: number;
+  du: number; // default spot
+  dv: number;
+  at(u: number, v: number): { pos: THREE.Vector3; face: THREE.Vector3 };
+  outline: Pt[]; // for the seat-picker map
+}
+
+export interface FanStatus {
+  area: string;
+  detail: string;
+  follow: boolean;
+  auto: boolean;
 }
 
 // Materials from loadTextures() live for the whole session; never dispose them with a track.
@@ -106,9 +129,15 @@ export class Chase3D {
   // crowd
   private standPeople: Person[] = [];
   private zonePeople: Person[] = [];
-  private crowdMesh: THREE.Mesh | null = null;
-  private crowdMat: THREE.ShaderMaterial;
-  private impacts: THREE.Vector4[] = [];
+  private cu: CrowdUniforms;
+  private humanMat: THREE.MeshStandardMaterial;
+  private cardMat: THREE.ShaderMaterial;
+  private nearMesh: THREE.Mesh | null = null; // 3D fans
+  private farMesh: THREE.Mesh | null = null; // baked cards
+  private fans: Person[] = [];
+  private fanLooks: ReturnType<typeof lookAttributes> | null = null;
+  private lastSplit = new THREE.Vector3(1e9, 0, 0);
+  private splitAt = 0;
   private impactSlot = 0;
   private excite = 0;
   // fx
@@ -117,10 +146,17 @@ export class Chase3D {
   private skids: SkidMarks;
   // camera: 'chase' behind the focus car, 'fan' = first person from a spectator spot
   camMode: 'chase' | 'fan' = 'chase';
-  private fanSpots: { pos: THREE.Vector3; face: THREE.Vector3 }[] = [];
-  private standSpots: { pos: THREE.Vector3; face: THREE.Vector3 }[] = [];
-  private fanIdx = -1;
-  private fanManual = 0; // time until auto-switching resumes after a manual pick
+  private areas: SeatArea[] = [];
+  private standAreas: SeatArea[] = [];
+  private seat: { a: number; u: number; v: number } = { a: -1, u: 0, v: 0 };
+  private autoSeat = true; // walk to the stand nearest the action until the viewer picks a seat
+  private follow = true; // head follows the car; dragging switches to free look
+  private yaw = 0;
+  private pitch = 0;
+  private userFov = 0; // 0 = automatic
+  private eye = new THREE.Vector3();
+  private walkKeys = new Set<string>();
+  private dragging: { x: number; y: number } | null = null;
   // adaptive quality: 2 = full, 1 = lower resolution + smaller shadows, 0 = no bloom / no shadows
   private quality = 2;
   private frameAcc = 0;
@@ -181,9 +217,10 @@ export class Chase3D {
       if (this.carEntries.length) this.setCars(this.carEntries, this.you);
     });
 
-    this.crowdMat = crowdMaterial();
-    for (let i = 0; i < MAX_IMPACTS; i++) this.impacts.push(new THREE.Vector4(0, 0, -99, 0));
-    this.crowdMat.uniforms.uImpacts.value = this.impacts;
+    this.cu = crowdUniforms();
+    this.humanMat = humanMaterial(this.cu);
+    this.cardMat = cardMaterial(this.cu, bakeAtlas(this.gl, this.cu));
+    this.bindFanControls();
 
     this.fx = new Particles(1800, THREE.NormalBlending);
     this.sparks = new Particles(600, THREE.AdditiveBlending);
@@ -368,7 +405,7 @@ export class Chase3D {
     }
     straights.sort((x, y) => y.n - x.n);
     this.standPeople = [];
-    this.standSpots = [];
+    this.standAreas = [];
     for (const st of straights.slice(0, 4)) {
       const m = (st.a + Math.floor(st.n / 2)) % N;
       const len = Math.min(st.n * sp * 0.7, 140);
@@ -379,10 +416,9 @@ export class Chase3D {
       // rotation -h puts local +z on the right of the track: a stand on the right must turn round to face it
       const sx = P[m][0] + nx * side * dist,
         sz = P[m][1] + nz * side * dist;
-      this.world.add(grandstand(len, T, rng, this.standPeople, sx, sz, -H[m] + (side > 0 ? 0 : Math.PI)));
-      // a seat in the 7th row, middle of the stand: eye ~1.1 m above the step
-      const back = 6 * 0.85 - (10 * 0.85) / 2 + 0.4;
-      this.standSpots.push({ pos: new THREE.Vector3(sx + nx * side * back, 0.5 * 7 + 1.1, sz + nz * side * back), face: new THREE.Vector3(-nx * side, 0, -nz * side) });
+      const rotY = -H[m] + (side > 0 ? 0 : Math.PI);
+      this.world.add(grandstand(len, T, rng, this.standPeople, sx, sz, rotY));
+      this.standAreas.push(standArea(`Grandstand ${'ABCD'[this.standAreas.length]}`, len, sx, sz, rotY));
     }
 
     // Floodlight towers (real light comes from the spot pool, aimed at the track)
@@ -409,8 +445,8 @@ export class Chase3D {
 
     // Distant forest outside the walls (decorative, static)
     this.world.add(forest(track, rng, T));
-    this.fanSpots = [...this.standSpots];
-    this.fanIdx = -1;
+    this.areas = [...this.standAreas];
+    this.seat = { a: -1, u: 0, v: 0 };
     this.rebuildCrowd();
   }
 
@@ -422,8 +458,8 @@ export class Chase3D {
     this.treeAnim.clear();
     this.zonePeople = [];
     this.ob = ob;
-    this.fanSpots = [...this.standSpots];
-    this.fanIdx = -1;
+    this.areas = [...this.standAreas];
+    if (this.seat.a >= this.areas.length) this.seat.a = -1;
     if (!ob) {
       this.rebuildCrowd();
       return;
@@ -448,7 +484,9 @@ export class Chase3D {
     }
     // Catch fences: ad-board base, chain-link above, posts; concrete terrace with fans behind
     const rng = Rng.fromString(`crowd:${this.track?.seed ?? ''}`);
+    const platforms: SeatArea[] = [];
     for (const z of ob.crowdZones) {
+      this.areas.push(terraceArea(`Fence terrace ${this.areas.length - this.standAreas.length + 1}`, z.pts, z.nx, z.ny));
       const pts = z.pts;
       // Ad boards face the track (readable from the cars); plain concrete on the crowd side.
       // vstrip's front face points to the left of the polyline direction, so flip the order if needed.
@@ -461,7 +499,7 @@ export class Chase3D {
       ads.receiveShadow = true;
       const adsBack = new THREE.Mesh(vstrip([...trackward].reverse(), 0, 1.0, 4), T.concreteFront);
       this.obsGroup.add(adsBack);
-      const link = new THREE.Mesh(vstrip(pts, 1.0, 4.2, 2), T.chainlink);
+      const link = new THREE.Mesh(vstrip(pts, 1.0, 4.2, 0.6), T.chainlink); // ~15 cm diamonds
       const back = pts.map((p, i) => [p[0] + z.nx[i] * 12, p[1] + z.ny[i] * 12] as Pt);
       const terrace = new THREE.Mesh(ribbon(pts, back, 0.04), T.concrete);
       terrace.receiveShadow = true;
@@ -475,7 +513,7 @@ export class Chase3D {
         const px = pts[k][0] + z.nx[k] * 8.5,
           pz = pts[k][1] + z.ny[k] * 8.5;
         this.obsGroup.add(platform(px, pz, Math.atan2(z.nx[k], z.ny[k]), T));
-        this.fanSpots.push({ pos: new THREE.Vector3(px - z.nx[k] * 0.9, PLATFORM_H + 1.7, pz - z.ny[k] * 0.9), face: new THREE.Vector3(-z.nx[k], 0, -z.ny[k]) });
+        platforms.push(platformArea(px, pz, z.nx[k], z.ny[k]));
       }
       const spots = polyline(pts, 0.8);
       spots.forEach(([x, y], i) => {
@@ -486,45 +524,113 @@ export class Chase3D {
           if (rng.next() < 0.18 + row * 0.08) continue;
           const d = 1.3 + row * 1.0 + rng.next() * 0.4;
           const j = (rng.next() - 0.5) * 0.5;
-          this.zonePeople.push({ x: x + nx * d - ny * j, y: 0.04, z: y + ny * d + nx * j, dx: nx, dz: ny, v: Math.floor(rng.next() * 16), ph: rng.next() });
+          this.zonePeople.push({ x: x + nx * d - ny * j, y: 0.04, z: y + ny * d + nx * j, dx: nx, dz: ny, v: Math.floor(rng.next() * VARIANTS), ph: rng.next(), seat: 0 });
         }
       });
     }
+    platforms.forEach((a, i) => {
+      a.name = `Viewing platform ${i + 1}`;
+      this.areas.push(a);
+    });
     this.rebuildCrowd();
   }
 
   private rebuildCrowd() {
-    if (this.crowdMesh) {
-      this.scene.remove(this.crowdMesh);
-      this.crowdMesh.geometry.dispose();
-      this.crowdMesh = null;
+    for (const m of [this.nearMesh, this.farMesh]) {
+      if (!m) continue;
+      this.scene.remove(m);
+      m.geometry.dispose();
     }
-    const people = [...this.standPeople, ...this.zonePeople];
-    if (!people.length) return;
-    const base = new THREE.PlaneGeometry(0.62, 1.78).translate(0, 0.89, 0);
-    const g = new THREE.InstancedBufferGeometry();
-    g.index = base.index;
-    g.setAttribute('position', base.getAttribute('position'));
-    g.setAttribute('uv', base.getAttribute('uv'));
-    const off = new Float32Array(people.length * 3),
-      dir = new Float32Array(people.length * 2),
-      vr = new Float32Array(people.length),
-      ph = new Float32Array(people.length);
-    people.forEach((p, i) => {
-      off.set([p.x, p.y, p.z], i * 3);
-      dir.set([p.dx, p.dz], i * 2);
-      vr[i] = p.v;
-      ph[i] = p.ph;
+    this.nearMesh = this.farMesh = null;
+    this.fans = [...this.standPeople, ...this.zonePeople];
+    const n = this.fans.length;
+    if (!n) return;
+    this.fanLooks = lookAttributes(this.fans.map((p) => p.v));
+    const inst = (g: THREE.InstancedBufferGeometry, cap: number, withLooks: boolean) => {
+      const a3 = (name: string) => g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3).setUsage(THREE.DynamicDrawUsage));
+      const a2 = (name: string) => g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(cap * 2), 2).setUsage(THREE.DynamicDrawUsage));
+      const a1 = (name: string) => g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage));
+      a3('aOffset');
+      a2('aDir');
+      a1('aVar');
+      a1('aPhase');
+      a1('aSeat');
+      if (withLooks) for (const k of ['aShirt', 'aPants', 'aSkin', 'aHair']) a3(k);
+      g.instanceCount = 0;
+    };
+    const human = humanGeometry();
+    const ng = new THREE.InstancedBufferGeometry();
+    ng.index = null;
+    for (const [k, v] of Object.entries(human.attributes)) ng.setAttribute(k, v);
+    ng.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(human.getAttribute('position').count * 3).fill(1), 3));
+    inst(ng, Math.min(n, NEAR_FANS), true);
+    const card = new THREE.PlaneGeometry(CARD_W, CARD_H).translate(0, CARD_H / 2, 0);
+    const fg = new THREE.InstancedBufferGeometry();
+    fg.index = card.index;
+    fg.setAttribute('position', card.getAttribute('position'));
+    fg.setAttribute('uv', card.getAttribute('uv'));
+    inst(fg, n, false);
+    this.nearMesh = new THREE.Mesh(ng, this.humanMat);
+    this.farMesh = new THREE.Mesh(fg, this.cardMat);
+    for (const m of [this.nearMesh, this.farMesh]) {
+      m.frustumCulled = false;
+      this.scene.add(m);
+    }
+    this.lastSplit.set(1e9, 0, 0);
+  }
+
+  /** Fans near the camera become 3D people, the rest stay cards. Re-done as the camera moves. */
+  private splitCrowd() {
+    const near = this.nearMesh,
+      far = this.farMesh,
+      looks = this.fanLooks;
+    if (!near || !far || !looks) return;
+    const cam = this.camera.position;
+    if (this.time < this.splitAt && cam.distanceTo(this.lastSplit) < 6) return;
+    this.splitAt = this.time + 0.5;
+    this.lastSplit.copy(cam);
+    const ng = near.geometry as THREE.InstancedBufferGeometry,
+      fg = far.geometry as THREE.InstancedBufferGeometry;
+    const get = (g: THREE.BufferGeometry, k: string) => (g.getAttribute(k) as THREE.InstancedBufferAttribute).array as Float32Array;
+    const nOff = get(ng, 'aOffset'), nDir = get(ng, 'aDir'), nVar = get(ng, 'aVar'), nPh = get(ng, 'aPhase'), nSeat = get(ng, 'aSeat');
+    const nShirt = get(ng, 'aShirt'), nPants = get(ng, 'aPants'), nSkin = get(ng, 'aSkin'), nHair = get(ng, 'aHair');
+    const fOff = get(fg, 'aOffset'), fDir = get(fg, 'aDir'), fVar = get(fg, 'aVar'), fPh = get(fg, 'aPhase'), fSeat = get(fg, 'aSeat');
+    const cap = nVar.length;
+    const r2 = NEAR_RADIUS * NEAR_RADIUS;
+    let ni = 0,
+      fi = 0;
+    this.fans.forEach((p, i) => {
+      const d2 = (p.x - cam.x) ** 2 + (p.z - cam.z) ** 2;
+      if (d2 < r2 && ni < cap) {
+        nOff[ni * 3] = p.x;
+        nOff[ni * 3 + 1] = p.y;
+        nOff[ni * 3 + 2] = p.z;
+        nDir[ni * 2] = p.dx;
+        nDir[ni * 2 + 1] = p.dz;
+        nVar[ni] = p.v;
+        nPh[ni] = p.ph;
+        nSeat[ni] = p.seat;
+        for (const [dst, src] of [[nShirt, looks.shirt], [nPants, looks.pants], [nSkin, looks.skin], [nHair, looks.hair]] as const) {
+          dst[ni * 3] = src[i * 3];
+          dst[ni * 3 + 1] = src[i * 3 + 1];
+          dst[ni * 3 + 2] = src[i * 3 + 2];
+        }
+        ni++;
+      } else {
+        fOff[fi * 3] = p.x;
+        fOff[fi * 3 + 1] = p.y;
+        fOff[fi * 3 + 2] = p.z;
+        fDir[fi * 2] = p.dx;
+        fDir[fi * 2 + 1] = p.dz;
+        fVar[fi] = p.v;
+        fPh[fi] = p.ph;
+        fSeat[fi] = p.seat;
+        fi++;
+      }
     });
-    g.setAttribute('aOffset', new THREE.InstancedBufferAttribute(off, 3));
-    g.setAttribute('aDir', new THREE.InstancedBufferAttribute(dir, 2));
-    g.setAttribute('aVar', new THREE.InstancedBufferAttribute(vr, 1));
-    g.setAttribute('aPhase', new THREE.InstancedBufferAttribute(ph, 1));
-    g.instanceCount = people.length;
-    const mesh = new THREE.Mesh(g, this.crowdMat);
-    mesh.frustumCulled = false;
-    this.crowdMesh = mesh;
-    this.scene.add(mesh);
+    ng.instanceCount = ni;
+    fg.instanceCount = fi;
+    for (const g of [ng, fg]) for (const k of Object.keys(g.attributes)) if ((g.getAttribute(k) as THREE.InstancedBufferAttribute).isInstancedBufferAttribute) g.getAttribute(k).needsUpdate = true;
   }
 
   /** Position a hittable tree, including its shake / fall animation. */
@@ -602,7 +708,7 @@ export class Chase3D {
       this.excite = Math.max(this.excite, 0.35);
     } else if (ev.type === 'fence' && c) {
       // Fans right there jump back and throw their arms up; nobody gets hurt.
-      this.impacts[this.impactSlot].set(c.x, c.y, this.time, 1);
+      this.cu.uImpacts.value[this.impactSlot].set(c.x, c.y, this.time, 1);
       this.impactSlot = (this.impactSlot + 1) % MAX_IMPACTS;
       for (let k = 0; k < 40; k++) this.sparks.emit(sparkParticle(c.x, 0.8 + Math.random() * 1.5, c.y));
       for (let k = 0; k < 20; k++) this.fx.emit(dirtParticle(c.x, 0.4, c.y, 5));
@@ -616,54 +722,176 @@ export class Chase3D {
     else if (ev.type === 'finish' || ev.type === 'final_lap') this.excite = 1;
   }
 
-  /** First person from a spectator spot: pick the spot nearest the action, turn the head to follow. */
+  /** First person from a spectator area: walk (WASD), look (drag), zoom (wheel), or let it follow. */
   private fanCamera(f: CarVisual, dt: number) {
-    this.fanManual = Math.max(0, this.fanManual - dt);
-    const dist = (i: number) => Math.hypot(this.fanSpots[i].pos.x - f.x, this.fanSpots[i].pos.z - f.y);
-    let best = 0;
-    for (let i = 1; i < this.fanSpots.length; i++) if (dist(i) < dist(best)) best = i;
-    if (this.fanIdx < 0 || this.fanIdx >= this.fanSpots.length) {
-      this.fanIdx = best;
-      this.snap = true;
-    } else if (!this.fanManual && best !== this.fanIdx && dist(best) < dist(this.fanIdx) * 0.55 && dist(this.fanIdx) > 120) {
-      this.fanIdx = best; // the race moved on: walk to a closer stand
-      this.snap = true;
+    if (!this.areas.length) return;
+    const def = (i: number) => this.areas[i].at(this.areas[i].du, this.areas[i].dv).pos;
+    const dist = (i: number) => Math.hypot(def(i).x - f.x, def(i).z - f.y);
+    if (this.seat.a < 0 || this.seat.a >= this.areas.length || this.autoSeat) {
+      let best = 0;
+      for (let i = 1; i < this.areas.length; i++) if (dist(i) < dist(best)) best = i;
+      const cur = this.seat.a;
+      if (cur < 0 || cur >= this.areas.length || (best !== cur && dist(best) < dist(cur) * 0.55 && dist(cur) > 120)) this.goTo(best);
     }
-    const spot = this.fanSpots[this.fanIdx];
-    const look = new THREE.Vector3(f.x, 0.9, f.y);
-    if (this.snap) {
-      this.camLook.copy(look);
-      this.snap = false;
-    } else this.camLook.lerp(look, 1 - Math.exp(-dt * 7)); // head turning, a touch behind the car
-    // small idle sway so it feels hand-held
-    const sway = Math.sin(this.time * 1.3) * 0.03;
-    this.camera.position.set(spot.pos.x + sway, spot.pos.y + Math.sin(this.time * 0.9) * 0.02, spot.pos.z);
+    const A = this.areas[this.seat.a];
+    // walking, relative to where the area faces
+    const fwd = (this.walkKeys.has('w') ? 1 : 0) - (this.walkKeys.has('s') ? 1 : 0);
+    const side = (this.walkKeys.has('d') ? 1 : 0) - (this.walkKeys.has('a') ? 1 : 0);
+    if (fwd || side) {
+      this.autoSeat = false;
+      const here = A.at(this.seat.u, this.seat.v);
+      const right = new THREE.Vector3(-here.face.z, 0, here.face.x);
+      const along = A.at(this.seat.u + 0.5, this.seat.v).pos.sub(here.pos);
+      const uSign = along.dot(right) >= 0 ? 1 : -1;
+      const back = A.at(this.seat.u, this.seat.v + 0.5).pos.sub(here.pos);
+      const vSign = back.dot(here.face) <= 0 ? 1 : -1; // +v moves away from the track
+      const speed = A.kind === 'stand' ? 2.2 : 3.2;
+      this.seat.u = THREE.MathUtils.clamp(this.seat.u + side * uSign * speed * dt, A.u0, A.u1);
+      this.seat.v = THREE.MathUtils.clamp(this.seat.v - fwd * vSign * (A.kind === 'stand' ? 2.5 : speed) * dt, A.v0, A.v1);
+    }
+    const { pos, face } = A.at(this.seat.u, this.seat.v);
+    if (this.snap) this.eye.copy(pos);
+    else this.eye.lerp(pos, 1 - Math.exp(-dt * 8));
+    const sway = Math.sin(this.time * 1.3) * 0.02;
+    this.camera.position.set(this.eye.x + sway, this.eye.y + Math.sin(this.time * 0.9) * 0.015, this.eye.z);
     if (this.shake > 0.01) {
       this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.15;
       this.shake *= Math.exp(-dt * 5);
     }
+    const look = new THREE.Vector3(f.x, 0.9, f.y);
+    if (this.follow) {
+      if (this.snap) this.camLook.copy(look);
+      else this.camLook.lerp(look, 1 - Math.exp(-dt * 7)); // head turning, a touch behind the car
+    } else {
+      const dir = new THREE.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch));
+      this.camLook.copy(this.camera.position).add(dir.multiplyScalar(10));
+    }
+    if (this.snap && !this.follow) this.setYawFrom(face);
+    this.snap = false;
     this.camera.lookAt(this.camLook);
-    // eyes don't zoom, but a fan squinting at a far corner gets a bit of help
     const d = this.camera.position.distanceTo(look);
-    const fov = THREE.MathUtils.clamp(74 - d * 0.16, 36, 70);
+    const fov = this.userFov || THREE.MathUtils.clamp(74 - d * 0.16, 36, 70);
     if (Math.abs(fov - this.camera.fov) > 0.05) {
-      this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 3);
+      this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 5);
       this.camera.updateProjectionMatrix();
     }
   }
 
-  /** Fan camera: walk to the next spectator spot (wraps). */
-  nextFanSpot() {
-    if (!this.fanSpots.length) return;
-    this.fanIdx = (this.fanIdx + 1) % this.fanSpots.length;
-    this.fanManual = 20;
+  private goTo(a: number, u?: number, v?: number) {
+    const A = this.areas[a];
+    if (!A) return;
+    this.seat = { a, u: u ?? A.du, v: v ?? A.dv };
     this.snap = true;
+  }
+
+  private setYawFrom(dir: THREE.Vector3) {
+    this.yaw = Math.atan2(dir.x, dir.z);
+    this.pitch = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
+  }
+
+  /** Mouse/touch drag = look around, wheel = zoom, WASD/arrows = walk, F = follow the car. */
+  private bindFanControls() {
+    const el = this.canvas;
+    el.style.touchAction = 'none';
+    el.addEventListener('pointerdown', (e) => {
+      if (this.camMode !== 'fan') return;
+      this.dragging = { x: e.clientX, y: e.clientY };
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!this.dragging || this.camMode !== 'fan') return;
+      const dx = e.clientX - this.dragging.x,
+        dy = e.clientY - this.dragging.y;
+      if (this.follow && Math.hypot(dx, dy) < 4) return;
+      if (this.follow) {
+        this.follow = false;
+        this.setYawFrom(new THREE.Vector3().subVectors(this.camLook, this.camera.position).normalize());
+      }
+      this.dragging = { x: e.clientX, y: e.clientY };
+      const k = (this.camera.fov / 70) * 0.005;
+      this.yaw -= dx * k;
+      this.pitch = THREE.MathUtils.clamp(this.pitch - dy * k, -1.2, 1.2);
+    });
+    const end = () => (this.dragging = null);
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    el.addEventListener(
+      'wheel',
+      (e) => {
+        if (this.camMode !== 'fan') return;
+        e.preventDefault();
+        this.userFov = THREE.MathUtils.clamp((this.userFov || this.camera.fov) * (e.deltaY > 0 ? 1.1 : 0.9), 14, 85);
+      },
+      { passive: false },
+    );
+    const map: Record<string, string> = { KeyW: 'w', ArrowUp: 'w', KeyS: 's', ArrowDown: 's', KeyA: 'a', ArrowLeft: 'a', KeyD: 'd', ArrowRight: 'd' };
+    const typing = (e: KeyboardEvent) => ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName);
+    window.addEventListener('keydown', (e) => {
+      if (this.camMode !== 'fan' || !this.visible || typing(e)) return;
+      const k = map[e.code];
+      if (k) {
+        this.walkKeys.add(k);
+        e.preventDefault();
+      }
+      if (e.code === 'KeyF') this.setFollow(!this.follow);
+    });
+    window.addEventListener('keyup', (e) => {
+      const k = map[e.code];
+      if (k) this.walkKeys.delete(k);
+    });
+    window.addEventListener('blur', () => this.walkKeys.clear());
+  }
+
+  // ---------------------------------------------------------------- seat picking (used by the UI)
+  /** Fan camera: go to the next spectator area (wraps). */
+  nextFanSpot() {
+    if (!this.areas.length) return;
+    this.autoSeat = false;
+    this.goTo((this.seat.a + 1) % this.areas.length);
+  }
+
+  seatAreas(): readonly SeatArea[] {
+    return this.areas;
+  }
+
+  /** Pick an area (and optionally a spot in it); -1 = automatic (nearest the action). */
+  chooseSeat(a: number, u?: number, v?: number) {
+    if (a < 0) {
+      this.autoSeat = true;
+      this.seat.a = -1;
+    } else {
+      this.autoSeat = false;
+      this.goTo(a, u, v);
+    }
+    this.follow = true;
+    this.userFov = 0;
+  }
+
+  setFollow(on: boolean) {
+    this.follow = on;
+    if (on) this.userFov = 0;
+    else this.setYawFrom(new THREE.Vector3().subVectors(this.camLook, this.camera.position).normalize());
+  }
+
+  fanStatus(): FanStatus {
+    const A = this.areas[this.seat.a];
+    let detail = '';
+    if (A?.kind === 'stand') detail = `Row ${Math.round(this.seat.v) + 1}, seat ${Math.round(this.seat.u - A.u0) + 1}`;
+    else if (A?.kind === 'terrace') detail = this.seat.v < 2.2 ? 'Front row' : `${Math.round(this.seat.v)} m behind the fence`;
+    else if (A) detail = 'Above the crowd';
+    return { area: A?.name ?? 'Finding a spot…', detail, follow: this.follow, auto: this.autoSeat };
+  }
+
+  trackOutline(): Pt[] {
+    return (this.track?.points ?? []).map((p) => [p[0], p[1]] as Pt);
   }
 
   setCamMode(m: 'chase' | 'fan') {
     if (m === this.camMode) return;
     this.camMode = m;
-    this.fanIdx = -1;
+    this.walkKeys.clear();
+    this.follow = true;
+    this.userFov = 0;
     this.snap = true;
   }
 
@@ -756,7 +984,7 @@ export class Chase3D {
 
     // Camera: chase (+ shake on impacts) or first person from the crowd
     const f = cars[focus];
-    if (f && this.camMode === 'fan' && this.fanSpots.length) {
+    if (f && this.camMode === 'fan' && this.areas.length) {
       this.fanCamera(f, dt);
       this.moon.position.set(f.x - 60, 120, f.y - 40);
       this.moon.target.position.set(f.x, 0, f.y);
@@ -822,10 +1050,11 @@ export class Chase3D {
     }
 
     // Crowd
-    const u = this.crowdMat.uniforms;
+    const u = this.cu;
     u.uTime.value = this.time;
     u.uExcite.value = this.excite;
-    const cu = u.uCars.value as THREE.Vector3[];
+    this.splitCrowd();
+    const cu = u.uCars.value;
     for (let i = 0; i < MAX_CARS_UNIFORM; i++) {
       const c = cars[i];
       if (c) cu[i].set(c.x, c.y, Math.min(1, c.speed / 30));
@@ -1045,6 +1274,88 @@ function platform(x: number, z: number, rotY: number, T: Mats): THREE.Group {
   return g;
 }
 
+/** Grandstand seats: u along the row (m), v = row (0 = front, 9 = back). Eyes of a seated fan. */
+function standArea(name: string, len: number, x: number, z: number, rotY: number): SeatArea {
+  const m = new THREE.Matrix4().makeRotationY(rotY).setPosition(x, 0, z);
+  const face = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotY);
+  const depth = 10 * 0.85;
+  const corner = (u: number, w: number) => {
+    const v = new THREE.Vector3(u, 0, w).applyMatrix4(m);
+    return [v.x, v.z] as Pt;
+  };
+  return {
+    name,
+    kind: 'stand',
+    u0: -len / 2 + 0.6,
+    u1: len / 2 - 0.6,
+    v0: 0,
+    v1: 9,
+    du: 0,
+    dv: 6,
+    at: (u, v) => {
+      const row = THREE.MathUtils.clamp(v, 0, 9);
+      // eye of someone sitting on the bench of this row (steps are 0.5 m)
+      const y = 0.5 * (Math.round(row) + 1) + 0.42 + 0.78;
+      const pos = new THREE.Vector3(u, y, -depth / 2 + 0.85 * row + 0.42).applyMatrix4(m);
+      return { pos, face: face.clone() };
+    },
+    outline: [corner(-len / 2, -depth / 2), corner(len / 2, -depth / 2), corner(len / 2, depth / 2), corner(-len / 2, depth / 2)],
+  };
+}
+
+/** Standing terrace behind a catch fence: u = metres along the fence, v = metres behind it. */
+function terraceArea(name: string, pts: Pt[], nx: number[], ny: number[]): SeatArea {
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const total = cum[cum.length - 1];
+  const sample = (u: number) => {
+    let i = 1;
+    while (i < pts.length - 1 && cum[i] < u) i++;
+    const f = THREE.MathUtils.clamp((u - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]), 0, 1);
+    return {
+      x: pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * f,
+      z: pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * f,
+      nx: nx[i - 1] + (nx[i] - nx[i - 1]) * f,
+      nz: ny[i - 1] + (ny[i] - ny[i - 1]) * f,
+    };
+  };
+  const back = pts.map((p, i) => [p[0] + nx[i] * 12, p[1] + ny[i] * 12] as Pt).reverse();
+  return {
+    name,
+    kind: 'terrace',
+    u0: 3,
+    u1: Math.max(3, total - 3),
+    v0: 1.0,
+    v1: 11,
+    du: total / 2,
+    dv: 1.3,
+    at: (u, v) => {
+      const s = sample(u);
+      return { pos: new THREE.Vector3(s.x + s.nx * v, 1.72, s.z + s.nz * v), face: new THREE.Vector3(-s.nx, 0, -s.nz) };
+    },
+    outline: [...pts, ...back],
+  };
+}
+
+/** Raised viewing platform deck (3 x 3 m): u across, v front (-) to back (+). */
+function platformArea(x: number, z: number, nx: number, nz: number): SeatArea {
+  const tx = -nz,
+    tz = nx;
+  const c = (u: number, v: number) => [x + tx * u + nx * v, z + tz * u + nz * v] as Pt;
+  return {
+    name: 'Viewing platform',
+    kind: 'platform',
+    u0: -1.2,
+    u1: 1.2,
+    v0: -1.2,
+    v1: 1.2,
+    du: 0,
+    dv: -0.9,
+    at: (u, v) => ({ pos: new THREE.Vector3(x + tx * u + nx * v, PLATFORM_H + 1.7, z + tz * u + nz * v), face: new THREE.Vector3(-nx, 0, -nz) }),
+    outline: [c(-1.6, -1.6), c(1.6, -1.6), c(1.6, 1.6), c(-1.6, 1.6)],
+  };
+}
+
 /** Covered grandstand facing local -z, rows rising away from the track, seated fans on every row. */
 function grandstand(len: number, T: Mats, rng: Rng, people: Person[], x: number, z: number, rotY: number): THREE.Group {
   const g = new THREE.Group();
@@ -1055,8 +1366,8 @@ function grandstand(len: number, T: Mats, rng: Rng, people: Person[], x: number,
   for (let r = 0; r < rows; r++) {
     const stepM = withShadow(new THREE.Mesh(new THREE.BoxGeometry(len, rowH * (r + 1), rowD), T.concrete), r === rows - 1);
     stepM.position.set(0, (rowH * (r + 1)) / 2, -depth / 2 + rowD * (r + 0.5));
-    const seats = new THREE.Mesh(new THREE.BoxGeometry(len, 0.12, 0.45), T.seat);
-    seats.position.set(0, rowH * (r + 1) + 0.06, -depth / 2 + rowD * r + 0.35);
+    const seats = new THREE.Mesh(new THREE.BoxGeometry(len, 0.42, 0.42), T.seat);
+    seats.position.set(0, rowH * (r + 1) + 0.21, -depth / 2 + rowD * r + 0.3);
     g.add(stepM, seats);
   }
   const backH = rowH * rows + 4;
@@ -1088,8 +1399,8 @@ function grandstand(len: number, T: Mats, rng: Rng, people: Person[], x: number,
   for (let r = 0; r < rows; r++)
     for (let s = -len / 2 + 0.4; s < len / 2; s += 0.62) {
       if (rng.next() < 0.22) continue;
-      v.set(s + (rng.next() - 0.5) * 0.15, rowH * (r + 1) - 0.45, -depth / 2 + rowD * r + 0.4).applyMatrix4(g.matrixWorld);
-      people.push({ x: v.x, y: v.y, z: v.z, dx: away.x, dz: away.z, v: Math.floor(rng.next() * 16), ph: rng.next() });
+      v.set(s + (rng.next() - 0.5) * 0.12, rowH * (r + 1), -depth / 2 + rowD * r + 0.42).applyMatrix4(g.matrixWorld);
+      people.push({ x: v.x, y: v.y, z: v.z, dx: away.x, dz: away.z, v: Math.floor(rng.next() * VARIANTS), ph: rng.next(), seat: 1 });
     }
   return g;
 }
@@ -1282,163 +1593,6 @@ function boxCar(color: string): CarModel {
   body.add(m);
   root.add(body);
   return { root, body, wheels: [], front: [], tail: null, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null] };
-}
-
-// ====================================================================== crowd shader
-
-function crowdMaterial(): THREE.ShaderMaterial {
-  const cars: THREE.Vector3[] = [];
-  for (let i = 0; i < MAX_CARS_UNIFORM; i++) cars.push(new THREE.Vector3(1e6, 1e6, 0));
-  const mat = new THREE.ShaderMaterial({
-    fog: true,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uExcite: { value: 0 }, uLight: { value: 0.75 } }]),
-    vertexShader: /* glsl */ `
-      attribute vec3 aOffset;
-      attribute vec2 aDir;
-      attribute float aVar;
-      attribute float aPhase;
-      uniform float uTime;
-      uniform float uExcite;
-      uniform vec4 uImpacts[${MAX_IMPACTS}];
-      uniform vec3 uCars[${MAX_CARS_UNIFORM}];
-      varying vec2 vUv;
-      varying float vShade;
-      #include <common>
-      #include <fog_pars_vertex>
-      void main() {
-        vec3 base = aOffset;
-        float excite = uExcite * (0.6 + 0.4 * fract(aPhase * 13.7));
-        // cars going past get a cheer
-        for (int i = 0; i < ${MAX_CARS_UNIFORM}; i++) {
-          float d = distance(base.xz, uCars[i].xy);
-          excite = max(excite, smoothstep(28.0, 6.0, d) * uCars[i].z * 0.8);
-        }
-        // a car slamming into the fence: fans close by jump back and throw their arms up
-        float flee = 0.0;
-        for (int i = 0; i < ${MAX_IMPACTS}; i++) {
-          vec4 im = uImpacts[i];
-          float age = uTime - im.z;
-          if (age > 0.0 && age < 5.0) {
-            float k = smoothstep(18.0, 3.0, distance(base.xz, im.xy)) * im.w;
-            excite = max(excite, k);
-            flee = max(flee, k * min(age * 2.0, 1.0) * (1.0 - smoothstep(3.0, 5.0, age)));
-          }
-        }
-        base.xz += aDir * flee * 3.5;
-        // fans standing right where the camera is (fan view) are hidden so they don't fill the screen
-        if (distance(base.xz, cameraPosition.xz) < 2.8 && abs(base.y - cameraPosition.y) < 3.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-        base.y += max(0.0, sin(uTime * (7.0 + aPhase * 4.0) + aPhase * 40.0)) * 0.22 * excite;
-        vec2 toCam = normalize(cameraPosition.xz - base.xz);
-        vec3 right = vec3(toCam.y, 0.0, -toCam.x); // camera's right, so the card faces the viewer
-        vec3 p = base + right * position.x + vec3(0.0, position.y, 0.0);
-        float arms = step(0.4, excite) * step(-0.3, sin(uTime * 2.5 + aPhase * 17.0));
-        vUv = vec2((mod(aVar, 16.0) + uv.x) / 16.0, (uv.y + arms) / 2.0);
-        vShade = 0.7 + 0.3 * fract(aPhase * 7.31);
-        vec4 mvPosition = viewMatrix * vec4(p, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-        #include <fog_vertex>
-      }`,
-    fragmentShader: /* glsl */ `
-      uniform sampler2D uAtlas;
-      uniform float uLight;
-      varying vec2 vUv;
-      varying float vShade;
-      #include <common>
-      #include <fog_pars_fragment>
-      void main() {
-        vec4 c = texture2D(uAtlas, vUv);
-        if (c.a < 0.5) discard;
-        gl_FragColor = vec4(c.rgb * uLight * vShade, 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-        #include <fog_fragment>
-      }`,
-  });
-  // Array / texture uniforms are set after merge (merge clones values).
-  mat.uniforms.uAtlas = { value: crowdAtlas() };
-  mat.uniforms.uImpacts = { value: [] };
-  mat.uniforms.uCars = { value: cars };
-  return mat;
-}
-
-/** 16 spectator looks x 2 poses (top half of the canvas: arms up), drawn on a canvas. */
-function crowdAtlas(): THREE.CanvasTexture {
-  const W = 64,
-    Hh = 128;
-  const skins = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#5c3a21'];
-  const shirts = ['#e3122d', '#1f6feb', '#f5f5f5', '#111418', '#8cff2e', '#ffd60a', '#ff8a1f', '#a259ff', '#22d3ee', '#ff3dbb', '#2e7d32', '#6b7280'];
-  const pants = ['#1f2937', '#374151', '#1e3a8a', '#3f2a1d', '#111827'];
-  const hairs = ['#1b1b1b', '#3b2416', '#7a4a1e', '#d9b26a', '#6b6b6b'];
-  const rng = new Rng(4242);
-  const pick = <T,>(a: T[]) => a[Math.floor(rng.next() * a.length)];
-  return canvasTex(W * 16, Hh * 2, (c) => {
-    for (let v = 0; v < 16; v++) {
-      const skin = pick(skins),
-        shirt = pick(shirts),
-        pant = pick(pants),
-        hair = pick(hairs);
-      const cap = rng.next() < 0.3 ? pick(shirts) : null;
-      const flag = v % 5 === 0 ? pick(shirts) : null;
-      for (let pose = 0; pose < 2; pose++) {
-        const up = pose === 1;
-        c.save();
-        c.translate(v * W, up ? 0 : Hh);
-        // legs + shoes
-        c.fillStyle = pant;
-        c.fillRect(22, 80, 9, 44);
-        c.fillRect(33, 80, 9, 44);
-        c.fillStyle = '#0b0b0b';
-        c.fillRect(21, 120, 11, 6);
-        c.fillRect(32, 120, 11, 6);
-        // torso
-        const g = c.createLinearGradient(18, 0, 46, 0);
-        g.addColorStop(0, shirt);
-        g.addColorStop(1, shade(shirt, -0.35));
-        c.fillStyle = g;
-        c.beginPath();
-        c.roundRect(18, 40, 28, 44, 6);
-        c.fill();
-        // arms (+ hands, + a flag for some)
-        c.fillStyle = shade(shirt, -0.15);
-        if (up) {
-          c.fillRect(11, 10, 7, 36);
-          c.fillRect(46, 10, 7, 36);
-          c.fillStyle = skin;
-          c.fillRect(11, 5, 7, 7);
-          c.fillRect(46, 5, 7, 7);
-          if (flag) {
-            c.fillStyle = '#ddd';
-            c.fillRect(52, 0, 2, 30);
-            c.fillStyle = flag;
-            c.fillRect(54, 0, 10, 12);
-          }
-        } else {
-          c.fillRect(11, 42, 7, 34);
-          c.fillRect(46, 42, 7, 34);
-          c.fillStyle = skin;
-          c.fillRect(11, 74, 7, 7);
-          c.fillRect(46, 74, 7, 7);
-        }
-        // head + hair or cap
-        c.fillStyle = skin;
-        c.beginPath();
-        c.arc(32, 28, 11, 0, Math.PI * 2);
-        c.fill();
-        c.fillStyle = cap ?? hair;
-        c.beginPath();
-        c.arc(32, 25, 11.5, Math.PI, Math.PI * 2);
-        c.fill();
-        if (cap) c.fillRect(32, 22, 15, 4);
-        c.restore();
-      }
-    }
-  }, false);
-}
-
-function shade(hex: string, k: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const f = (v: number) => Math.max(0, Math.min(255, Math.round(v + (k < 0 ? v * k : (255 - v) * k))));
-  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
 }
 
 // ====================================================================== particles
@@ -1677,7 +1831,7 @@ function chainlinkTexture() {
   const t = canvasTex(64, 64, (c) => {
     c.clearRect(0, 0, 64, 64);
     c.strokeStyle = 'rgba(205,212,220,1)';
-    c.lineWidth = 2.2;
+    c.lineWidth = 1.6;
     c.beginPath();
     for (let k = -64; k <= 64; k += 16) {
       c.moveTo(k, 0);
@@ -1687,7 +1841,7 @@ function chainlinkTexture() {
     }
     c.stroke();
   });
-  t.repeat.set(1, 6);
+  t.repeat.set(1, 21); // 3.2 m tall fence -> same diamond size vertically as along
   return t;
 }
 

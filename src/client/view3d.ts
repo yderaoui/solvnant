@@ -16,3 +16,6 @@ export function load3d(host: HTMLElement): Promise<Chase3D> {
   loading ??= import('./chase3d').then(({ Chase3D }) => (view = new Chase3D(host)));
   return loading;
 }
+
+// Dev builds only: lets the browser tests look inside the 3D view.
+if (import.meta.env.DEV) (window as unknown as { __get3d: typeof get3d }).__get3d = get3d;

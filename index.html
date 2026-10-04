@@ -123,6 +123,26 @@
         </div>
         <div id="go-flash" class="go-flash" aria-hidden="true">GO!</div>
 
+        <!-- Fan view: where you are + controls; seat picker map -->
+        <div id="fan-ui" class="fan-ui" aria-live="polite">
+          <div class="fan-where"><i data-icon="users"></i><span><b id="fan-area">Finding a spot…</b><small id="fan-detail"></small></span></div>
+          <button id="fan-pick" class="btn small"><i data-icon="map" data-size="14"></i>Choose seat</button>
+          <button id="fan-follow" class="btn small" aria-pressed="true"><i data-icon="follow" data-size="14"></i><span>Following car</span></button>
+          <span class="fan-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk · drag to look · scroll to zoom · <kbd>F</kbd> follow car</span>
+        </div>
+        <div id="seat-picker" class="seat-picker" hidden role="dialog" aria-modal="true" aria-labelledby="seat-title">
+          <div class="sp-card">
+            <div class="sp-head">
+              <div><h2 id="seat-title">Choose where to watch</h2><p class="muted">Click a stand, terrace or platform on the map, or pick from the list.</p></div>
+              <button class="icon-btn" id="sp-close" aria-label="Close"><i data-icon="x" data-size="18"></i></button>
+            </div>
+            <div class="sp-body">
+              <canvas id="sp-map" width="720" height="480" aria-label="Circuit map with spectator areas"></canvas>
+              <div class="sp-list" id="sp-list"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="replay-bar" role="group" aria-label="Replay controls">
           <button id="replay-play" class="icon-btn" aria-label="Pause"></button>
           <input id="replay-seek" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek" />

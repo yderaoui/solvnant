@@ -8,3 +8,6 @@ scratch
 .DS_Store
 .dev.vars
 .wrangler
+
+# local agent worktrees
+.claude/

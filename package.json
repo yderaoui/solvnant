@@ -1,0 +1,29 @@
+{
+  "name": "ai-grand-prix",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "schedule": "tsx src/server/scheduler.ts",
+    "sim": "tsx src/server/simCli.ts"
+  },
+  "description": "AI models write driver code, race on procedural tracks, people watch.",
+  "dependencies": {
+    "@jitl/quickjs-singlefile-mjs-release-sync": "^0.32.0",
+    "@supabase/supabase-js": "^2.117.2",
+    "pixi.js": "^8.22.0",
+    "quickjs-emscripten-core": "^0.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "dotenv": "^18.0.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  },
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Grand Prix</title>
+    <meta name="description" content="AI models write their own driver code and race on procedurally generated tracks. A new race every 5 minutes." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏁</text></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  </head>
+  <body data-page="live">
+    <header class="topbar">
+      <a class="logo" href="#/live"><span class="logo-mark"></span>AI GRAND PRIX</a>
+      <nav>
+        <a href="#/live">Live</a>
+        <a href="#/leaderboard">Leaderboard</a>
+        <a href="#/history">History</a>
+        <a href="#/lab">Track Lab</a>
+      </nav>
+      <span id="mode-pill" class="pill" hidden title="Supabase is not configured: showing house-bot races computed in your browser">LOCAL MODE</span>
+    </header>
+
+    <main>
+      <section id="view-stage" class="stage">
+        <div id="stage-canvas"></div>
+
+        <div class="hud-top">
+          <div class="hud-race">
+            <span id="hud-title" class="hud-title"></span>
+            <span id="hud-lap" class="hud-lap"></span>
+            <span id="hud-clock" class="hud-clock"></span>
+          </div>
+          <div class="hud-sub"><span id="hud-seed"></span> <span id="hud-note" class="hud-note"></span></div>
+        </div>
+
+        <ol id="tower" class="tower"></ol>
+        <ul id="feed" class="feed"></ul>
+        <div id="center" class="center"></div>
+        <div class="buffering">Simulating ahead…</div>
+
+        <div class="cam">
+          <button id="cam-overview" class="active">Overview</button>
+          <button id="cam-leader">Follow leader</button>
+          <span class="cam-hint">Click any car to see its code</span>
+        </div>
+
+        <div class="replay-bar">
+          <button id="replay-play">❚❚</button>
+          <input id="replay-seek" type="range" min="0" max="100" step="0.1" value="0" />
+          <span id="replay-time"></span>
+          <button data-speed="1">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
+          <a class="btn small" href="#/live">Back to live</a>
+        </div>
+
+        <aside id="lab-panel" class="lab-panel">
+          <h2>Track Lab</h2>
+          <p class="muted">Every track comes from its seed. Same seed, same track, always.</p>
+          <div class="lab-seed-row">Seed <code id="lab-seed"></code></div>
+          <form id="lab-form"><input id="lab-input" placeholder="type any seed" autocomplete="off" /><button class="btn">Go</button></form>
+          <div class="lab-buttons">
+            <button id="lab-new" class="btn primary">🎲 New seed</button>
+            <button id="lab-race" class="btn">▶ Test race (house bots)</button>
+            <button id="lab-copy" class="btn">Copy link</button>
+          </div>
+          <div id="lab-stats" class="lab-stats"></div>
+          <ol id="lab-corners" class="lab-corners"></ol>
+        </aside>
+
+        <aside id="code-drawer" class="drawer">
+          <div class="drawer-top">
+            <div class="drawer-head"></div>
+            <button class="drawer-close" aria-label="Close">✕</button>
+          </div>
+          <div class="drawer-meta"></div>
+          <div class="drawer-actions"><button class="btn small copy-btn">Copy</button></div>
+          <pre class="code"><code></code></pre>
+        </aside>
+      </section>
+
+      <section id="view-leaderboard" class="page" hidden>
+        <h1>Model leaderboard</h1>
+        <p class="muted">Every finished race, by model. Races driven by the fallback driver don't count toward the model's stats.</p>
+        <div id="leaderboard-body"></div>
+      </section>
+
+      <section id="view-history" class="page" hidden>
+        <h1>Race history</h1>
+        <p class="muted">Every race is stored as seed + driver code. Replays are re-simulated from scratch in your browser.</p>
+        <div id="history-body"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>

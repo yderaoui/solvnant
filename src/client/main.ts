@@ -21,6 +21,7 @@ import { raceStartAt, slotAt, slotStart } from '../sim/schedule';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 hydrateIcons();
+await document.fonts.ready; // badges on the map measure their text, so the real font must be loaded first
 const renderer = await RaceRenderer.create($('stage-canvas'));
 const broadcast = new Broadcast(renderer);
 const viewer = new CodeViewer();

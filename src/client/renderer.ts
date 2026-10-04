@@ -1,6 +1,7 @@
 // PixiJS renderer: track, cars, labels, tire smoke and a broadcast camera.
 import { Application, Circle, Container, Graphics, Text } from 'pixi.js';
 import type { Track } from '../sim/track';
+import type { Obstacles } from '../sim/obstacles';
 import { FLAG } from '../sim/race';
 import { buildScenery, SCENE_COLORS, sceneryStyle } from './scenery';
 
@@ -47,6 +48,8 @@ export class RaceRenderer {
   private world = new Container();
   private trackLayer = new Container();
   private fx = new Graphics();
+  private obsLayer = new Container(); // live races: trees + crowd fences you can hit
+  private treeG: Graphics[] = [];
   private carLayer = new Container();
   private labelLayer = new Container();
   private scaleFixed: Container[] = []; // labels kept at constant screen size
@@ -98,14 +101,63 @@ export class RaceRenderer {
     if (r.pixel) r.app.canvas.style.imageRendering = 'pixelated';
     el.appendChild(r.app.canvas);
     new ResizeObserver(() => r.app.resize()).observe(el);
-    r.world.addChild(r.trackLayer, r.fx, r.carLayer, r.labelLayer);
+    r.world.addChild(r.trackLayer, r.obsLayer, r.fx, r.carLayer, r.labelLayer);
     r.app.stage.addChild(r.world);
     r.app.stage.eventMode = 'static';
     return r;
   }
 
+  /** Draw the solid obstacles of a live race (or clear them with null). */
+  setObstacles(ob: Obstacles | null) {
+    this.obsLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
+    this.treeG = [];
+    if (!ob) return;
+    const crowd = [0xf5f5f5, 0xffd60a, 0xff3b3b, 0x3b82ff, 0x8cff2e, 0xff3dbb, 0xff8a1f, 0x22d3ee];
+    const people = new Graphics();
+    let k = 0;
+    for (const z of ob.crowdZones) {
+      for (let i = 0; i < z.pts.length; i++) {
+        const [x, y] = z.pts[i];
+        for (let row = 0; row < 3; row++)
+          for (let s = -3; s <= 3; s++) {
+            const d = 2.2 + row * 1.6;
+            const px = x + z.nx[i] * d + -z.ny[i] * s * 1.1,
+              py = y + z.ny[i] * d + z.nx[i] * s * 1.1;
+            people.circle(px, py, 0.42).fill(crowd[k++ % crowd.length]);
+          }
+      }
+    }
+    const fence = new Graphics();
+    for (const f of ob.fences) fence.moveTo(f.ax, f.ay).lineTo(f.bx, f.by);
+    fence.stroke({ width: 0.5, color: 0xd9dee5, alpha: 0.9 });
+    for (const f of ob.fences) fence.circle(f.ax, f.ay, 0.35).fill(0x9aa3ad);
+    this.obsLayer.addChild(people, fence);
+    ob.trees.forEach((t, i) => {
+      const g = new Graphics();
+      const r = 2.6 * t.size;
+      g.circle(0.6, 0.8, r).fill({ color: 0x000000, alpha: 0.35 });
+      g.circle(0, 0, r).fill(t.kind ? 0x123d22 : 0x1a4a26);
+      g.circle(-r * 0.25, -r * 0.25, r * 0.55).fill({ color: 0x2c6b37, alpha: 0.8 });
+      g.position.set(t.x, t.y);
+      this.obsLayer.addChild(g);
+      this.treeG[i] = g;
+      if (ob.down[i]) this.treeDown(i);
+    });
+  }
+
+  /** A tree got knocked flat: draw it as a fallen log. */
+  treeDown(i: number) {
+    const g = this.treeG[i];
+    if (!g || g.destroyed) return;
+    g.clear();
+    g.roundRect(-0.6, -0.6, 7, 1.2, 0.6).fill(0x5a3a22);
+    g.ellipse(6, 0, 2.6, 1.8).fill({ color: 0x1a4a26, alpha: 0.9 });
+    g.rotation = (i * 2.399) % (Math.PI * 2);
+  }
+
   setTrack(track: Track) {
     this.track = track;
+    this.setObstacles(null);
     this.trackLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.scaleFixed = this.scaleFixed.filter((c) => !c.destroyed);
     this.liveParticles = 0;

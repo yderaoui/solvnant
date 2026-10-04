@@ -10,6 +10,7 @@ import { DriverSandbox } from './sandbox';
 import { trackForDriver, type DriverState, type DriverTrack } from './driverApi';
 import { nativeBotDrive, type BotMemory } from './nativeBot';
 import type { FallbackParams } from './fallbackDriver';
+import { collideObstacles, generateObstacles, type Obstacles } from './obstacles';
 
 export const SIM_VERSION = '2'; // bump whenever race results could change for the same inputs
 export const FRAME_RATE = 30;
@@ -39,13 +40,19 @@ export interface RaceConfig {
   maxTime?: number; // seconds
   /** Replay: human inputs recorded during a live race. */
   inputLog?: InputLogEntry[];
+  /** Live races: trees and crowd fences you can crash into (see obstacles.ts). */
+  obstacles?: boolean;
 }
 
 export interface RaceEvent {
   t: number;
-  type: 'start' | 'overtake' | 'crash' | 'wall' | 'contact' | 'fastest_lap' | 'final_lap' | 'finish' | 'dnf';
+  type: 'start' | 'overtake' | 'crash' | 'wall' | 'contact' | 'fastest_lap' | 'final_lap' | 'finish' | 'dnf' | 'tree' | 'fence';
   car: number;
   other?: number;
+  /** tree/fence events: obstacle index, impact speed (m/s), and whether a tree was knocked down */
+  obj?: number;
+  v?: number;
+  down?: boolean;
   text: string;
 }
 
@@ -125,6 +132,8 @@ export class RaceSim {
   private prevOrder: number[];
   private pairCooldown = new Map<string, number>();
   private contactCooldown = new Map<number, number>();
+  private obstacleCooldown = new Map<number, number>();
+  readonly obstacles: Obstacles | null;
 
   constructor(qjs: QuickJSWASMModule | null, config: RaceConfig) {
     this.config = config;
@@ -145,6 +154,7 @@ export class RaceSim {
       return newCar(i, p.x - sin(p.heading) * off, p.y + cos(p.heading) * off, p.heading, p.index, L - back, -back, off, p.halfWidth);
     });
     for (const c of this.cars) locate(c, track);
+    this.obstacles = config.obstacles ? generateObstacles(track) : null;
     config.entries.forEach((e, i) => (this.cars[i].reverse = e.source === 'human'));
 
     this.driverTrack = trackForDriver(track, laps);
@@ -297,6 +307,18 @@ export class RaceSim {
       this.contactCooldown.set(a, t);
       this.contactCooldown.set(b, t);
       events.push({ t, type: 'contact', car: a, other: b, text: `Contact! ${this.name(a)} and ${this.name(b)}${sev > 12 ? ' (big hit)' : ''}` });
+    }
+    if (this.obstacles) {
+      for (let i = 0; i < n; i++) {
+        const hit = collideObstacles(cars[i], this.obstacles);
+        if (!hit) continue;
+        const down = hit.kind === 'treedown';
+        if (!down && (this.obstacleCooldown.get(i) ?? -9) > t - 1.5) continue;
+        this.obstacleCooldown.set(i, t);
+        const v = Math.round(hit.impact * 10) / 10;
+        if (hit.kind === 'fence') events.push({ t, type: 'fence', car: i, obj: hit.index, v, text: `${this.name(i)} slams into the crowd fence!` });
+        else events.push({ t, type: 'tree', car: i, obj: hit.index, v, down, text: down ? `${this.name(i)} flattens a tree!` : `${this.name(i)} hits a tree` });
+      }
     }
 
     for (let i = 0; i < n; i++) {

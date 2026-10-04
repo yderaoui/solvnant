@@ -240,7 +240,7 @@ export class GameRoom {
       source: e.kind === 'human' ? 'human' : 'bot',
       botParams: e.kind === 'bot' ? { ...HOUSE_BOTS[Number(e.id.slice(4))].params, grip: HOUSE_BOTS[Number(e.id.slice(4))].params.grip * 0.92 } : undefined,
     }));
-    this.sim = new RaceSim(null, { seed: this.seed, entries: simEntries, laps: this.laps, maxTime: this.maxRace });
+    this.sim = new RaceSim(null, { seed: this.seed, entries: simEntries, laps: this.laps, maxTime: this.maxRace, obstacles: true });
     this.sentEvents = 0;
     this.phase = 'race';
     this.broadcastRoom();

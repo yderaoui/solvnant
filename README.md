@@ -45,6 +45,8 @@ Browser ──WebSocket──► Cloudflare Worker ──► Durable Object "Gam
 - Rotation is fair: if a round is full, people who raced last round give their seat to people who didn't.
 - Cameras: **3D** (chase cam, three.js, loaded only when used), **Follow** and **Map** (2D). `C` cycles them; spectators pick a car in the driver list or on the map, and `[` `]` switch car.
 - The bet bar, prize pool and token gate are shown in the UI but stay disabled until Phase 2 (points) and Phase 4 (devnet pots).
+- **You can crash into things.** Live tracks get trees in the run-off and catch fences in front of standing crowds (`src/sim/obstacles.ts`), generated from the seed and resolved inside the deterministic sim, so a crash is identical on the server, in replays and for every viewer. Hit a tree faster than ~58 km/h and it snaps and falls; slower and you bounce off. Hit the crowd fence and the fans right there jump back and cheer (nobody gets hurt).
+- **3D view** (`src/client/chase3d.ts`): Ferrari 458 model painted per player, real asphalt/grass/bark textures, night-sky lighting, floodlights, armco and tyre walls, grandstands and terraces full of animated fans, tyre smoke, skid marks, sparks, flying leaves, camera shake. Sound is synthesized (`src/client/audio.ts`): engine, tyre squeal, crashes, crowd. Quality steps down automatically on slower machines. Assets (~11 MB) load only when the 3D view is used.
 
 ## Run locally
 
@@ -120,6 +122,12 @@ Known caveats:
 - The list of free OpenRouter models changes often. The scheduler finds them automatically each run.
 - Driver code is reused across tracks, so the prompt shows the model the next track as an example but asks for code that reads `TRACK` at runtime.
 - Phase 1 publishes the seed and driver code before each race. With points betting in Phase 2, that would let someone simulate the result early. Phase 4's commit-reveal (publish `hash(seed)`, reveal the seed at lights out) closes that gap, and it will also be used for Phase 2's points.
+
+## Credits
+
+- Ferrari 458 Italia 3D model by **vicent091036** (Sketchfab), as distributed with the three.js examples. ⚠️ The original Sketchfab listing is no longer online, so its license can't be re-checked: replace it with a clearly licensed (CC0/CC-BY) car before any commercial launch.
+- Textures and night sky from [Poly Haven](https://polyhaven.com) (CC0): `asphalt_02`, `aerial_grass_rock`, `pine_bark`, `rogland_clear_night`.
+- Draco decoder from three.js (Apache-2.0 / MIT).
 
 ## Project layout
 

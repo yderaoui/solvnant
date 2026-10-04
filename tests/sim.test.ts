@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateTrack, TRACK_RULES } from '../src/sim/track';
-import { RaceSim, type Entry } from '../src/sim/race';
+import { RaceSim, newCar, type Entry } from '../src/sim/race';
+import { collideObstacles, generateObstacles } from '../src/sim/obstacles';
 import { loadQuickJS, simulateRace } from '../src/sim/quickjs';
 import { CAR_COLORS, HOUSE_BOTS, fallbackDriverCode } from '../src/sim/fallbackDriver';
 import { DriverSandbox, SANDBOX_LIMITS } from '../src/sim/sandbox';
@@ -136,7 +137,7 @@ describe('live races', () => {
       { name: 'P2', model: 'human', color: '#29adff', code: '', source: 'human' },
       ...HOUSE_BOTS.slice(0, 4).map((b, i) => ({ name: b.name, model: 'bot', color: CAR_COLORS[i], code: '', source: 'bot' as const, botParams: b.params })),
     ];
-    const config = { seed: 'live-replay-test', entries, laps: 1, maxTime: 40 };
+    const config = { seed: 'live-replay-test', entries, laps: 1, maxTime: 40, obstacles: true };
     const live = new RaceSim(null, config);
     // Two "players" mashing keys in a pattern that depends on the race state.
     while (!live.done) {
@@ -156,5 +157,43 @@ describe('live races', () => {
     expect(b.frameCount).toBe(a.frameCount);
     expect(hashFrames(b.frames)).toBe(hashFrames(a.frames));
     expect(b.results.map((r) => r.car)).toEqual(a.results.map((r) => r.car));
+  });
+});
+
+describe('obstacles', () => {
+  it('generates trees and crowd fences away from the track, the same for the same seed', () => {
+    for (const seed of ['obstacle-test', 'monaco', 'woodland']) {
+      const track = generateTrack(seed);
+      const a = generateObstacles(track);
+      expect(a.trees.length).toBeGreaterThan(10);
+      expect(a.fences.length).toBeGreaterThan(5);
+      expect(JSON.stringify(generateObstacles(track))).toBe(JSON.stringify(a));
+      for (const t of a.trees) {
+        const d = Math.min(...track.points.map((p, i) => Math.hypot(p[0] - t.x, p[1] - t.y) - track.widths[i] / 2));
+        expect(d).toBeGreaterThan(6);
+      }
+    }
+  });
+
+  it('a fast car snaps a tree; a slow one bounces off', () => {
+    const ob = generateObstacles(generateTrack('obstacle-test'));
+    const t = ob.trees[0];
+    const fast = newCar(0, t.x - 8, t.y, 0, 0, 0, 0, 0, 7);
+    fast.vx = 30;
+    const slow = newCar(1, t.x - 8, t.y, 0, 0, 0, 0, 0, 7);
+    slow.vx = 8;
+    const run = (c: typeof fast) => {
+      for (let k = 0; k < 90; k++) {
+        c.x += c.vx / 60;
+        c.y += c.vy / 60;
+        collideObstacles(c, ob);
+      }
+    };
+    run(slow);
+    expect(ob.down[0]).toBe(false);
+    expect(slow.vx).toBeLessThan(0); // bounced back
+    run(fast);
+    expect(ob.down[0]).toBe(true);
+    expect(fast.vx).toBeLessThan(16);
   });
 });

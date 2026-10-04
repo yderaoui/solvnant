@@ -6,6 +6,8 @@ import { FLAG, newCar, type CarResult, type RaceEvent } from '../sim/race';
 import { PHYS, locate, stepCar, type Car, type Input } from '../sim/physics';
 import { CAR_SNAP_STRIDE, PLAYER_COLORS, type LobbyEntry, type RoomInfo, type ServerMsg } from '../game/protocol';
 import { GameConnection } from './net';
+import { GameAudio } from './audio';
+import { collideObstacles, generateObstacles, type Obstacles } from '../sim/obstacles';
 import type { CarVisual, RaceRenderer } from './renderer';
 import type { Chase3D } from './chase3d';
 import { escapeHtml } from './codeViewer';
@@ -81,6 +83,10 @@ export class LiveGame {
   // 3D chase view (lazy-loaded)
   private c3d: Chase3D | null = null;
   private c3dLoading: Promise<void> | null = null;
+  // obstacles: `ob` follows the server (events), `predOb` is what our own prediction collides with
+  private ob: Obstacles | null = null;
+  private predOb: Obstacles | null = null;
+  private audio = new GameAudio();
 
   constructor(private renderer: RaceRenderer) {
     this.conn.onMessage = (m) => this.onMessage(m);
@@ -119,7 +125,31 @@ export class LiveGame {
         }
       });
     }
-    $('spectate-btn').onclick = () => this.setView(this.view === '3d' ? 'map' : '3d');
+    $('spectate-btn').onclick = () => {
+      this.audio.start();
+      this.setView(this.view === '3d' ? 'map' : '3d');
+    };
+    $('mute-btn').onclick = () => this.toggleMute();
+    this.paintMute();
+    // Browsers only allow sound after a gesture: start it on the first click/key while live.
+    const unlock = () => {
+      if (this.active) this.audio.start();
+    };
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+  }
+
+  private toggleMute() {
+    this.audio.start();
+    this.audio.setMuted(!this.audio.muted);
+    this.paintMute();
+  }
+
+  private paintMute() {
+    const b = $('mute-btn');
+    b.innerHTML = icon(this.audio.muted ? 'mute' : 'sound');
+    b.setAttribute('aria-pressed', String(this.audio.muted));
+    b.setAttribute('aria-label', this.audio.muted ? 'Unmute sound (M)' : 'Mute sound (M)');
   }
 
   start() {
@@ -129,6 +159,10 @@ export class LiveGame {
     this.renderer.onCarClick = (i) => this.spectateCar(i);
     if (!this.conn.connected) this.conn.connect();
     if (this.room) this.applyRoom(this.room, true);
+    // Warm up the 3D view (three.js, car model, textures) while people sit in the lobby.
+    setTimeout(() => {
+      if (this.active) void this.ensure3d();
+    }, 1500);
   }
 
   stop() {
@@ -136,6 +170,9 @@ export class LiveGame {
     document.body.classList.remove('is-live', 'is-racing', 'in-lobby', 'is-spec', 'view-3d');
     this.c3d?.setVisible(false);
     this.renderer.app.stage.visible = true;
+    this.audio.update(0, 0, 0, 0, 1);
+    this.audio.setMuted(this.audio.muted);
+    this.audio.stop();
     this.conn.close();
     this.room = null;
     this.trackSeed = this.carsSeed = '';
@@ -152,7 +189,10 @@ export class LiveGame {
       case 'snap':
         this.snaps.push({ recv: performance.now(), rt: m.rt, c: m.c, order: m.order });
         if (this.snaps.length > 40) this.snaps.shift();
-        if (m.ev) this.events.push(...m.ev);
+        if (m.ev) {
+          this.events.push(...m.ev);
+          for (const ev of m.ev) this.react(ev);
+        }
         this.trackLaps(m.c, m.rt);
         if (this.car !== null) this.reconcile(m.c);
         break;
@@ -175,6 +215,10 @@ export class LiveGame {
       this.renderer.setTrack(this.track);
       this.renderer.setCars([]);
       this.c3d?.setTrack(this.track);
+      this.ob = generateObstacles(this.track);
+      this.predOb = { ...this.ob, down: [...this.ob.down] };
+      this.renderer.setObstacles(this.ob);
+      this.c3d?.setObstacles(this.ob);
       this.carsSeed = '';
       this.snaps = [];
       this.events = [];
@@ -245,6 +289,7 @@ export class LiveGame {
     }
     if (!down) return;
     if (e.code === 'KeyC') this.cycleView();
+    if (e.code === 'KeyM') this.toggleMute();
     if (e.code === 'BracketRight' || e.code === 'BracketLeft') this.cycleSpectate(e.code === 'BracketRight' ? 1 : -1);
   }
 
@@ -296,6 +341,7 @@ export class LiveGame {
     const ahead = Math.max(0, Math.min(30, Math.round(this.conn.rtt / 1000 / PHYS.dt)));
     for (let k = 0; k < ahead; k++) {
       stepCar(this.tmp, this.input, PHYS.dt);
+      if (this.predOb) collideObstacles(this.tmp, { ...this.predOb, down: [...this.predOb.down] });
       locate(this.tmp, this.track);
     }
     const p = this.pred,
@@ -316,6 +362,25 @@ export class LiveGame {
     }
     p.stopped = t.stopped;
     p.finished = t.finished;
+  }
+
+  /** A race event from the server: crash effects, crowd reactions, sounds. */
+  private react(ev: RaceEvent) {
+    if (ev.type === 'tree' && ev.down && ev.obj !== undefined) {
+      if (this.ob) this.ob.down[ev.obj] = true;
+      if (this.predOb) this.predOb.down[ev.obj] = true;
+      this.renderer.treeDown(ev.obj);
+    }
+    this.c3d?.onEvent(ev, this.visuals);
+    const order = this.snaps.at(-1)?.order ?? [];
+    const focus = this.focusCar(order);
+    const mine = ev.car === focus || ev.other === focus;
+    const s = Math.min(1, (ev.v ?? 10) / 20);
+    if (mine && (ev.type === 'tree' || ev.type === 'fence' || ev.type === 'wall' || ev.type === 'contact')) this.audio.impact(ev.type === 'tree' ? s : 0.5 + s / 2, ev.type !== 'tree');
+    if (ev.type === 'fence') this.audio.cheer(0.9);
+    else if (ev.type === 'tree' && ev.down) this.audio.cheer(0.6);
+    else if (ev.type === 'overtake') this.audio.cheer(0.35);
+    else if (ev.type === 'finish') this.audio.cheer(1);
   }
 
   private trackLaps(c: number[], rt: number) {
@@ -359,6 +424,7 @@ export class LiveGame {
       let n = 0;
       while (this.acc >= PHYS.dt && n++ < 10) {
         stepCar(this.pred, this.input, PHYS.dt);
+        if (this.predOb) collideObstacles(this.pred, this.predOb);
         locate(this.pred, this.track);
         this.acc -= PHYS.dt;
       }
@@ -370,6 +436,14 @@ export class LiveGame {
     this.renderer.app.stage.visible = !use3d;
     if (use3d) this.c3d!.render(cars, this.focusCar(order), dt);
     else this.renderer.render(cars, order, dt, room.phase === 'race');
+
+    // Sound follows the car we're watching
+    const fc = cars[this.focusCar(order)];
+    if (fc && room.phase !== 'lobby') {
+      const mine = this.car !== null && this.focusCar(order) === this.car;
+      const throttle = mine ? this.input.throttle : fc.flags & FLAG.braking ? 0 : 0.7;
+      this.audio.update(fc.speed, throttle, fc.slip, use3d ? this.c3d!.crowdNear(cars, this.focusCar(order)) : 0.2, dt);
+    } else this.audio.update(0, 0, 0, 0.1, dt);
 
     if (now - this.lastHud > 100) {
       this.lastHud = now;
@@ -454,6 +528,7 @@ export class LiveGame {
     this.c3dLoading ??= import('./chase3d').then(({ Chase3D }) => {
       this.c3d = new Chase3D($('stage-canvas'));
       if (this.track) this.c3d.setTrack(this.track);
+      if (this.ob) this.c3d.setObstacles(this.ob);
       if (this.room && this.room.phase !== 'lobby') this.c3d.setCars(this.room.entries.map((e) => ({ name: e.name, color: e.color })), this.car ?? -1);
     });
     return this.c3dLoading;
@@ -720,7 +795,10 @@ export class LiveGame {
         </section>
         <div class="lobby-keys"><kbd>↑</kbd><kbd>W</kbd> gas <kbd>↓</kbd><kbd>S</kbd> brake / reverse <kbd>←</kbd><kbd>→</kbd> steer <kbd>C</kbd> camera</div>
       </div>`);
-    $('lb-go').onclick = () => this.join();
+    $('lb-go').onclick = () => {
+      this.audio.start();
+      this.join();
+    };
     $('lb-name').onkeydown = (e) => {
       if ((e as KeyboardEvent).key === 'Enter') this.join();
     };

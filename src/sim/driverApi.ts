@@ -112,8 +112,17 @@ Look ahead with TRACK.points[(state.me.trackIndex + k) % TRACK.points.length].
 - Slipstream: within ~35 m directly behind another car you get a top-speed boost.
 - Car-to-car contact pushes cars apart; cars are ~4.6 m x 2 m.
 
+## Common mistakes (avoid these)
+- state.cars contains cars BEHIND you too (gap < 0). Only cars with gap > 0 are ahead of you.
+- Don't drive at corner speed all the time. Brake only when a slow section is within braking distance:
+  for each point j ahead, allowed = sqrt(vCorner_j^2 + 2 * decel * distance_j); target speed = the minimum of those.
+- Steering only on headingError makes the car drift wide. Steer toward a point 10-30 m ahead on the centerline
+  (further at higher speed), and correct for state.me.lateral.
+- Use full throttle on straights: accelerating back up to speed is slow.
+
 ## Rules
 - Plain JavaScript (ES2020). No imports, no exports, no async, no network, no DOM, no Date, no timers.
+  TRACK is a global: read it as TRACK (not state.TRACK).
 - Global variables persist between calls, so you may keep memory between calls.
 - Math.random is seeded (deterministic). Code must be under 20 KB.
 - Each call has a strict CPU budget (about 100k operations). Exceeding it or throwing an error = your car stops and is out of the race.

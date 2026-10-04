@@ -87,7 +87,7 @@ describe('sandbox', () => {
 
   it('has no network, DOM, timers or host access', async () => {
     const box = new DriverSandbox(await loadQuickJS(), 1);
-    const code = `function drive(){ return { throttle: [typeof fetch, typeof window, typeof document, typeof setTimeout, typeof require, typeof process, typeof XMLHttpRequest, typeof WebSocket].every(t => t === 'undefined') ? 1 : 0, steer: 0, brake: 0 }; }`;
+    const code = `function drive(){ return { throttle: window === globalThis && [typeof fetch, typeof document, typeof setTimeout, typeof require, typeof process, typeof XMLHttpRequest, typeof WebSocket].every(t => t === 'undefined') ? 1 : 0, steer: 0, brake: 0 }; }`;
     expect(box.load(code, track).ok).toBe(true);
     expect(box.call('{"t":0}')!.throttle).toBe(1);
     box.dispose();

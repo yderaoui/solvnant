@@ -46,7 +46,10 @@ export const db: SupabaseClient | null = url && key ? createClient(url, key, { a
 export const isLocalMode = !db;
 
 const RACE_SELECT =
-  'id, slot, seed, laps, start_at, sim_version, race_entries(car, model, name, color, source, drivers(code, created_at)), race_results(car, position, finished, finish_time, best_lap, crashed)';
+  'id, slot, seed, laps, start_at, sim_version, race_entries(car, model, name, color, source, drivers(code, created_at), race_results(car, position, finished, finish_time, best_lap, crashed))';
+
+// race_results hangs off race_entries (1:1), so PostgREST returns it as an object or a one-item array.
+const resultOf = (e: any): StoredResult | null => (Array.isArray(e.race_results) ? e.race_results[0] : e.race_results) ?? null;
 
 function toRaceInfo(row: any): RaceInfo {
   const entries: EntryInfo[] = (row.race_entries ?? [])
@@ -59,7 +62,8 @@ function toRaceInfo(row: any): RaceInfo {
       code: e.drivers?.code ?? '',
       createdAt: e.drivers?.created_at ?? null,
     }));
-  const results = row.race_results?.length ? (row.race_results as StoredResult[]) : null;
+  const stored = (row.race_entries ?? []).map(resultOf).filter(Boolean) as StoredResult[];
+  const results = stored.length ? stored : null;
   return {
     id: row.id,
     slot: row.slot,
@@ -112,14 +116,13 @@ export async function fetchHistory(): Promise<HistoryRow[]> {
   if (!db) return [];
   const { data, error } = await db
     .from('races')
-    .select('id, seed, start_at, laps, race_entries(car, name), race_results(car, position)')
+    .select('id, seed, start_at, laps, race_entries(car, name, race_results(car, position))')
     .lte('ends_at', new Date().toISOString())
     .order('start_at', { ascending: false })
     .limit(40);
   if (error) throw new Error(error.message);
   return (data ?? []).map((r: any) => {
-    const win = r.race_results?.find((x: any) => x.position === 1);
-    const e = win ? r.race_entries?.find((x: any) => x.car === win.car) : null;
+    const e = r.race_entries?.find((x: any) => resultOf(x)?.position === 1);
     return { id: r.id, seed: r.seed, start_at: r.start_at, laps: r.laps, winner: e?.name ?? null };
   });
 }

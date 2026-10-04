@@ -7,9 +7,11 @@ export interface FallbackParams {
   brake: number; // how late it brakes (assumed decel)
   gain: number; // steering gain
   pass: number; // willingness to pull out and overtake (0..1)
+  maxSpeed?: number; // m/s cap (limp mode)
 }
 
-export const DEFAULT_FALLBACK: FallbackParams = { look: 1, grip: 13.2, brake: 13.5, gain: 2.2, pass: 0.7 };
+// Used when a model fails: "limp mode", so a model never wins a race with someone else's code.
+export const DEFAULT_FALLBACK: FallbackParams = { look: 1, grip: 11, brake: 11, gain: 2.0, pass: 0.2, maxSpeed: 20 };
 
 export function fallbackDriverCode(p: FallbackParams = DEFAULT_FALLBACK): string {
   return `// Fallback driver: pure-pursuit steering + curvature-based speed planning.
@@ -43,7 +45,7 @@ function drive(state) {
   const steer = Math.max(-1, Math.min(1, ang * P.gain - me.vLat * 0.03));
 
   // 3. Speed: slowest speed we must reach for any curve inside our braking distance.
-  let target = 70;
+  let target = P.maxSpeed || 70;
   const horizon = Math.ceil((me.speed * me.speed / (2 * P.brake) + 40) / T.spacing);
   for (let j = 0; j < horizon; j++) {
     const i = (me.trackIndex + j) % n;

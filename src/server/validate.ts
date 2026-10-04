@@ -18,7 +18,8 @@ export function validateDriver(qjs: QuickJSWASMModule, code: string): { ok: true
     });
     const r = rec.results.find((x) => x.car === 0)!;
     if (r.crashed) return { ok: false, error: `crashed on test track: ${r.crashReason}` };
-    if (r.progress < 250) return { ok: false, error: `too slow on test track (${Math.round(r.progress)} m in 35 s)` };
+    // Slow drivers are allowed to race (and lose); only reject cars that basically don't move.
+    if (r.progress < 60) return { ok: false, error: `car barely moved on test track (${Math.round(r.progress)} m in 35 s)` };
   }
   return { ok: true };
 }

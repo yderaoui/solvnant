@@ -10,7 +10,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { loadQuickJS } from '../sim/sandbox';
 import { runRace, SIM_VERSION, type Entry } from '../sim/race';
 import { generateTrack, lapsFor } from '../sim/track';
-import { CAR_COLORS, DEFAULT_FALLBACK, HOUSE_BOTS, fallbackDriverCode } from '../sim/fallbackDriver';
+import { CAR_COLORS, HOUSE_BOTS, fallbackDriverCode } from '../sim/fallbackDriver';
 import { MAX_RACE_SECONDS, raceStartAt, slotAt } from '../sim/schedule';
 import { generateDriverCode, listFreeModels, pickModels, RateLimitError, type ModelInfo } from './openrouter';
 import { validateDriver } from './validate';
@@ -19,7 +19,7 @@ const env = (k: string, d = '') => process.env[k]?.trim() || d;
 const DRY = process.argv.includes('--dry');
 const CFG = {
   maxCars: Math.min(10, Number(env('MAX_CARS', '10'))),
-  minCars: Number(env('MIN_CARS', '6')),
+  minCars: Number(env('MIN_CARS', '2')),
   racesAheadMinutes: Number(env('RACES_AHEAD_MINUTES', '75')),
   driverTtlHours: Number(env('DRIVER_TTL_HOURS', '24')),
   retryFailedHours: Number(env('RETRY_FAILED_HOURS', '6')),
@@ -72,7 +72,7 @@ async function main() {
   let roster: ModelInfo[] = [];
   if (orKey) {
     try {
-      roster = pickModels(await listFreeModels(), CFG.preferredModels, CFG.maxCars);
+      roster = pickModels(await listFreeModels(), CFG.preferredModels, CFG.maxCars, db ? await restrictedModels(db) : new Set());
       log(`roster: ${roster.map((m) => m.id).join(', ')}`);
     } catch (e) {
       log('could not list OpenRouter models, house bots only:', (e as Error).message);
@@ -102,9 +102,10 @@ async function main() {
       log(`asking ${m.id} to write a driver…`);
       let row: Omit<DriverRow, 'id' | 'created_at'>;
       try {
-        const { code, raw } = await generateDriverCode(orKey, m.id, firstTrack, firstLaps);
+        const { code, raw, finishReason } = await generateDriverCode(orKey, m.id, firstTrack, firstLaps);
         if (!code) {
-          row = { model: m.id, code: raw.slice(0, 20000), source: 'llm', valid: false, error: 'no drive() code block in reply' };
+          const why = finishReason === 'length' ? ' (ran out of tokens)' : finishReason ? ` (finish: ${finishReason})` : '';
+          row = { model: m.id, code: raw.slice(0, 20000), source: 'llm', valid: false, error: `no drive() code block in reply${why}` };
         } else {
           const v = validateDriver(qjs, code);
           row = { model: m.id, code, source: 'llm', valid: v.ok, error: v.ok ? null : v.error };
@@ -124,8 +125,6 @@ async function main() {
   }
 
   // 3. Build the grid, simulate and store each race.
-  const fallbackCode = fallbackDriverCode(DEFAULT_FALLBACK);
-  const fallbackId = (await saveDriver(db, { model: 'fallback', code: fallbackCode, source: 'fallback', valid: true, error: null })).id;
   const houseIds = new Map<string, string>();
   for (const b of HOUSE_BOTS) {
     const code = fallbackDriverCode(b.params);
@@ -135,13 +134,14 @@ async function main() {
   for (let k = 0; k < slots.length; k++) {
     const slot = slots[k];
     const seed = seeds[k];
-    const entries: Entry[] = roster.map((m, i) => {
+    // Only models whose own code passed validation get a car. A model never races under
+    // someone else's code, so a win on the board is always the model's own work.
+    const entries: Entry[] = [];
+    for (const m of roster) {
       const valid = drivers.get(m.id)?.find((r) => r.valid);
-      return valid
-        ? { name: m.name, model: m.id, color: CAR_COLORS[i], code: valid.code, source: 'llm', driverId: valid.id }
-        : { name: m.name, model: m.id, color: CAR_COLORS[i], code: fallbackCode, source: 'fallback', driverId: fallbackId };
-    });
-    // Top up with house bots so a race always has cars.
+      if (valid) entries.push({ name: m.name, model: m.id, color: CAR_COLORS[entries.length], code: valid.code, source: 'llm', driverId: valid.id });
+    }
+    // Top up with (clearly labelled) house bots so a race always has cars.
     for (let h = 0; entries.length < CFG.minCars && h < HOUSE_BOTS.length; h++) {
       const b = HOUSE_BOTS[h];
       entries.push({
@@ -202,6 +202,12 @@ async function main() {
     );
     if (e2.error) throw new Error('insert results: ' + e2.error.message);
   }
+}
+
+/** Models that OpenRouter won't serve to plain API calls (e.g. "only available on agentic harnesses"). */
+async function restrictedModels(db: SupabaseClient): Promise<Set<string>> {
+  const { data } = await db.from('drivers').select('model').eq('source', 'llm').ilike('error', '%only available on%');
+  return new Set((data ?? []).map((r) => r.model as string));
 }
 
 async function loadDrivers(db: SupabaseClient, models: string[]): Promise<Map<string, DriverRow[]>> {

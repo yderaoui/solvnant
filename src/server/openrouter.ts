@@ -16,7 +16,8 @@ export async function listFreeModels(): Promise<ModelInfo[]> {
   const { data } = (await res.json()) as { data: any[] };
   return data
     .filter((m) => {
-      const free = m.id.endsWith(':free') || (m.pricing?.prompt === '0' && m.pricing?.completion === '0');
+      // Only ':free' ids: other $0-priced models can still be billed (and fail on a $0-limit key).
+      const free = m.id.endsWith(':free');
       const textOut = !m.architecture?.output_modalities || m.architecture.output_modalities.includes('text');
       return free && textOut && (m.context_length ?? 0) >= 16000;
     })
@@ -33,7 +34,8 @@ export function shortName(name: string): string {
  * Pick up to `max` models, one per vendor where possible so the grid is varied.
  * `preferred` (from env) are taken first, in order.
  */
-export function pickModels(free: ModelInfo[], preferred: string[], max: number): ModelInfo[] {
+export function pickModels(all: ModelInfo[], preferred: string[], max: number, exclude: Set<string> = new Set()): ModelInfo[] {
+  const free = all.filter((m) => !exclude.has(m.id));
   const byId = new Map(free.map((m) => [m.id, m]));
   const out: ModelInfo[] = [];
   for (const id of preferred) {
@@ -114,7 +116,7 @@ export async function generateDriverCode(
   model: string,
   track: Track,
   laps: number,
-): Promise<{ code: string | null; raw: string }> {
+): Promise<{ code: string | null; raw: string; finishReason: string | null }> {
   const { system, user } = buildPrompt(track, laps);
   const res = await fetch(`${API}/chat/completions`, {
     method: 'POST',
@@ -127,7 +129,9 @@ export async function generateDriverCode(
     body: JSON.stringify({
       model,
       temperature: 0.6,
-      max_tokens: 8000,
+      max_tokens: 16000,
+      // Reasoning models otherwise spend the whole budget thinking and never write the code.
+      reasoning: { effort: 'low' },
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -137,8 +141,12 @@ export async function generateDriverCode(
   });
   if (res.status === 429) throw new RateLimitError(`rate limited (${model})`);
   const body = (await res.json().catch(() => null)) as any;
-  if (!res.ok || !body) throw new Error(`OpenRouter ${res.status}: ${JSON.stringify(body?.error ?? body).slice(0, 300)}`);
+  if (!body) throw new Error(`empty or cut-off response from OpenRouter (HTTP ${res.status}, likely an upstream timeout)`);
+  if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${JSON.stringify(body.error ?? body).slice(0, 300)}`);
   if (body.error) throw new Error(`OpenRouter error: ${JSON.stringify(body.error).slice(0, 300)}`);
-  const raw: string = body.choices?.[0]?.message?.content ?? '';
-  return { code: extractCode(raw), raw };
+  const choice = body.choices?.[0];
+  const raw: string = choice?.message?.content || '';
+  // Some models put the final answer only in the reasoning text.
+  const code = extractCode(raw) ?? extractCode(choice?.message?.reasoning || '');
+  return { code, raw, finishReason: choice?.finish_reason ?? null };
 }

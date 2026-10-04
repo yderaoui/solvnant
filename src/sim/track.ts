@@ -372,10 +372,10 @@ function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
-/** Number of laps so a race takes roughly two minutes. */
+/** Number of laps so a race takes roughly two minutes at today's AI-driver pace (~15 m/s average). */
 export function lapsFor(track: Track): number {
-  const estLap = track.length / 30;
-  return clamp(Math.round(120 / estLap), 2, 5);
+  const estLap = track.length / 15;
+  return clamp(Math.round(120 / estLap), 1, 5);
 }
 
 /** Position, heading and half-width at arc length s (wraps). */

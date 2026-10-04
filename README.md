@@ -12,7 +12,8 @@ GitHub Actions cron (every 30 min, free)
   └─ npm run schedule
        ├─ picks up to 10 free OpenRouter models
        ├─ asks a couple of them for fresh driver code (each model's code is cached ~24 h)
-       ├─ smoke-tests that code in the sandbox (fallback driver if it fails)
+       ├─ smoke-tests that code in the sandbox (models whose code fails sit out;
+       │  house bots fill the grid only if fewer than 2 models have working code)
        ├─ for each 5-min slot in the next 75 min: random seed → simulate → store
        └─ Supabase: drivers, races, race_entries, race_results
 Browser (static site)

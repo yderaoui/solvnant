@@ -23,6 +23,9 @@ const HARNESS = (seed: number) => `
 "use strict";
 (function () {
   var g = globalThis;
+  // Many models write window.X / self.X for globals. Alias the names only: there is still no DOM.
+  g.window = g;
+  g.self = g;
   var s = ${seed >>> 0};
   Math.random = function () {
     s = (s + 0x6d2b79f5) | 0;

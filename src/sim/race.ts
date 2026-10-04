@@ -9,7 +9,7 @@ import { PHYS, collide, locate, speedOf, stepCar, type Car, type Input } from '.
 import { DriverSandbox, loadQuickJS } from './sandbox';
 import { trackForDriver, type DriverState } from './driverApi';
 
-export const SIM_VERSION = '1';
+export const SIM_VERSION = '2'; // bump whenever race results could change for the same inputs
 export const FRAME_RATE = 30;
 export const FRAME_STRIDE = 8; // x, y, heading, speed, slip, progress, steer, flags
 export const FLAG = { offTrack: 1, stopped: 2, finished: 4, slipstream: 8, braking: 16 } as const;

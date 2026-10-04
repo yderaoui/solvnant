@@ -2,6 +2,7 @@ import './style.css';
 import { RaceRenderer } from './renderer';
 import { Broadcast, fmtTime } from './broadcast';
 import { LiveGame } from './livegame';
+import { audio, get3d } from './view3d';
 import { CodeViewer, escapeHtml } from './codeViewer';
 import { hydrateIcons, icon } from './icons';
 import {
@@ -36,7 +37,7 @@ broadcast.onSelectCar = (car) => {
   const result = broadcast.record?.results?.find((r) => r.car === car) ?? null;
   viewer.open(race.entries[car], result, () => {
     renderer.selected = -1;
-    broadcast.setCamera('overview');
+    if (!broadcast.in3d) broadcast.setCamera('overview'); // in 3D: keep watching, back to the leader
   });
 };
 // Standings rows: in the AI league they open the driver's code; in the live game they spectate that car.
@@ -52,6 +53,33 @@ $('tower').addEventListener('keydown', (e) => {
     pickCar(Number(li.dataset.car));
   }
 });
+// AI League keys: C cycles cameras, V = next stand in the fan view, M = mute. (The live game has its own.)
+window.addEventListener('keydown', (e) => {
+  if (live.active || !['league', 'replay'].includes(document.body.dataset.page ?? '')) return;
+  const tag = (e.target as HTMLElement)?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.code === 'KeyC') {
+    const cams = ['cam-overview', 'cam-leader', 'cam-chase', 'cam-fan'];
+    const at = cams.findIndex((id) => $(id).classList.contains('active'));
+    $(cams[(at + 1) % cams.length]).click();
+  } else if (e.code === 'KeyV') get3d()?.nextFanSpot();
+  else if (e.code === 'KeyM') toggleMute();
+});
+function paintMute() {
+  const b = $('mute-btn');
+  b.innerHTML = icon(audio.muted ? 'mute' : 'sound');
+  b.setAttribute('aria-pressed', String(audio.muted));
+}
+function toggleMute() {
+  audio.start();
+  audio.setMuted(!audio.muted);
+  paintMute();
+}
+$('mute-btn').addEventListener('click', () => {
+  if (!live.active) toggleMute();
+});
+paintMute();
+
 // Mobile: the standings panel starts collapsed (it would cover the track) and expands on tap.
 if (matchMedia('(max-width: 760px)').matches) {
   $('tower-toggle').parentElement!.classList.add('collapsed');

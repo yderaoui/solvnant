@@ -106,7 +106,7 @@ export class GameAudio {
   }
 
   /** Per frame: the followed car's state. `near` 0..1 = how close we are to a crowd. */
-  update(speedMs: number, throttle: number, slip: number, near: number, dt: number) {
+  update(speedMs: number, throttle: number, slip: number, near: number, dt: number, engineGain = 1) {
     const ctx = this.ctx;
     if (!ctx) return;
     const now = ctx.currentTime;
@@ -121,9 +121,9 @@ export class GameAudio {
     this.engA.frequency.setTargetAtTime(f, now, 0.04);
     this.engB.frequency.setTargetAtTime(f * 0.501, now, 0.04);
     this.engFilter.frequency.setTargetAtTime(500 + throttle * 2200 + frac * 900, now, 0.05);
-    this.engGain.gain.setTargetAtTime(0.05 + throttle * 0.07 + Math.min(1, kmh / 200) * 0.03, now, 0.06);
+    this.engGain.gain.setTargetAtTime((0.05 + throttle * 0.07 + Math.min(1, kmh / 200) * 0.03) * engineGain, now, 0.06);
     const sq = Math.max(0, Math.min(1, (slip - 2.5) / 6));
-    this.skidGain.gain.setTargetAtTime(sq * 0.12, now, 0.05);
+    this.skidGain.gain.setTargetAtTime(sq * 0.12 * engineGain, now, 0.05);
     this.crowdBoost = Math.max(0, this.crowdBoost - dt * 0.25);
     this.crowdGain.gain.setTargetAtTime(0.015 + near * 0.05 + this.crowdBoost * 0.18, now, 0.2);
     this.crowdFilter.frequency.setTargetAtTime(800 + this.crowdBoost * 900, now, 0.2);

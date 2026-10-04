@@ -2,7 +2,9 @@
 // event feed and a results card. Live mode is locked to the wall clock (everyone watching
 // sees the same moment); replay mode has play/pause/seek/speed.
 import { generateTrack, type Track } from '../sim/track';
-import { FLAG } from '../sim/race';
+import { FLAG, OBSTACLES_SINCE, type RaceEvent } from '../sim/race';
+import { generateObstacles, type Obstacles } from '../sim/obstacles';
+import { audio, get3d, load3d } from './view3d';
 import { MAX_RACE_SECONDS } from '../sim/schedule';
 import { RaceRenderer, type CameraMode, type CarVisual } from './renderer';
 import { simulate, type LiveRecord } from './simClient';
@@ -18,6 +20,8 @@ const EVENT_ICON: Record<string, IconName> = {
   dnf: 'alert',
   contact: 'zap',
   wall: 'alert',
+  tree: 'alert',
+  fence: 'zap',
   fastest_lap: 'clock',
   final_lap: 'flag',
   finish: 'flag',
@@ -47,6 +51,11 @@ export class Broadcast {
 
   /** False while another controller (the live multiplayer game) owns the stage. */
   active = true;
+  /** 3D camera for this broadcast: off, chase behind the followed car, or first person from the crowd. */
+  private view3d: 'none' | '3d' | 'fan' = 'none';
+  private ob: Obstacles | null = null;
+  private pushed3d = '';
+  private lastEvT = -1;
 
   constructor(public renderer: RaceRenderer) {
     this.bind();
@@ -64,12 +73,78 @@ export class Broadcast {
     this.renderer.onCarClick = (i) => this.onSelectCar(i);
     $('cam-overview').onclick = () => this.setCamera('overview');
     $('cam-leader').onclick = () => this.setCamera('leader');
+    $('cam-chase').onclick = () => this.setCamera3d('3d');
+    $('cam-fan').onclick = () => {
+      if (this.view3d === 'fan') get3d()?.nextFanSpot();
+      else this.setCamera3d('fan');
+    };
+    this.pushed3d = '';
+  }
+
+  get in3d() {
+    return this.view3d !== 'none';
+  }
+
+  /** Switch to a 3D camera (loads three.js on first use). */
+  setCamera3d(mode: '3d' | 'fan') {
+    this.view3d = mode;
+    audio.start();
+    this.paintCams();
+    void load3d($('stage-canvas')).then((c) => {
+      this.push3d();
+      c.setCamMode(mode === 'fan' ? 'fan' : 'chase');
+    });
+  }
+
+  /** Give the shared 3D view this race's track, obstacles and cars (once per race). */
+  private push3d() {
+    const c = get3d();
+    if (!c || !this.active || !this.track) return;
+    const key = `${this.track.seed}|${this.race?.id ?? ''}|${this.race?.entries.length ?? 0}|${this.ob ? 1 : 0}`;
+    if (key === this.pushed3d) return;
+    this.pushed3d = key;
+    c.setTrack(this.track);
+    c.setObstacles(this.ob ? { ...this.ob, down: this.ob.trees.map(() => false) } : null);
+    c.setCars((this.race?.entries ?? []).map((e) => ({ name: e.name, color: e.color })), -1);
+    c.warmUp();
+    this.lastEvT = -1;
+  }
+
+  private paintCams() {
+    const active = this.view3d === '3d' ? 'cam-chase' : this.view3d === 'fan' ? 'cam-fan' : `cam-${this.renderer.mode}`;
+    for (const id of ['cam-overview', 'cam-leader', 'cam-chase', 'cam-fan']) {
+      const on = id === active;
+      $(id).classList.toggle('active', on);
+      $(id).setAttribute('aria-pressed', String(on));
+    }
+  }
+
+  /** Feed race events to the 3D view as playback passes them; after a seek, jump the tree state. */
+  private play3dEvents(c: NonNullable<ReturnType<typeof get3d>>, t: number, cars: CarVisual[]) {
+    const evs = this.record?.events ?? [];
+    if (t < this.lastEvT || t - this.lastEvT > 1.5) {
+      if (this.ob) c.syncDown(this.ob.trees.map((_, i) => evs.some((e) => e.type === 'tree' && e.down && e.obj === i && e.t <= t)));
+    } else {
+      for (const e of evs) if (e.t > this.lastEvT && e.t <= t) this.react3d(c, e, cars);
+    }
+    this.lastEvT = t;
+  }
+
+  private react3d(c: NonNullable<ReturnType<typeof get3d>>, e: RaceEvent, cars: CarVisual[]) {
+    c.onEvent(e, cars);
+    if (e.type === 'fence') audio.cheer(0.9);
+    else if (e.type === 'tree' && e.down) audio.cheer(0.6);
+    else if (e.type === 'overtake') audio.cheer(0.35);
+    else if (e.type === 'finish') audio.cheer(1);
   }
 
   /** Stop playback (another view is taking the stage). */
   deactivate() {
     this.active = false;
     this.loadToken++;
+    this.view3d = 'none';
+    get3d()?.setVisible(false);
+    this.renderer.app.stage.visible = true;
     this.center('');
     document.body.classList.remove('no-race', 'is-buffering', 'is-replay');
     $('feed').innerHTML = '';
@@ -81,6 +156,7 @@ export class Broadcast {
   /** Show just a track (Track Lab), no race. */
   showTrack(seed: string) {
     this.bind();
+    this.view3d = 'none';
     this.loadToken++;
     this.race = null;
     this.record = null;
@@ -104,8 +180,13 @@ export class Broadcast {
     this.resultsShown = false;
     this.lastEventCount = -1;
     this.track = generateTrack(race.seed);
+    // Races from sim v3 on have trees + crowd fences you can crash into (older ones replay without).
+    const obstacles = !race.simVersion || Number(race.simVersion) >= OBSTACLES_SINCE;
+    this.ob = obstacles ? generateObstacles(this.track) : null;
     this.renderer.setTrack(this.track);
+    this.renderer.setObstacles(this.ob);
     this.renderer.setCars(race.entries);
+    this.push3d();
     this.renderer.selected = -1;
     this.setCamera('overview');
     this.setHudVisible(true);
@@ -120,7 +201,7 @@ export class Broadcast {
     this.center(`<div class="card loading" role="status"><div class="spinner"></div><div>Loading AI drivers into the sandbox…</div></div>`);
 
     const record = await simulate(
-      { seed: race.seed, entries: race.entries, laps: race.laps ?? undefined, maxTime: MAX_RACE_SECONDS },
+      { seed: race.seed, entries: race.entries, laps: race.laps ?? undefined, maxTime: MAX_RACE_SECONDS, obstacles },
       (r) => {
         if (token !== this.loadToken) return;
         $<HTMLInputElement>('replay-seek').max = String(r.duration);
@@ -158,11 +239,9 @@ export class Broadcast {
   setCamera(mode: CameraMode, car = -1) {
     this.renderer.mode = mode;
     if (car >= 0) this.renderer.focus = car;
-    for (const id of ['cam-overview', 'cam-leader']) {
-      const on = id === `cam-${mode}`;
-      $(id).classList.toggle('active', on);
-      $(id).setAttribute('aria-pressed', String(on));
-    }
+    // Picking a car while in 3D keeps the 3D camera (it follows the new car); map/leader buttons leave 3D.
+    if (car < 0) this.view3d = 'none';
+    this.paintCams();
   }
 
   private togglePause() {
@@ -223,6 +302,8 @@ export class Broadcast {
     this.lastWall = now;
     const rec = this.record;
     if (!rec || !this.race) {
+      get3d()?.setVisible(false);
+      this.renderer.app.stage.visible = true;
       this.renderer.render([], [], dtWall, false);
       return;
     }
@@ -233,7 +314,22 @@ export class Broadcast {
     const { cars, progress } = this.sample(tc);
     const order = this.order(cars, progress, tc);
     const playing = t > 0 && t < rec.duration && !buffering && !(this.mode === 'replay' && this.paused);
-    this.renderer.render(cars, order, dtWall, playing);
+    const c3 = this.view3d !== 'none' ? get3d() : null;
+    if (c3 && this.pushed3d) {
+      const focus = this.renderer.selected >= 0 ? this.renderer.selected : order[0];
+      this.play3dEvents(c3, tc, cars);
+      c3.setVisible(true);
+      this.renderer.app.stage.visible = false;
+      c3.render(cars, focus, playing ? dtWall : 0);
+      const fc = cars[focus];
+      const fan = this.view3d === 'fan';
+      audio.update(playing ? fc.speed : 0, fc.flags & FLAG.braking ? 0 : 0.7, fc.slip, fan ? 1 : c3.crowdNear(cars, focus), dtWall, fan ? Math.max(0.04, 1 - c3.distanceTo(fc) / 220) : 1);
+    } else {
+      get3d()?.setVisible(false);
+      this.renderer.app.stage.visible = true;
+      this.renderer.render(cars, order, dtWall, playing);
+      audio.update(0, 0, 0, 0, dtWall);
+    }
 
     if (now - this.lastHud > 120) {
       this.lastHud = now;

@@ -45,7 +45,8 @@ export interface RoomInfo {
 
 export type ServerMsg =
   | { t: 'room'; room: RoomInfo; you: string; car: number | null }
-  | { t: 'snap'; tick: number; rt: number; c: number[]; order: number[]; ev?: RaceEvent[] }
+  // catchup: sent once to someone joining mid-race (positions + trees already down, no effects)
+  | { t: 'snap'; tick: number; rt: number; c: number[]; order: number[]; ev?: RaceEvent[]; catchup?: boolean }
   | { t: 'results'; results: CarResult[]; duration: number }
   | { t: 'pong'; ts: number; st: number }
   | { t: 'error'; msg: string };

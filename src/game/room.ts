@@ -47,6 +47,8 @@ export class GameRoom {
   private lastSnap = 0;
   private sentEvents = 0;
   private lastRacers = new Set<string>(); // who raced in the previous slot (back-to-back rule)
+  private snapState: { tick: number; rt: number; c: number[]; order: number[] } | null = null;
+  private lastResults: { results: ReturnType<RaceSim['results']>; duration: number } | null = null;
 
   // Round timing (overridable for testing: SLOT_SECONDS / LOBBY_SECONDS vars)
   private slotMs = SLOT_MS;
@@ -108,6 +110,7 @@ export class GameRoom {
         this.syncPhase(Date.now());
         this.markConnected(conn.id);
         this.sendRoom(conn);
+        this.catchUp(conn);
         break;
       }
       case 'ping':
@@ -213,6 +216,8 @@ export class GameRoom {
     this.players = [];
     this.raceEntries = [];
     this.sim = null;
+    this.snapState = null;
+    this.lastResults = null;
     this.carOf.clear();
     const rand = crypto.getRandomValues(new Uint32Array(1))[0].toString(16);
     this.seed = `live${slot}-${rand}`;
@@ -266,6 +271,7 @@ export class GameRoom {
       this.recent = this.recent.slice(0, 5);
       void this.storage?.put('recent', this.recent);
     }
+    this.lastResults = { results, duration: this.sim.t };
     this.broadcast({ t: 'results', results, duration: this.sim.t });
     this.broadcastRoom();
     // TODO(persist): store { seed, laps, entries, inputLog: this.sim.inputLog, results } in Supabase for replays.
@@ -319,7 +325,16 @@ export class GameRoom {
     }
     const ev: RaceEvent[] = sim.events.slice(this.sentEvents);
     this.sentEvents = sim.events.length;
-    this.broadcast({ t: 'snap', tick: sim.tick, rt: r2(sim.t), c, order: sim.standingsNow(), ev: ev.length ? ev : undefined });
+    this.snapState = { tick: sim.tick, rt: r2(sim.t), c, order: sim.standingsNow() };
+    this.broadcast({ t: 'snap', ...this.snapState, ev: ev.length ? ev : undefined });
+  }
+
+  /** Someone connected mid-race or after it: send where everyone is, fallen trees, and the results. */
+  private catchUp(conn: Conn) {
+    if (this.phase === 'lobby' || !this.sim || !this.snapState) return;
+    const fallen = this.sim.events.filter((e) => e.type === 'tree' && e.down);
+    this.send(conn, { t: 'snap', ...this.snapState, ev: fallen.length ? fallen : undefined, catchup: true });
+    if (this.phase === 'results' && this.lastResults) this.send(conn, { t: 'results', ...this.lastResults });
   }
 
   private broadcast(msg: ServerMsg) {

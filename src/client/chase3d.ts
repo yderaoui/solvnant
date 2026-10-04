@@ -115,6 +115,12 @@ export class Chase3D {
   private fx: Particles;
   private sparks: Particles;
   private skids: SkidMarks;
+  // camera: 'chase' behind the focus car, 'fan' = first person from a spectator spot
+  camMode: 'chase' | 'fan' = 'chase';
+  private fanSpots: { pos: THREE.Vector3; face: THREE.Vector3 }[] = [];
+  private standSpots: { pos: THREE.Vector3; face: THREE.Vector3 }[] = [];
+  private fanIdx = -1;
+  private fanManual = 0; // time until auto-switching resumes after a manual pick
   // adaptive quality: 2 = full, 1 = lower resolution + smaller shadows, 0 = no bloom / no shadows
   private quality = 2;
   private frameAcc = 0;
@@ -362,6 +368,7 @@ export class Chase3D {
     }
     straights.sort((x, y) => y.n - x.n);
     this.standPeople = [];
+    this.standSpots = [];
     for (const st of straights.slice(0, 4)) {
       const m = (st.a + Math.floor(st.n / 2)) % N;
       const len = Math.min(st.n * sp * 0.7, 140);
@@ -370,7 +377,12 @@ export class Chase3D {
       const side = (P[m][0] - cx) * nx + (P[m][1] - cz) * nz > 0 ? 1 : -1;
       const dist = W[m] / 2 + WALL + 6;
       // rotation -h puts local +z on the right of the track: a stand on the right must turn round to face it
-      this.world.add(grandstand(len, T, rng, this.standPeople, P[m][0] + nx * side * dist, P[m][1] + nz * side * dist, -H[m] + (side > 0 ? 0 : Math.PI)));
+      const sx = P[m][0] + nx * side * dist,
+        sz = P[m][1] + nz * side * dist;
+      this.world.add(grandstand(len, T, rng, this.standPeople, sx, sz, -H[m] + (side > 0 ? 0 : Math.PI)));
+      // a seat in the 7th row, middle of the stand: eye ~1.1 m above the step
+      const back = 6 * 0.85 - (10 * 0.85) / 2 + 0.4;
+      this.standSpots.push({ pos: new THREE.Vector3(sx + nx * side * back, 0.5 * 7 + 1.1, sz + nz * side * back), face: new THREE.Vector3(-nx * side, 0, -nz * side) });
     }
 
     // Floodlight towers (real light comes from the spot pool, aimed at the track)
@@ -397,6 +409,8 @@ export class Chase3D {
 
     // Distant forest outside the walls (decorative, static)
     this.world.add(forest(track, rng, T));
+    this.fanSpots = [...this.standSpots];
+    this.fanIdx = -1;
     this.rebuildCrowd();
   }
 
@@ -408,6 +422,8 @@ export class Chase3D {
     this.treeAnim.clear();
     this.zonePeople = [];
     this.ob = ob;
+    this.fanSpots = [...this.standSpots];
+    this.fanIdx = -1;
     if (!ob) {
       this.rebuildCrowd();
       return;
@@ -434,9 +450,17 @@ export class Chase3D {
     const rng = Rng.fromString(`crowd:${this.track?.seed ?? ''}`);
     for (const z of ob.crowdZones) {
       const pts = z.pts;
-      const ads = new THREE.Mesh(vstrip(pts, 0, 1.0, 9), T.adboard);
+      // Ad boards face the track (readable from the cars); plain concrete on the crowd side.
+      // vstrip's front face points to the left of the polyline direction, so flip the order if needed.
+      const dx = pts[1][0] - pts[0][0],
+        dz = pts[1][1] - pts[0][1];
+      const towardTrack = -dz * -z.nx[0] + dx * -z.ny[0] > 0;
+      const trackward = towardTrack ? pts : [...pts].reverse();
+      const ads = new THREE.Mesh(vstrip(trackward, 0, 1.0, 9), T.adboard);
       ads.castShadow = true;
       ads.receiveShadow = true;
+      const adsBack = new THREE.Mesh(vstrip([...trackward].reverse(), 0, 1.0, 4), T.concreteFront);
+      this.obsGroup.add(adsBack);
       const link = new THREE.Mesh(vstrip(pts, 1.0, 4.2, 2), T.chainlink);
       const back = pts.map((p, i) => [p[0] + z.nx[i] * 12, p[1] + z.ny[i] * 12] as Pt);
       const terrace = new THREE.Mesh(ribbon(pts, back, 0.04), T.concrete);
@@ -445,6 +469,14 @@ export class Chase3D {
       const postMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.06, 4.3, 6), T.steel, Math.max(1, along.length));
       along.forEach(([x, y], i) => postMesh.setMatrixAt(i, new THREE.Matrix4().makeTranslation(x, 2.15, y)));
       this.obsGroup.add(ads, link, terrace, postMesh);
+      // Raised fan platforms behind the standing crowd (above the fence, so the view isn't through the mesh).
+      // The fan camera stands on these.
+      for (let k = 3; k < pts.length - 3; k += 7) {
+        const px = pts[k][0] + z.nx[k] * 8.5,
+          pz = pts[k][1] + z.ny[k] * 8.5;
+        this.obsGroup.add(platform(px, pz, Math.atan2(z.nx[k], z.ny[k]), T));
+        this.fanSpots.push({ pos: new THREE.Vector3(px - z.nx[k] * 0.9, PLATFORM_H + 1.7, pz - z.ny[k] * 0.9), face: new THREE.Vector3(-z.nx[k], 0, -z.ny[k]) });
+      }
       const spots = polyline(pts, 0.8);
       spots.forEach(([x, y], i) => {
         const k = Math.min(z.nx.length - 1, Math.floor((i / spots.length) * z.nx.length));
@@ -584,6 +616,80 @@ export class Chase3D {
     else if (ev.type === 'finish' || ev.type === 'final_lap') this.excite = 1;
   }
 
+  /** First person from a spectator spot: pick the spot nearest the action, turn the head to follow. */
+  private fanCamera(f: CarVisual, dt: number) {
+    this.fanManual = Math.max(0, this.fanManual - dt);
+    const dist = (i: number) => Math.hypot(this.fanSpots[i].pos.x - f.x, this.fanSpots[i].pos.z - f.y);
+    let best = 0;
+    for (let i = 1; i < this.fanSpots.length; i++) if (dist(i) < dist(best)) best = i;
+    if (this.fanIdx < 0 || this.fanIdx >= this.fanSpots.length) {
+      this.fanIdx = best;
+      this.snap = true;
+    } else if (!this.fanManual && best !== this.fanIdx && dist(best) < dist(this.fanIdx) * 0.55 && dist(this.fanIdx) > 120) {
+      this.fanIdx = best; // the race moved on: walk to a closer stand
+      this.snap = true;
+    }
+    const spot = this.fanSpots[this.fanIdx];
+    const look = new THREE.Vector3(f.x, 0.9, f.y);
+    if (this.snap) {
+      this.camLook.copy(look);
+      this.snap = false;
+    } else this.camLook.lerp(look, 1 - Math.exp(-dt * 7)); // head turning, a touch behind the car
+    // small idle sway so it feels hand-held
+    const sway = Math.sin(this.time * 1.3) * 0.03;
+    this.camera.position.set(spot.pos.x + sway, spot.pos.y + Math.sin(this.time * 0.9) * 0.02, spot.pos.z);
+    if (this.shake > 0.01) {
+      this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.15;
+      this.shake *= Math.exp(-dt * 5);
+    }
+    this.camera.lookAt(this.camLook);
+    // eyes don't zoom, but a fan squinting at a far corner gets a bit of help
+    const d = this.camera.position.distanceTo(look);
+    const fov = THREE.MathUtils.clamp(74 - d * 0.16, 36, 70);
+    if (Math.abs(fov - this.camera.fov) > 0.05) {
+      this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 3);
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  /** Fan camera: walk to the next spectator spot (wraps). */
+  nextFanSpot() {
+    if (!this.fanSpots.length) return;
+    this.fanIdx = (this.fanIdx + 1) % this.fanSpots.length;
+    this.fanManual = 20;
+    this.snap = true;
+  }
+
+  setCamMode(m: 'chase' | 'fan') {
+    if (m === this.camMode) return;
+    this.camMode = m;
+    this.fanIdx = -1;
+    this.snap = true;
+  }
+
+  /** Metres from the camera to the followed car (for engine volume in the fan view). */
+  distanceTo(c: CarVisual | undefined): number {
+    return c ? Math.hypot(c.x - this.camera.position.x, c.y - this.camera.position.z) : 0;
+  }
+
+  /** Replays/seeking: make the fallen-tree state match `down` instantly. */
+  syncDown(down: boolean[]) {
+    if (!this.ob) return;
+    down.forEach((d, i) => {
+      if (d === this.ob!.down[i]) return;
+      this.ob!.down[i] = d;
+      if (d) this.treeAnim.set(i, { shake0: -99, shakeAmp: 0, fall0: -999, dirX: 1, dirZ: 0 });
+      else this.treeAnim.delete(i);
+      this.placeTree(i);
+    });
+  }
+
+  /** Compile all shaders up front so opening the 3D view doesn't stutter. */
+  warmUp() {
+    const gl = this.gl as THREE.WebGLRenderer & { compileAsync?: (s: THREE.Object3D, c: THREE.Camera) => Promise<unknown> };
+    if (gl.compileAsync) void gl.compileAsync(this.scene, this.camera).catch(() => {});
+  }
+
   /** 0..1: how close the followed car is to a crowd (drives the crowd sound). */
   crowdNear(cars: CarVisual[], focus: number): number {
     const f = cars[focus];
@@ -627,7 +733,7 @@ export class Chase3D {
       for (const w of m.front) w.rotation.y = steer;
       if (m.tail) m.tail.emissiveIntensity = c.flags & FLAG.braking ? 4 : 0.8;
       const d = Math.hypot(c.x - cam.x, c.y - cam.z);
-      if (m.label) m.label.visible = i !== focus && d > 14 && d < 260;
+      if (m.label) m.label.visible = (this.camMode === 'fan' || i !== focus) && d > 6 && d < 320;
       // tyre smoke / dirt + skid marks when sliding
       const off = (c.flags & FLAG.offTrack) !== 0;
       if (d < 140 && (c.slip > 3 || (off && c.speed > 8))) {
@@ -648,9 +754,15 @@ export class Chase3D {
       if (c.flags & FLAG.stopped && !(c.flags & FLAG.finished) && Math.random() < 0.3) this.fx.emit(smokeParticle(c.x + Math.cos(c.h) * 2, 1, c.y + Math.sin(c.h) * 2, true));
     });
 
-    // Chase camera (+ shake on impacts)
+    // Camera: chase (+ shake on impacts) or first person from the crowd
     const f = cars[focus];
-    if (f) {
+    if (f && this.camMode === 'fan' && this.fanSpots.length) {
+      this.fanCamera(f, dt);
+      this.moon.position.set(f.x - 60, 120, f.y - 40);
+      this.moon.target.position.set(f.x, 0, f.y);
+      this.headlight.intensity = 0;
+    } else if (f) {
+      this.headlight.intensity = 220;
       const dx = Math.cos(f.h),
         dz = Math.sin(f.h);
       const back = 8.8 + Math.min(3, f.speed * 0.04);
@@ -769,7 +881,8 @@ function loadTextures(gl: THREE.WebGLRenderer) {
     rubber: new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.85 }),
     seat: new THREE.MeshStandardMaterial({ color: 0x2a3446, roughness: 0.8 }),
     roof: new THREE.MeshStandardMaterial({ color: 0xd8dde3, metalness: 0.5, roughness: 0.4, side: THREE.DoubleSide }),
-    adboard: new THREE.MeshStandardMaterial({ map: adTex, emissive: 0xffffff, emissiveMap: adTex, emissiveIntensity: 0.35, roughness: 0.6, side: THREE.DoubleSide }),
+    adboard: new THREE.MeshStandardMaterial({ map: adTex, emissive: 0xffffff, emissiveMap: adTex, emissiveIntensity: 0.35, roughness: 0.6 }),
+    concreteFront: new THREE.MeshStandardMaterial({ map: concreteTexture(), roughness: 0.95 }),
     chainlink: new THREE.MeshStandardMaterial({ map: chainlinkTexture(), alphaTest: 0.35, metalness: 0.7, roughness: 0.4, side: THREE.DoubleSide }),
   };
   for (const m of Object.values(mats)) sharedMats.add(m);
@@ -900,6 +1013,35 @@ function gantry(p: Pt, h: number, w: number): THREE.Group {
   g.add(beam, banner, banner2);
   g.position.set(p[0], 0, p[1]);
   g.rotation.y = -h;
+  return g;
+}
+
+const PLATFORM_H = 3.4;
+
+/** Steel scaffold viewing platform (3 x 3 m deck, railings) with a few fans on it. */
+function platform(x: number, z: number, rotY: number, T: Mats): THREE.Group {
+  const g = new THREE.Group();
+  const deck = withShadow(new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.15, 3.2), T.steel));
+  deck.position.y = PLATFORM_H;
+  g.add(deck);
+  const leg = new THREE.CylinderGeometry(0.07, 0.07, PLATFORM_H, 6);
+  for (const a of [-1.5, 1.5])
+    for (const b of [-1.5, 1.5]) {
+      const l = withShadow(new THREE.Mesh(leg, T.steel));
+      l.position.set(a, PLATFORM_H / 2, b);
+      g.add(l);
+    }
+  const rail = new THREE.BoxGeometry(3.2, 0.05, 0.05);
+  for (const s of [-1.55, 1.55]) {
+    const r = new THREE.Mesh(rail, T.steel);
+    r.position.set(0, PLATFORM_H + 1.0, s);
+    const r2 = r.clone();
+    r2.rotation.y = Math.PI / 2;
+    r2.position.set(s, PLATFORM_H + 1.0, 0);
+    g.add(r, r2);
+  }
+  g.position.set(x, 0, z);
+  g.rotation.y = rotY;
   return g;
 }
 
@@ -1183,6 +1325,8 @@ function crowdMaterial(): THREE.ShaderMaterial {
           }
         }
         base.xz += aDir * flee * 3.5;
+        // fans standing right where the camera is (fan view) are hidden so they don't fill the screen
+        if (distance(base.xz, cameraPosition.xz) < 2.8 && abs(base.y - cameraPosition.y) < 3.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
         base.y += max(0.0, sin(uTime * (7.0 + aPhase * 4.0) + aPhase * 40.0)) * 0.22 * excite;
         vec2 toCam = normalize(cameraPosition.xz - base.xz);
         vec3 right = vec3(toCam.y, 0.0, -toCam.x); // camera's right, so the card faces the viewer

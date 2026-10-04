@@ -157,7 +157,7 @@ async function main() {
     const track = generateTrack(seed);
     const laps = lapsFor(track);
     const t0 = performance.now();
-    const rec = runRace(qjs, { seed, entries, laps, maxTime: MAX_RACE_SECONDS });
+    const rec = runRace(qjs, { seed, entries, laps, maxTime: MAX_RACE_SECONDS, obstacles: true });
     const startAt = raceStartAt(slot);
     const winner = entries[rec.results[0].car];
     log(

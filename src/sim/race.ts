@@ -12,7 +12,9 @@ import { nativeBotDrive, type BotMemory } from './nativeBot';
 import type { FallbackParams } from './fallbackDriver';
 import { collideObstacles, generateObstacles, type Obstacles } from './obstacles';
 
-export const SIM_VERSION = '2'; // bump whenever race results could change for the same inputs
+export const SIM_VERSION = '3'; // bump whenever race results could change for the same inputs
+/** Races stored with this sim version or later are run with obstacles (trees + crowd fences). */
+export const OBSTACLES_SINCE = 3;
 export const FRAME_RATE = 30;
 export const FRAME_STRIDE = 8; // x, y, heading, speed, slip, progress, steer, flags
 export const FLAG = { offTrack: 1, stopped: 2, finished: 4, slipstream: 8, braking: 16 } as const;

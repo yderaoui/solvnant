@@ -6,10 +6,9 @@ import { FLAG, newCar, type CarResult, type RaceEvent } from '../sim/race';
 import { PHYS, locate, stepCar, type Car, type Input } from '../sim/physics';
 import { CAR_SNAP_STRIDE, PLAYER_COLORS, type LobbyEntry, type RoomInfo, type ServerMsg } from '../game/protocol';
 import { GameConnection } from './net';
-import { GameAudio } from './audio';
 import { collideObstacles, generateObstacles, type Obstacles } from '../sim/obstacles';
 import type { CarVisual, RaceRenderer } from './renderer';
-import type { Chase3D } from './chase3d';
+import { audio, get3d, load3d } from './view3d';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
 
@@ -22,7 +21,7 @@ interface Snap {
   order: number[];
 }
 
-type View = '3d' | 'follow' | 'map';
+type View = '3d' | 'fan' | 'follow' | 'map';
 
 const fmt = (s: number, dp = 1) => {
   const m = Math.floor(s / 60);
@@ -80,13 +79,14 @@ export class LiveGame {
   private bestLap: (number | null)[] = [];
   private tickerUntil = 0;
   private shownEvents = 0;
-  // 3D chase view (lazy-loaded)
-  private c3d: Chase3D | null = null;
-  private c3dLoading: Promise<void> | null = null;
+  // 3D view (lazy-loaded, shared with the AI League)
+  private get c3d() {
+    return this.active ? get3d() : null;
+  }
   // obstacles: `ob` follows the server (events), `predOb` is what our own prediction collides with
   private ob: Obstacles | null = null;
   private predOb: Obstacles | null = null;
-  private audio = new GameAudio();
+  private audio = audio;
 
   constructor(private renderer: RaceRenderer) {
     this.conn.onMessage = (m) => this.onMessage(m);
@@ -129,7 +129,9 @@ export class LiveGame {
       this.audio.start();
       this.setView(this.view === '3d' ? 'map' : '3d');
     };
-    $('mute-btn').onclick = () => this.toggleMute();
+    $('mute-btn').addEventListener('click', () => {
+      if (this.active) this.toggleMute();
+    });
     this.paintMute();
     // Browsers only allow sound after a gesture: start it on the first click/key while live.
     const unlock = () => {
@@ -168,11 +170,10 @@ export class LiveGame {
   stop() {
     this.active = false;
     document.body.classList.remove('is-live', 'is-racing', 'in-lobby', 'is-spec', 'view-3d');
-    this.c3d?.setVisible(false);
+    get3d()?.setVisible(false);
     this.renderer.app.stage.visible = true;
     this.audio.update(0, 0, 0, 0, 1);
-    this.audio.setMuted(this.audio.muted);
-    this.audio.stop();
+    this.pushed3d = '';
     this.conn.close();
     this.room = null;
     this.trackSeed = this.carsSeed = '';
@@ -189,7 +190,10 @@ export class LiveGame {
       case 'snap':
         this.snaps.push({ recv: performance.now(), rt: m.rt, c: m.c, order: m.order });
         if (this.snaps.length > 40) this.snaps.shift();
-        if (m.ev) {
+        if (m.ev && m.catchup) {
+          // joined mid-race: just put fallen trees down, no crash effects
+          for (const ev of m.ev) if (ev.obj !== undefined) this.treeFell(ev.obj, false);
+        } else if (m.ev) {
           this.events.push(...m.ev);
           for (const ev of m.ev) this.react(ev);
         }
@@ -290,6 +294,7 @@ export class LiveGame {
     if (!down) return;
     if (e.code === 'KeyC') this.cycleView();
     if (e.code === 'KeyM') this.toggleMute();
+    if (e.code === 'KeyV' && this.view === 'fan') this.c3d?.nextFanSpot();
     if (e.code === 'BracketRight' || e.code === 'BracketLeft') this.cycleSpectate(e.code === 'BracketRight' ? 1 : -1);
   }
 
@@ -364,13 +369,16 @@ export class LiveGame {
     p.finished = t.finished;
   }
 
+  private treeFell(i: number, animate: boolean) {
+    if (this.ob) this.ob.down[i] = true;
+    if (this.predOb) this.predOb.down[i] = true;
+    this.renderer.treeDown(i);
+    if (!animate && this.ob) this.c3d?.syncDown(this.ob.down);
+  }
+
   /** A race event from the server: crash effects, crowd reactions, sounds. */
   private react(ev: RaceEvent) {
-    if (ev.type === 'tree' && ev.down && ev.obj !== undefined) {
-      if (this.ob) this.ob.down[ev.obj] = true;
-      if (this.predOb) this.predOb.down[ev.obj] = true;
-      this.renderer.treeDown(ev.obj);
-    }
+    if (ev.type === 'tree' && ev.down && ev.obj !== undefined) this.treeFell(ev.obj, true);
     this.c3d?.onEvent(ev, this.visuals);
     const order = this.snaps.at(-1)?.order ?? [];
     const focus = this.focusCar(order);
@@ -431,7 +439,7 @@ export class LiveGame {
     }
 
     const { cars, order } = this.sampleCars(now);
-    const use3d = this.view === '3d' && !!this.c3d && room.phase !== 'lobby' && cars.length > 0;
+    const use3d = (this.view === '3d' || this.view === 'fan') && !!this.c3d && this.pushed3d !== '' && room.phase !== 'lobby' && cars.length > 0;
     this.c3d?.setVisible(use3d);
     this.renderer.app.stage.visible = !use3d;
     if (use3d) this.c3d!.render(cars, this.focusCar(order), dt);
@@ -442,7 +450,10 @@ export class LiveGame {
     if (fc && room.phase !== 'lobby') {
       const mine = this.car !== null && this.focusCar(order) === this.car;
       const throttle = mine ? this.input.throttle : fc.flags & FLAG.braking ? 0 : 0.7;
-      this.audio.update(fc.speed, throttle, fc.slip, use3d ? this.c3d!.crowdNear(cars, this.focusCar(order)) : 0.2, dt);
+      const fan = use3d && this.view === 'fan';
+      const near = fan ? 1 : use3d ? this.c3d!.crowdNear(cars, this.focusCar(order)) : 0.2;
+      const engine = fan ? Math.max(0.04, 1 - this.c3d!.distanceTo(fc) / 220) : 1;
+      this.audio.update(fc.speed, throttle, fc.slip, near, dt, engine);
     } else this.audio.update(0, 0, 0, 0.1, dt);
 
     if (now - this.lastHud > 100) {
@@ -463,7 +474,7 @@ export class LiveGame {
     if (!snaps.length || this.room?.phase === 'lobby') return { cars: [], order: [] };
     const last = snaps[snaps.length - 1];
     const serverRt = last.rt + (now - last.recv) / 1000;
-    const rt = this.room?.phase === 'race' ? serverRt - 0.1 : last.rt;
+    const rt = this.room?.phase === 'race' ? serverRt - 0.075 : last.rt; // 1.5 snapshots of cushion
     let a = snaps[0],
       b = snaps[0];
     for (let i = 0; i < snaps.length; i++) {
@@ -506,37 +517,49 @@ export class LiveGame {
     $('cam-overview').onclick = () => this.setView('map');
     $('cam-leader').onclick = () => this.setView('follow');
     $('cam-chase').onclick = () => this.setView('3d');
+    $('cam-fan').onclick = () => {
+      if (this.view === 'fan') this.c3d?.nextFanSpot();
+      else this.setView('fan');
+    };
   }
 
   private setView(v: View) {
+    if (v === 'fan' && this.car !== null && this.room?.phase === 'race') v = '3d'; // drivers drive, fans watch
     this.view = v;
-    if (v === '3d') void this.ensure3d();
+    if (v === '3d' || v === 'fan') {
+      this.audio.start();
+      void this.ensure3d().then(() => this.c3d?.setCamMode(this.view === 'fan' ? 'fan' : 'chase'));
+    }
     this.renderer.focus = this.car ?? Math.max(0, this.spectate);
     this.renderer.mode = v === 'map' ? 'overview' : this.car !== null || this.spectate >= 0 ? 'car' : 'leader';
-    const active = v === 'map' ? 'cam-overview' : v === '3d' ? 'cam-chase' : 'cam-leader';
-    for (const id of ['cam-overview', 'cam-leader', 'cam-chase']) {
+    const active = v === 'map' ? 'cam-overview' : v === '3d' ? 'cam-chase' : v === 'fan' ? 'cam-fan' : 'cam-leader';
+    for (const id of ['cam-overview', 'cam-leader', 'cam-chase', 'cam-fan']) {
       $(id).classList.toggle('active', id === active);
       $(id).setAttribute('aria-pressed', String(id === active));
     }
-    document.body.classList.toggle('view-3d', v === '3d');
+    document.body.classList.toggle('view-3d', v === '3d' || v === 'fan');
     $('spectate-btn').setAttribute('aria-pressed', String(v === '3d'));
     $('spectate-btn').querySelector('span')!.textContent = v === '3d' ? 'BACK TO MAP' : 'SPECTATE';
   }
 
-  private ensure3d(): Promise<void> {
-    if (this.c3d) return Promise.resolve();
-    this.c3dLoading ??= import('./chase3d').then(({ Chase3D }) => {
-      this.c3d = new Chase3D($('stage-canvas'));
-      if (this.track) this.c3d.setTrack(this.track);
-      if (this.ob) this.c3d.setObstacles(this.ob);
-      if (this.room && this.room.phase !== 'lobby') this.c3d.setCars(this.room.entries.map((e) => ({ name: e.name, color: e.color })), this.car ?? -1);
-    });
-    return this.c3dLoading;
+  /** Load the shared 3D view if needed and give it our track, obstacles and cars. */
+  private pushed3d = '';
+  private async ensure3d(): Promise<void> {
+    const c = await load3d($('stage-canvas'));
+    if (!this.active) return;
+    const key = `${this.trackSeed}|${this.carsSeed}`;
+    if (this.pushed3d === key) return;
+    this.pushed3d = key;
+    if (this.track) c.setTrack(this.track);
+    if (this.ob) c.setObstacles(this.ob);
+    if (this.room && this.room.phase !== 'lobby') c.setCars(this.room.entries.map((e) => ({ name: e.name, color: e.color })), this.car ?? -1);
+    c.warmUp();
   }
 
   private cycleView() {
-    const order: View[] = ['3d', 'follow', 'map'];
-    this.setView(order[(order.indexOf(this.view) + 1) % order.length]);
+    const spectating = this.car === null || this.room?.phase !== 'race';
+    const order: View[] = spectating ? ['3d', 'fan', 'follow', 'map'] : ['3d', 'follow', 'map'];
+    this.setView(order[(Math.max(0, order.indexOf(this.view)) + 1) % order.length]);
   }
 
   spectateCar(i: number) {

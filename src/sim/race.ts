@@ -6,8 +6,10 @@ import { clamp, cos, sin, wrapAngle } from './dmath';
 import { hashString, Rng } from './rng';
 import { generateTrack, lapsFor, sampleTrack, type Track } from './track';
 import { PHYS, collide, locate, speedOf, stepCar, type Car, type Input } from './physics';
-import { DriverSandbox, loadQuickJS } from './sandbox';
-import { trackForDriver, type DriverState } from './driverApi';
+import { DriverSandbox } from './sandbox';
+import { trackForDriver, type DriverState, type DriverTrack } from './driverApi';
+import { nativeBotDrive, type BotMemory } from './nativeBot';
+import type { FallbackParams } from './fallbackDriver';
 
 export const SIM_VERSION = '2'; // bump whenever race results could change for the same inputs
 export const FRAME_RATE = 30;
@@ -20,16 +22,23 @@ export interface Entry {
   name: string; // display name
   model: string; // model id (or house bot name)
   color: string;
-  code: string;
-  source: 'llm' | 'fallback' | 'house';
+  code: string; // driver source (ignored for 'human' and 'bot')
+  // llm/fallback/house = sandboxed JS code; human = live keyboard input; bot = native driver
+  source: 'llm' | 'fallback' | 'house' | 'human' | 'bot';
   driverId?: string | null;
+  botParams?: FallbackParams;
 }
+
+/** One recorded human input change: applied from `tick` onward. */
+export type InputLogEntry = [tick: number, car: number, throttle: number, steer: number, brake: number];
 
 export interface RaceConfig {
   seed: string;
   entries: Entry[];
   laps?: number;
   maxTime?: number; // seconds
+  /** Replay: human inputs recorded during a live race. */
+  inputLog?: InputLogEntry[];
 }
 
 export interface RaceEvent {
@@ -76,9 +85,6 @@ export interface RaceRecord extends RaceMeta {
   events: RaceEvent[];
 }
 
-export async function simulateRace(config: RaceConfig): Promise<RaceRecord> {
-  return runRace(await loadQuickJS(), config);
-}
 
 /** Simulate a whole race in one go. */
 export function runRace(qjs: QuickJSWASMModule, config: RaceConfig): RaceRecord {
@@ -102,18 +108,25 @@ export class RaceSim {
 
   private config: RaceConfig;
   private cars: Car[];
-  private boxes: DriverSandbox[];
+  private boxes: (DriverSandbox | null)[];
+  private botMem: BotMemory[];
+  private driverTrack: DriverTrack;
+  private humanInputs: Input[];
+  /** Human inputs as applied, for deterministic replays of live races. */
+  readonly inputLog: InputLogEntry[] = [];
+  private replayLog: InputLogEntry[];
+  private replayPos = 0;
   private inputs: Input[];
   private laps: number;
   private maxTime: number;
-  private tick = 0;
+  tick = 0;
   private leaderFinish: number | null = null;
   private fastest = Infinity;
   private prevOrder: number[];
   private pairCooldown = new Map<string, number>();
   private contactCooldown = new Map<number, number>();
 
-  constructor(qjs: QuickJSWASMModule, config: RaceConfig) {
+  constructor(qjs: QuickJSWASMModule | null, config: RaceConfig) {
     this.config = config;
     const track = (this.track = generateTrack(config.seed));
     const laps = (this.laps = config.laps ?? lapsFor(track));
@@ -132,9 +145,16 @@ export class RaceSim {
       return newCar(i, p.x - sin(p.heading) * off, p.y + cos(p.heading) * off, p.heading, p.index, L - back, -back, off, p.halfWidth);
     });
     for (const c of this.cars) locate(c, track);
+    config.entries.forEach((e, i) => (this.cars[i].reverse = e.source === 'human'));
 
-    const trackJson = JSON.stringify(trackForDriver(track, laps));
+    this.driverTrack = trackForDriver(track, laps);
+    const trackJson = JSON.stringify(this.driverTrack);
+    this.botMem = config.entries.map(() => ({ laneOffset: 0 }));
+    this.humanInputs = config.entries.map(() => ({ throttle: 0, steer: 0, brake: 0 }));
+    this.replayLog = config.inputLog ?? [];
     this.boxes = config.entries.map((e, i) => {
+      if (e.source === 'human' || e.source === 'bot') return null;
+      if (!qjs) throw new Error('sandboxed drivers need QuickJS');
       const box = new DriverSandbox(qjs, hashString(`driver:${config.seed}:${i}`));
       const r = box.load(e.code, trackJson);
       if (!r.ok) {
@@ -173,7 +193,32 @@ export class RaceSim {
   step(maxNewFrames: number) {
     const target = this.frameCount + maxNewFrames;
     while (!this.done && this.frameCount < target) this.tickOnce();
-    if (this.done) for (const b of this.boxes) b.dispose();
+    if (this.done) this.dispose();
+  }
+
+  /** Live races: set a human driver's controls (applied from the next tick, and logged). */
+  setHumanInput(car: number, input: Input) {
+    const cur = this.humanInputs[car];
+    const q = (v: number) => Math.round(clamp(num(v), -1, 1) * 100) / 100; // quantize so logs stay small
+    const next = { throttle: Math.max(0, q(input.throttle)), steer: q(input.steer), brake: Math.max(0, q(input.brake)) };
+    if (next.throttle === cur.throttle && next.steer === cur.steer && next.brake === cur.brake) return;
+    this.humanInputs[car] = next;
+    this.inputLog.push([this.tick, car, next.throttle, next.steer, next.brake]);
+  }
+
+  /** Current state of every car, for live snapshots. */
+  carStates() {
+    return this.cars;
+  }
+
+  standingsNow(): number[] {
+    return standings(this.cars);
+  }
+
+  /** Advance exactly one physics tick (live rooms drive the clock themselves). */
+  stepTick() {
+    if (!this.done) this.tickOnce();
+    if (this.done) this.dispose();
   }
 
   private tickOnce() {
@@ -184,18 +229,38 @@ export class RaceSim {
     const dt = PHYS.dt;
     const tick = this.tick;
 
+    // --- replayed human inputs (from a recorded live race)
+    while (this.replayPos < this.replayLog.length && this.replayLog[this.replayPos][0] <= tick) {
+      const [, car, throttle, steer, brake] = this.replayLog[this.replayPos++];
+      this.humanInputs[car] = { throttle, steer, brake };
+    }
+    // --- humans: their latest controls apply every tick
+    for (let i = 0; i < n; i++) {
+      if (this.config.entries[i].source !== 'human') continue;
+      const h = this.humanInputs[i];
+      inputs[i] = { throttle: h.throttle * (cars[i].finished ? 0.35 : 1), steer: h.steer, brake: h.brake };
+    }
+
     // --- drivers
     if (tick % TICKS_PER_DRIVER_CALL === 0) {
       const order = standings(cars);
       for (let i = 0; i < n; i++) {
         const c = cars[i];
         if (c.stopped) continue;
+        const entry = this.config.entries[i];
+        if (entry.source === 'human') continue;
         const state = buildState(i, cars, order, track, this.t, laps);
-        const out = this.boxes[i].call(JSON.stringify(state));
+        if (entry.source === 'bot') {
+          const out = nativeBotDrive(state, this.driverTrack, entry.botParams!, this.botMem[i]);
+          inputs[i] = { throttle: out.throttle * (c.finished ? 0.35 : 1), steer: out.steer, brake: out.brake };
+          continue;
+        }
+        const box = this.boxes[i]!;
+        const out = box.call(JSON.stringify(state));
         if (!out) {
           c.stopped = true;
           if (c.finished) continue; // crashed during the cool-down lap: doesn't count
-          c.crashReason = this.boxes[i].error;
+          c.crashReason = box.error;
           c.crashTime = this.t;
           events.push({ t: this.t, type: 'crash', car: i, text: `${this.name(i)} crashed: ${c.crashReason}` });
           continue;
@@ -357,11 +422,11 @@ export class RaceSim {
   }
 
   dispose() {
-    for (const b of this.boxes) b.dispose();
+    for (const b of this.boxes) b?.dispose();
   }
 }
 
-function newCar(id: number, x: number, y: number, h: number, idx: number, s: number, progress: number, lateral: number, halfWidth: number): Car {
+export function newCar(id: number, x: number, y: number, h: number, idx: number, s: number, progress: number, lateral: number, halfWidth: number): Car {
   return {
     id, x, y, h, vx: 0, vy: 0, steer: 0, throttle: 0, brake: 0,
     idx, s, progress, lateral, halfWidth, offTrack: false, slip: 0, slipstream: false,

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { generateTrack, TRACK_RULES } from '../src/sim/track';
-import { simulateRace, type Entry } from '../src/sim/race';
+import { RaceSim, type Entry } from '../src/sim/race';
+import { loadQuickJS, simulateRace } from '../src/sim/quickjs';
 import { CAR_COLORS, HOUSE_BOTS, fallbackDriverCode } from '../src/sim/fallbackDriver';
-import { DriverSandbox, loadQuickJS, SANDBOX_LIMITS } from '../src/sim/sandbox';
+import { DriverSandbox, SANDBOX_LIMITS } from '../src/sim/sandbox';
 import { atan2, cos, sin } from '../src/sim/dmath';
 
 function house(n: number): Entry[] {
@@ -125,5 +126,35 @@ describe('sandbox', () => {
     const r = box.load('function steer(){}', track);
     expect(r.ok).toBe(false);
     box.dispose();
+  });
+});
+
+describe('live races', () => {
+  it('replaying the recorded input log reproduces the race exactly', () => {
+    const entries: Entry[] = [
+      { name: 'P1', model: 'human', color: '#ff004d', code: '', source: 'human' },
+      { name: 'P2', model: 'human', color: '#29adff', code: '', source: 'human' },
+      ...HOUSE_BOTS.slice(0, 4).map((b, i) => ({ name: b.name, model: 'bot', color: CAR_COLORS[i], code: '', source: 'bot' as const, botParams: b.params })),
+    ];
+    const config = { seed: 'live-replay-test', entries, laps: 1, maxTime: 40 };
+    const live = new RaceSim(null, config);
+    // Two "players" mashing keys in a pattern that depends on the race state.
+    while (!live.done) {
+      const t = live.tick;
+      if (t % 7 === 0) {
+        live.setHumanInput(0, { throttle: 1, steer: Math.sin(t / 40), brake: 0 });
+        live.setHumanInput(1, { throttle: (t / 60) % 3 < 2 ? 0.8 : 0, steer: -Math.cos(t / 55) * 0.7, brake: (t / 60) % 3 < 2 ? 0 : 1 });
+      }
+      live.stepTick();
+    }
+    const a = live.record();
+    expect(live.inputLog.length).toBeGreaterThan(50);
+
+    const replay = new RaceSim(null, { ...config, inputLog: live.inputLog });
+    replay.step(1e9);
+    const b = replay.record();
+    expect(b.frameCount).toBe(a.frameCount);
+    expect(hashFrames(b.frames)).toBe(hashFrames(a.frames));
+    expect(b.results.map((r) => r.car)).toEqual(a.results.map((r) => r.car));
   });
 });

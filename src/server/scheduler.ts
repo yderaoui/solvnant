@@ -7,7 +7,7 @@
 import 'dotenv/config';
 import { createHash, randomBytes } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { loadQuickJS } from '../sim/sandbox';
+import { loadQuickJS } from '../sim/quickjs';
 import { runRace, SIM_VERSION, type Entry } from '../sim/race';
 import { generateTrack, lapsFor } from '../sim/track';
 import { CAR_COLORS, HOUSE_BOTS, fallbackDriverCode } from '../sim/fallbackDriver';

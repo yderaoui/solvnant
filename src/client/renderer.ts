@@ -2,7 +2,7 @@
 import { Application, Circle, Container, Graphics, Text } from 'pixi.js';
 import type { Track } from '../sim/track';
 import { FLAG } from '../sim/race';
-import { buildScenery, SCENE_COLORS } from './scenery';
+import { buildScenery, SCENE_COLORS, sceneryStyle } from './scenery';
 
 export interface CarVisual {
   x: number;
@@ -13,7 +13,8 @@ export interface CarVisual {
   flags: number;
 }
 
-export type CameraMode = 'overview' | 'leader' | 'car';
+// overview = whole track; leader/car = top-down follow; chase = POV behind a car, map rotates with it
+export type CameraMode = 'overview' | 'leader' | 'car' | 'chase';
 
 interface CarSprite {
   root: Container;
@@ -37,8 +38,8 @@ const COLORS = {
   verge: SCENE_COLORS.verge,
   asphalt: SCENE_COLORS.asphalt,
   line: SCENE_COLORS.edge,
-  kerbRed: 0xd8262c,
-  kerbWhite: 0xf1f1f1,
+  kerbRed: 0xff004d,
+  kerbWhite: 0xfff1e8,
 };
 
 export class RaceRenderer {
@@ -58,7 +59,14 @@ export class RaceRenderer {
   private zoom = 1;
   private camX = 0;
   private camY = 0;
+  private rot = 0;
   private snap = true;
+  /** Pixel-art mode: render at low resolution and upscale with hard pixel edges. */
+  pixel = false;
+  private textRes = 2;
+  private labelFont = 'Chakra Petch, sans-serif';
+  /** Car index of the local player (gets a "YOU" tag and ring). */
+  you = -1;
   mode: CameraMode = 'overview';
   /** Screen space covered by HUD panels; the overview camera fits the track into what's left. */
   insets = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -67,16 +75,27 @@ export class RaceRenderer {
   selected = -1;
   onCarClick: (car: number) => void = () => {};
 
-  static async create(el: HTMLElement): Promise<RaceRenderer> {
+  static async create(el: HTMLElement, opts: { pixel?: boolean } = {}): Promise<RaceRenderer> {
     const r = new RaceRenderer();
+    r.pixel = !!opts.pixel;
+    if (r.pixel) {
+      r.textRes = 0.5;
+      r.labelFont = '"Press Start 2P", monospace';
+      sceneryStyle.font = '"Press Start 2P", monospace';
+      sceneryStyle.textRes = 0.5;
+      sceneryStyle.fontSize = 14;
+    }
     r.app = new Application();
     await r.app.init({
       resizeTo: el,
       background: COLORS.grass,
-      antialias: true,
+      antialias: !r.pixel,
       autoDensity: true,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
+      // Pixel mode: half resolution, then CSS upscales with nearest-neighbour => chunky pixels.
+      resolution: r.pixel ? 0.5 : Math.min(window.devicePixelRatio || 1, 2),
+      roundPixels: r.pixel,
     });
+    if (r.pixel) r.app.canvas.style.imageRendering = 'pixelated';
     el.appendChild(r.app.canvas);
     new ResizeObserver(() => r.app.resize()).observe(el);
     r.world.addChild(r.trackLayer, r.fx, r.carLayer, r.labelLayer);
@@ -204,14 +223,15 @@ export class RaceRenderer {
       const label = new Text({
         text: e.name,
         style: {
-          fontFamily: 'Chakra Petch, sans-serif',
-          fontSize: 12,
+          fontFamily: this.labelFont,
+          fontSize: this.pixel ? 14 : 12,
           fontWeight: '700',
-          fill: 0xffffff,
-          stroke: { color: 0x000000, width: 3 },
+          fill: i === this.you ? 0xffec27 : 0xffffff,
+          stroke: { color: 0x000000, width: this.pixel ? 4 : 3 },
         },
-        resolution: 2,
+        resolution: this.textRes,
       });
+      if (i === this.you) label.text = `YOU · ${e.name}`;
       label.anchor.set(0.5, 1);
       label.eventMode = 'static';
       label.cursor = 'pointer';
@@ -241,26 +261,49 @@ export class RaceRenderer {
       tx = (b.minX + b.maxX) / 2,
       ty = (b.minY + b.maxY) / 2;
     const leader = order.length ? order[0] : -1;
-    const followIdx = this.mode === 'leader' ? leader : this.mode === 'car' ? this.focus : -1;
+    const followIdx = this.mode === 'leader' ? leader : this.mode === 'car' || this.mode === 'chase' ? this.focus : -1;
+    let trot = 0;
+    let anchorY = 0.5; // where the camera target sits vertically on screen
     if (followIdx >= 0 && cars[followIdx]) {
-      tz = Math.max(fitZoom * 3, Math.min(6, Math.max(W, H) / 240));
       const c = cars[followIdx];
-      tx = c.x + Math.cos(c.h) * c.speed * 0.6;
-      ty = c.y + Math.sin(c.h) * c.speed * 0.6;
       offX = offY = 0;
+      if (this.mode === 'chase') {
+        // POV: car near the bottom, pointing up, the world rotating around it.
+        tz = Math.max(fitZoom * 4, Math.min(9, Math.max(W, H) / 150));
+        tx = c.x;
+        ty = c.y;
+        trot = -(c.h + Math.PI / 2);
+        anchorY = 0.68;
+      } else {
+        tz = Math.max(fitZoom * 3, Math.min(6, Math.max(W, H) / 240));
+        tx = c.x + Math.cos(c.h) * c.speed * 0.6;
+        ty = c.y + Math.sin(c.h) * c.speed * 0.6;
+      }
     }
     tx -= offX / tz;
     ty -= offY / tz;
-    const k = this.snap ? 1 : Math.min(1, dt * 3);
+    const k = this.snap ? 1 : Math.min(1, dt * (this.mode === 'chase' ? 6 : 3));
     this.zoom += (tz - this.zoom) * k;
     this.camX += (tx - this.camX) * k;
     this.camY += (ty - this.camY) * k;
+    let dr = trot - this.rot;
+    dr -= Math.round(dr / (2 * Math.PI)) * 2 * Math.PI; // shortest way round
+    this.rot += dr * (this.snap ? 1 : Math.min(1, dt * 5));
     this.snap = false;
     this.world.scale.set(this.zoom);
-    this.world.position.set(W / 2 - this.camX * this.zoom, H / 2 - this.camY * this.zoom);
+    this.world.rotation = this.rot;
+    this.world.pivot.set(this.camX, this.camY);
+    this.world.position.set(W / 2, H * (this.mode === 'chase' ? anchorY : 0.5));
 
-    const carScale = Math.max(1, Math.min(2.4, 2.6 / this.zoom));
-    for (const t of this.scaleFixed) if (!t.destroyed) t.scale.set(1 / this.zoom);
+    const carScale = Math.max(this.pixel ? 1.3 : 1, Math.min(2.4, 2.6 / this.zoom));
+    for (const t of this.scaleFixed) {
+      if (t.destroyed) continue;
+      t.scale.set(1 / this.zoom);
+      t.rotation = -this.rot; // text stays upright when the camera rotates
+    }
+    // "Up" on screen, expressed in world coordinates (labels sit above cars on screen)
+    const upX = -Math.sin(this.rot),
+      upY = -Math.cos(this.rot);
     cars.forEach((c, i) => {
       const s = this.cars[i];
       if (!s) return;
@@ -270,8 +313,8 @@ export class RaceRenderer {
       s.root.scale.set(carScale);
       s.brake.visible = (c.flags & FLAG.braking) !== 0;
       s.root.alpha = c.flags & FLAG.stopped && !(c.flags & FLAG.finished) ? 0.45 : 1;
-      s.ring.visible = i === this.selected;
-      s.label.position.set(c.x, c.y - 3.2 * carScale);
+      s.ring.visible = i === this.selected || i === this.you;
+      s.label.position.set(c.x + upX * 3.2 * carScale, c.y + upY * 3.2 * carScale);
       s.label.visible = false; // decided below, in race order
       if (animateFx) {
         if (c.slip > 2.2 && c.speed > 5 && Math.random() < 0.6) this.puff(c, 0xb9bec7, 1 + c.slip * 0.15);
@@ -284,12 +327,14 @@ export class RaceRenderer {
     const boxes = this.labelBoxes;
     boxes.length = 0;
     const z = this.zoom;
+    const cr = Math.cos(this.rot),
+      sr = Math.sin(this.rot);
     for (let k = 0; k < order.length; k++) {
       const i = order[k];
       const s = this.cars[i];
       if (!s || !cars[i]) continue;
-      const sx = s.label.x * z,
-        sy = s.label.y * z;
+      const sx = (s.label.x * cr - s.label.y * sr) * z, // screen-space position (rotation-aware)
+        sy = (s.label.x * sr + s.label.y * cr) * z;
       const w = s.label.width * z + 8; // label scale is 1/zoom, so width*z = screen px
       let clash = false;
       for (let j = 0; j < boxes.length; j += 3) {
@@ -298,7 +343,7 @@ export class RaceRenderer {
           break;
         }
       }
-      if (clash && i !== this.selected) continue;
+      if (clash && i !== this.selected && i !== this.you) continue;
       s.label.visible = true;
       boxes.push(sx, sy, w);
     }

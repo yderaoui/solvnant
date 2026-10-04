@@ -1,7 +1,7 @@
 // Runs the deterministic race simulation off the main thread and streams frames back in chunks,
 // so playback can start long before the whole race has been computed.
 import { RaceSim, type RaceConfig } from '../sim/race';
-import { loadQuickJS } from '../sim/sandbox';
+import { loadQuickJS } from '../sim/quickjs';
 
 const CHUNK_FRAMES = 90; // 3 seconds of race per message
 let current = 0;

@@ -27,6 +27,9 @@ export const PHYS = {
   circleOffset: 1.25,
   circleRadius: 1.05,
   restitution: 0.35,
+  // Reverse gear (live human cars only)
+  reverseTop: 7,
+  reverseAccel: 6,
 };
 
 export interface Car {
@@ -60,6 +63,8 @@ export interface Car {
   contacts: number;
   wallHits: number;
   offTracks: number;
+  /** Live (human) cars only: holding brake at a standstill backs up, so you can get off a wall. */
+  reverse?: boolean;
 }
 
 export interface Input {
@@ -118,6 +123,9 @@ export function stepCar(car: Car, input: Input, dt: number) {
   let newLong = vLong + aLong * dt;
   if (vLong > 0 && newLong < 0 && throttle === 0) newLong = 0; // brakes don't reverse the car
   if (vLong < 0 && newLong > 0 && throttle === 0) newLong = 0;
+  if (car.reverse && !car.stopped && throttle === 0 && brake > 0.5 && vLong < 0.6) {
+    newLong = Math.max(-P.reverseTop, Math.min(newLong, vLong - P.reverseAccel * brake * dt));
+  }
 
   // Lateral: tires kill sideways velocity up to the grip left over from braking/acceleration.
   const usage = Math.min(1, Math.abs(aLong) / traction);

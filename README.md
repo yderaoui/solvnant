@@ -1,9 +1,11 @@
 # 🏁 AI Grand Prix
 
-AI models write their own `drive(state)` function, then race each other on procedurally generated tracks.
-A new race starts every 5 minutes. Every race can be replayed and checked: seed + driver code always produce the same race.
+Pixel-art racing on procedurally generated tracks. Two ways to race:
 
-**Phase 1:** AI races. No accounts, no money.
+- **Play** (`#/live`): join the lobby with a nickname, pick a colour and drive your car live with the keyboard (or touch buttons) against up to 9 other people. Empty seats are filled with bots. A new round every 5 minutes. Not driving? You're a viewer: watch from the map, follow any car, or ride along in its POV camera.
+- **AI League** (`#/league`): AI models write their own `drive(state)` function, then race each other. Every race can be replayed and checked: seed + driver code always produce the same race.
+
+No accounts, no money yet. Nickname now, X login comes in Phase 2.
 
 ## How it works
 
@@ -29,6 +31,20 @@ Browser (static site)
 - **Physics** (`src/sim/physics.ts`): grip-limited cornering with a friction circle, drifting and speed loss when grip runs out, steering that gets less sharp at speed, off-track slowdown, a wall at the edge of the runoff, slipstream, and two-circle car-to-car collisions.
 - **Driver API**: see `DRIVER_SPEC` in `src/sim/driverApi.ts`. That exact text is sent to the models.
 
+### Live multiplayer
+
+```
+Browser ──WebSocket──► Cloudflare Worker ──► Durable Object "GameRoom" (one room, free plan)
+  sends key changes        (src/game/worker.ts)   ├─ lobby (nickname + colour, max 10, bots fill to 6)
+  predicts own car                                ├─ authoritative 60 Hz sim (same physics as the league)
+  interpolates others                             ├─ 20 Hz snapshots to players and viewers
+                                                  └─ logs every input change → the race can be replayed exactly
+```
+
+- The server is the referee: your browser only sends throttle/steer/brake. Your own car is predicted locally so it reacts instantly, then nudged toward the server's position; other cars are drawn ~100 ms in the past so they move smoothly.
+- Rotation is fair: if a round is full, people who raced last round give their seat to people who didn't.
+- Cameras: **Map**, **Follow**, **POV** (the track rotates around the car). `C` cycles them; viewers can click a car or a standings row, and `[` `]` switch car.
+
 ## Run locally
 
 Needs Node 20+.
@@ -39,6 +55,14 @@ npm run dev          # http://localhost:5173
 ```
 
 With no `.env`, the site runs in **local mode**. Every slot shows a race between 8 hand-written house bots. The race is computed from the slot number, so every viewer still sees the same race.
+
+**Live multiplayer locally** (second terminal):
+
+```bash
+npm run game         # game server on ws://127.0.0.1:8787/ws  (Cloudflare's local runtime)
+```
+
+Then open http://localhost:5173/#/live. Open a second browser window to race yourself or watch as a viewer. For quicker test rounds: `npx wrangler dev --port 8787 --ip 127.0.0.1 --var SLOT_SECONDS:120 --var LOBBY_SECONDS:20`.
 
 Other commands:
 
@@ -65,7 +89,12 @@ npm run schedule -- --dry        # run the scheduler without writing to a databa
 1. Push this repo to GitHub (public).
 2. Cloudflare dashboard → *Workers & Pages* → *Create* → *Pages* → connect the repo.
 3. Build command `npm run build`, output directory `dist`.
-4. Environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `NODE_VERSION=22`.
+4. Environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GAME_URL` (see below), `NODE_VERSION=22`.
+
+**Game server → Cloudflare Workers** (free plan; Durable Objects on SQLite storage are included)
+1. `npx wrangler login` (free Cloudflare account).
+2. `npx wrangler deploy`. It prints a URL like `https://ai-grand-prix-game.<you>.workers.dev`.
+3. Set `VITE_GAME_URL=wss://ai-grand-prix-game.<you>.workers.dev/ws` in Cloudflare Pages and redeploy the site.
 
 **Scheduler → GitHub Actions** (`.github/workflows/schedule-races.yml`)
 1. Repo → *Settings* → *Secrets and variables* → *Actions*.
@@ -80,9 +109,12 @@ npm run schedule -- --dry        # run the scheduler without writing to a databa
 | OpenRouter `:free` models | ~50 requests/day (20/min) | ≤ 2 per run; each model's code reused for 24 h, so ~10–20/day |
 | GitHub Actions | unlimited on public repos | ~1 min every 30 min |
 | Supabase | 500 MB DB, pauses after 7 idle days | ~288 races/day ≈ a few MB/day; the cron keeps it active |
-| Cloudflare Pages | unlimited bandwidth | static site; all simulation runs in the browser |
+| Cloudflare Pages | unlimited bandwidth | static site; league races are simulated in the browser |
+| Cloudflare Workers + Durable Objects | 100k requests/day, 13k GB-s/day duration | one room. Incoming WebSocket messages count 20:1 as requests; clients send input only when a key changes, so a full 10-player grid uses roughly 6k requests/hour (~16 h of full racing a day). The room's loop stops when nobody is connected |
 
 Known caveats:
+- Live rounds are played from one Cloudflare location. Players far from it see more correction on their own car (the prediction hides most of it).
+- Live results are not stored yet (the room keeps the input log; saving it to Supabase is a TODO in `src/game/room.ts`).
 - GitHub turns off scheduled workflows in a repo with no commits for 60 days. Any push turns them back on.
 - The list of free OpenRouter models changes often. The scheduler finds them automatically each run.
 - Driver code is reused across tracks, so the prompt shows the model the next track as an example but asks for code that reads `TRACK` at runtime.

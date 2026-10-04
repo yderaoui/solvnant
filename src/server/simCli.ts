@@ -1,5 +1,6 @@
 // Run a race from the command line: npm run sim -- <seed>
-import { simulateRace, type Entry } from '../sim/race';
+import { type Entry } from '../sim/race';
+import { simulateRace } from '../sim/quickjs';
 import { CAR_COLORS, HOUSE_BOTS, fallbackDriverCode } from '../sim/fallbackDriver';
 
 const seed = process.argv[2] ?? 'demo';

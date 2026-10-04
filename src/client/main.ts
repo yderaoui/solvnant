@@ -1,6 +1,7 @@
 import './style.css';
 import { RaceRenderer } from './renderer';
 import { Broadcast, fmtTime } from './broadcast';
+import { LiveGame } from './livegame';
 import { CodeViewer, escapeHtml } from './codeViewer';
 import { hydrateIcons, icon } from './icons';
 import {
@@ -22,8 +23,9 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 
 hydrateIcons();
 await document.fonts.ready; // badges on the map measure their text, so the real font must be loaded first
-const renderer = await RaceRenderer.create($('stage-canvas'));
+const renderer = await RaceRenderer.create($('stage-canvas'), { pixel: true });
 const broadcast = new Broadcast(renderer);
+const live = new LiveGame(renderer);
 const viewer = new CodeViewer();
 
 broadcast.onSelectCar = (car) => {
@@ -37,15 +39,17 @@ broadcast.onSelectCar = (car) => {
     broadcast.setCamera('overview');
   });
 };
+// Standings rows: in the AI league they open the driver's code; in the live game they spectate that car.
+const pickCar = (car: number) => (live.active ? live.spectateCar(car) : broadcast.onSelectCar(car));
 $('tower').addEventListener('click', (e) => {
   const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-car]');
-  if (li) broadcast.onSelectCar(Number(li.dataset.car));
+  if (li) pickCar(Number(li.dataset.car));
 });
 $('tower').addEventListener('keydown', (e) => {
   const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-car]');
   if (li && (e.key === 'Enter' || e.key === ' ')) {
     e.preventDefault();
-    broadcast.onSelectCar(Number(li.dataset.car));
+    pickCar(Number(li.dataset.car));
   }
 });
 // Mobile: the standings panel starts collapsed (it would cover the track) and expands on tap.
@@ -66,9 +70,9 @@ function updateNextRace() {
   const slot = slotAt(now);
   const start = raceStartAt(slot);
   const el = $('next-race');
-  const live = now >= start && now < start + 150_000;
-  el.classList.toggle('is-live', live);
-  if (live) el.innerHTML = `<span class="dot" aria-hidden="true"></span><span>Race live now</span>`;
+  const isLive = now >= start && now < start + 150_000;
+  el.classList.toggle('is-live', isLive);
+  if (isLive) el.innerHTML = `<span class="dot" aria-hidden="true"></span><span>Race live now</span>`;
   else {
     const target = now < start ? start : raceStartAt(slot + 1);
     el.innerHTML = `${icon('clock', 14)}<span class="lbl">Next race</span><b>${fmtTime((target - now) / 1000).slice(0, -2)}</b>`;
@@ -97,7 +101,7 @@ function show(view: 'stage' | 'leaderboard' | 'history') {
   for (const v of ['stage', 'leaderboard', 'history']) $(`view-${v}`).hidden = v !== view;
   for (const a of document.querySelectorAll<HTMLAnchorElement>('nav a')) {
     const href = a.getAttribute('href')!;
-    const on = location.hash.startsWith(href) || (href === '#/live' && (location.hash === '' || location.hash.startsWith('#/replay')));
+    const on = location.hash.startsWith(href) || (href === '#/live' && location.hash === '') || (href === '#/league' && location.hash.startsWith('#/replay'));
     a.classList.toggle('active', on);
     if (on) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
@@ -112,6 +116,14 @@ async function route() {
   document.body.dataset.page = page;
   document.body.classList.remove('is-replay');
   if (my > 1) $('main').focus({ preventScroll: true }); // screen readers: announce the new view
+  // The live multiplayer game and the AI-league broadcast share one stage; only one drives it.
+  if (page === 'live') {
+    broadcast.deactivate();
+    show('stage');
+    live.start();
+    return;
+  }
+  if (live.active) live.stop();
   switch (page) {
     case 'leaderboard':
       show('leaderboard');
@@ -127,14 +139,14 @@ async function route() {
       return openReplay(parts.slice(1));
     default:
       show('stage');
-      return runLive(my);
+      return runLeague(my);
   }
 }
 window.addEventListener('hashchange', route);
 window.addEventListener('resize', () => renderer.resetCamera());
 
 // ---------------------------------------------------------------- live
-async function runLive(my: number) {
+async function runLeague(my: number) {
   while (my === session) {
     const slot = slotAt(Date.now());
     let race: RaceInfo | null = null;
@@ -176,7 +188,7 @@ async function openReplay(args: string[]) {
   if (!race) {
     broadcast.center(`<div class="card results"><div class="res-head">${icon('alert', 24)}Race not found</div>
       <p class="muted">It may not have finished yet, or the database isn't configured.</p>
-      <a class="btn btn-primary" href="#/live">${icon('live')}Watch live</a></div>`);
+      <a class="btn btn-primary" href="#/league">${icon('live')}Watch the AI league</a></div>`);
     return;
   }
   await broadcast.load(race, 'replay');
@@ -226,7 +238,7 @@ $('lab-copy').onclick = async () => {
 
 // ---------------------------------------------------------------- leaderboard / history
 const skeleton = (rows: number) => `<div class="table-wrap" style="border:0;background:none">${'<div class="skeleton"></div>'.repeat(rows)}</div>`;
-const empty = (ic: Parameters<typeof icon>[0], text: string, action = `<a class="btn btn-primary" href="#/live">${icon('live')}Watch the live race</a>`) =>
+const empty = (ic: Parameters<typeof icon>[0], text: string, action = `<a class="btn btn-primary" href="#/league">${icon('live')}Watch the AI league</a>`) =>
   `<div class="empty">${icon(ic, 32)}<p>${text}</p>${action}</div>`;
 
 async function renderLeaderboard() {

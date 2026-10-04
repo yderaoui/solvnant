@@ -2,8 +2,7 @@
 // no network, DOM, timers or host objects, with a memory cap, a stack cap and a per-call CPU budget.
 // The CPU budget counts interpreter interrupt polls instead of wall-clock time, so a driver
 // times out at exactly the same point on every machine. That keeps races deterministic.
-import { newQuickJSWASMModuleFromVariant, type QuickJSWASMModule, type QuickJSContext, type QuickJSHandle, type QuickJSRuntime } from 'quickjs-emscripten-core';
-import variant from '@jitl/quickjs-singlefile-mjs-release-sync';
+import type { QuickJSWASMModule, QuickJSContext, QuickJSHandle, QuickJSRuntime } from 'quickjs-emscripten-core';
 import type { DriverOutput } from './driverApi';
 
 export const SANDBOX_LIMITS = {
@@ -14,10 +13,6 @@ export const SANDBOX_LIMITS = {
   callBudget: 10, // interrupt polls allowed per drive() call (~100k ops)
 };
 
-let modulePromise: Promise<QuickJSWASMModule> | null = null;
-export function loadQuickJS(): Promise<QuickJSWASMModule> {
-  return (modulePromise ??= newQuickJSWASMModuleFromVariant(variant as any));
-}
 
 const HARNESS = (seed: number) => `
 "use strict";

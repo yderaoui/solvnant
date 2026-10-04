@@ -6,3 +6,5 @@ dist
 scratch
 *.log
 .DS_Store
+.dev.vars
+.wrangler

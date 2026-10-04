@@ -1,0 +1,81 @@
+// WebSocket connection to the live game server, with clock sync and auto-reconnect.
+import type { ClientMsg, ServerMsg } from '../game/protocol';
+
+export const GAME_URL = (import.meta.env.VITE_GAME_URL as string | undefined) || 'ws://127.0.0.1:8787/ws';
+
+/** Stable anonymous id for this browser (identifies "you" across reconnects until X login lands). */
+export function clientId(): string {
+  try {
+    let id = localStorage.getItem('agp-id');
+    if (!id) {
+      id = 'p-' + crypto.getRandomValues(new Uint32Array(2)).join('');
+      localStorage.setItem('agp-id', id);
+    }
+    return id;
+  } catch {
+    return 'p-' + Math.floor(Math.random() * 1e12);
+  }
+}
+
+export class GameConnection {
+  private ws: WebSocket | null = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private closedByUs = false;
+  readonly id = clientId();
+  rtt = 100; // ms, smoothed
+  offset = 0; // serverEpoch ≈ Date.now() + offset
+  connected = false;
+  onMessage: (m: ServerMsg) => void = () => {};
+  onStatus: (connected: boolean) => void = () => {};
+
+  connect() {
+    this.closedByUs = false;
+    const ws = new WebSocket(GAME_URL);
+    this.ws = ws;
+    ws.onopen = () => {
+      this.connected = true;
+      this.onStatus(true);
+      this.send({ t: 'hello', id: this.id });
+      this.ping();
+      this.pingTimer = setInterval(() => this.ping(), 2000);
+    };
+    ws.onmessage = (e) => {
+      let m: ServerMsg;
+      try {
+        m = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      if (m.t === 'pong') {
+        const now = Date.now();
+        const rtt = now - m.ts;
+        this.rtt = this.rtt * 0.7 + rtt * 0.3;
+        this.offset = m.st + rtt / 2 - now;
+      }
+      this.onMessage(m);
+    };
+    ws.onclose = () => {
+      this.connected = false;
+      this.onStatus(false);
+      if (this.pingTimer) clearInterval(this.pingTimer);
+      if (!this.closedByUs) setTimeout(() => this.connect(), 1500);
+    };
+  }
+
+  close() {
+    this.closedByUs = true;
+    this.ws?.close();
+  }
+
+  send(m: ClientMsg) {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(m));
+  }
+
+  serverNow(): number {
+    return Date.now() + this.offset;
+  }
+
+  private ping() {
+    this.send({ t: 'ping', ts: Date.now() });
+  }
+}

@@ -45,10 +45,11 @@ export class Broadcast {
   onSelectCar: (car: number) => void = () => {};
   onPostRace: () => void = () => {};
 
+  /** False while another controller (the live multiplayer game) owns the stage. */
+  active = true;
+
   constructor(public renderer: RaceRenderer) {
-    renderer.onCarClick = (i) => this.onSelectCar(i);
-    $('cam-overview').onclick = () => this.setCamera('overview');
-    $('cam-leader').onclick = () => this.setCamera('leader');
+    this.bind();
     $('replay-play').onclick = () => this.togglePause();
     $<HTMLInputElement>('replay-seek').oninput = (e) => this.seek(Number((e.target as HTMLInputElement).value));
     for (const b of document.querySelectorAll<HTMLButtonElement>('[data-speed]')) {
@@ -57,8 +58,29 @@ export class Broadcast {
     renderer.app.ticker.add(() => this.update());
   }
 
+  /** Take over the shared stage: camera buttons and car clicks. */
+  bind() {
+    this.active = true;
+    this.renderer.onCarClick = (i) => this.onSelectCar(i);
+    $('cam-overview').onclick = () => this.setCamera('overview');
+    $('cam-leader').onclick = () => this.setCamera('leader');
+  }
+
+  /** Stop playback (another view is taking the stage). */
+  deactivate() {
+    this.active = false;
+    this.loadToken++;
+    this.center('');
+    document.body.classList.remove('no-race', 'is-buffering', 'is-replay');
+    $('feed').innerHTML = '';
+    $('tower').innerHTML = '';
+    this.race = null;
+    this.record = null;
+  }
+
   /** Show just a track (Track Lab), no race. */
   showTrack(seed: string) {
+    this.bind();
     this.loadToken++;
     this.race = null;
     this.record = null;
@@ -72,6 +94,7 @@ export class Broadcast {
   }
 
   async load(race: RaceInfo, mode: PlayMode, note?: string) {
+    this.bind();
     const token = ++this.loadToken;
     this.race = race;
     this.mode = mode;
@@ -194,6 +217,7 @@ export class Broadcast {
   }
 
   private update() {
+    if (!this.active) return;
     const now = performance.now();
     const dtWall = Math.min(0.1, (now - this.lastWall) / 1000);
     this.lastWall = now;

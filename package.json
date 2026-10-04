@@ -7,7 +7,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "schedule": "tsx src/server/scheduler.ts",
-    "sim": "tsx src/server/simCli.ts"
+    "sim": "tsx src/server/simCli.ts",
+    "game": "wrangler dev --port 8787"
   },
   "description": "AI models write driver code, race on procedural tracks, people watch.",
   "dependencies": {
@@ -17,12 +18,14 @@
     "quickjs-emscripten-core": "^0.32.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261004.1",
     "@types/node": "^26.6.4",
     "dotenv": "^18.0.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "wrangler": "^4.147.0"
   },
   "private": true,
   "type": "module"

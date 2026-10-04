@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#070910" />
+    <meta name="theme-color" content="#1d2b53" />
     <title>AI Grand Prix</title>
-    <meta name="description" content="AI models write their own driver code and race on procedurally generated tracks. A new race every 5 minutes." />
+    <meta name="description" content="Pixel racing on AI-generated tracks. Join the grid and drive live against other players, or watch AI models race with code they wrote themselves." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23E10600'/><path d='M3 4h2v2H3zm4 0h2v2H7zm4 0h2v2h-2zM5 6h2v2H5zm4 0h2v2H9zM3 8h2v2H3zm4 0h2v2H7zm4 0h2v2h-2zM5 10h2v2H5zm4 0h2v2H9z' fill='white'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Russo+One&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Pixelify+Sans:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet" />
   </head>
   <body data-page="live">
     <a class="skip-link" href="#main">Skip to content</a>
@@ -19,14 +19,15 @@
         <span class="logo-text">AI GRAND PRIX</span>
       </a>
       <nav aria-label="Main">
-        <a href="#/live"><i data-icon="live"></i><span>Live</span></a>
+        <a href="#/live"><i data-icon="pad"></i><span>Play</span></a>
+        <a href="#/league"><i data-icon="bot"></i><span>AI League</span></a>
         <a href="#/leaderboard"><i data-icon="chart"></i><span>Leaderboard</span></a>
         <a href="#/history"><i data-icon="history"></i><span>History</span></a>
         <a href="#/lab"><i data-icon="map"></i><span>Track Lab</span></a>
       </nav>
       <div class="topbar-right">
         <span id="mode-pill" class="pill pill-warn" hidden title="Supabase is not configured: showing house-bot races computed in your browser">Local mode</span>
-        <a id="next-race" class="next-race" href="#/live" aria-live="off"></a>
+        <a id="next-race" class="next-race" href="#/league" aria-live="off"></a>
       </div>
     </header>
 
@@ -58,9 +59,24 @@
         <div class="buffering" role="status">Simulating ahead…</div>
 
         <div class="cam" role="group" aria-label="Camera">
-          <button id="cam-overview" class="chip active" aria-pressed="true"><i data-icon="overview"></i><span>Overview</span></button>
-          <button id="cam-leader" class="chip" aria-pressed="false"><i data-icon="follow"></i><span>Follow leader</span></button>
+          <button id="cam-overview" class="chip active" aria-pressed="true"><i data-icon="overview"></i><span>Map</span></button>
+          <button id="cam-leader" class="chip" aria-pressed="false"><i data-icon="follow"></i><span>Follow</span></button>
+          <button id="cam-chase" class="chip live-only" aria-pressed="false" title="Driver view (C)"><i data-icon="pov"></i><span>POV</span></button>
         </div>
+
+        <!-- Live game: player dashboard, minimap, touch controls -->
+        <div class="player-hud live-only" aria-label="Your car" role="group">
+          <div class="ph-cell ph-pos-cell"><span class="ph-k">POS</span><b id="ph-pos">–</b></div>
+          <div class="ph-cell"><span class="ph-k">KM/H</span><b id="ph-speed">0</b></div>
+          <div class="ph-cell"><span class="ph-k">LAP</span><b id="ph-lap">–</b></div>
+          <div class="ph-cell"><span class="ph-k">GAP</span><b id="ph-gap">–</b></div>
+        </div>
+        <canvas id="minimap" class="minimap live-only" width="132" height="100" aria-label="Track map"></canvas>
+        <div class="touch live-only" aria-hidden="true">
+          <div class="touch-l"><button data-touch="left">◀</button><button data-touch="right">▶</button></div>
+          <div class="touch-r"><button data-touch="down">BRK</button><button data-touch="up">GAS</button></div>
+        </div>
+        <div id="go-flash" class="go-flash" aria-hidden="true">GO!</div>
 
         <div class="replay-bar" role="group" aria-label="Replay controls">
           <button id="replay-play" class="icon-btn" aria-label="Pause"></button>
@@ -69,7 +85,7 @@
           <div class="speed" role="group" aria-label="Playback speed">
             <button data-speed="1">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
           </div>
-          <a class="btn btn-ghost small" href="#/live"><i data-icon="live" data-size="14"></i>Back to live</a>
+          <a class="btn btn-ghost small" href="#/league"><i data-icon="live" data-size="14"></i>Back to league</a>
         </div>
 
         <aside id="lab-panel" class="lab-panel" aria-label="Track Lab">

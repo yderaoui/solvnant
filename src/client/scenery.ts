@@ -6,25 +6,29 @@ import { Container, Graphics, Text } from 'pixi.js';
 import { Rng } from '../sim/rng';
 import type { Track } from '../sim/track';
 
+// Pixel-art palette (PICO-8 based, a few in-between shades for depth).
 export const SCENE_COLORS = {
-  ground: 0x07110a,
-  groundPatch: 0x0c1b10,
-  verge: 0x10241a,
-  asphalt: 0x2a2e35,
-  edge: 0xf2f5f8,
-  runoff: 0xe2b33c,
-  stand: 0x1c2027,
-  standRoof: 0x262b34,
-  tree: 0x0f2a17,
-  treeHi: 0x1b4425,
-  water: 0x0b2a3d,
-  waterHi: 0x14506e,
-  light: 0xffd98a,
-  sector: [0x22c55e, 0xfbbf24, 0x38bdf8],
-  red: 0xe10600,
+  ground: 0x00874f,
+  groundPatch: 0x007a47,
+  verge: 0xffccaa, // sand run-off strip
+  asphalt: 0x5f574f,
+  edge: 0xfff1e8,
+  runoff: 0xffec27,
+  stand: 0x1d2b53,
+  standRoof: 0x7e2553,
+  tree: 0x0b5a33,
+  treeHi: 0x00b543,
+  water: 0x1d2b53,
+  waterHi: 0x29adff,
+  light: 0xffec27,
+  sector: [0x00e436, 0xffec27, 0x29adff],
+  red: 0xff004d,
 };
 
-const CROWD = [0xf5f5f5, 0xffcf3f, 0xe10600, 0x3b82f6, 0x22c55e, 0xf472b6, 0xa78bfa, 0xfb923c, 0xd4d4d8];
+/** Text style for map badges (the renderer switches this to a pixel font in pixel mode). */
+export const sceneryStyle = { font: 'Russo One, Chakra Petch, sans-serif', textRes: 2, fontSize: 12 };
+
+const CROWD = [0xfff1e8, 0xffec27, 0xff004d, 0x29adff, 0x00e436, 0xff77a8, 0x83769c, 0xffa300, 0xc2c3c7];
 
 export interface Scenery {
   ground: Container; // under the track
@@ -389,17 +393,19 @@ function badge(parent: Container, text: string, x: number, y: number, border: nu
   const c = new Container();
   const t = new Text({
     text,
-    style: { fontFamily: 'Russo One, Chakra Petch, sans-serif', fontSize: 12, fill: 0xffffff, letterSpacing: 0.5 },
-    resolution: 2,
+    style: { fontFamily: sceneryStyle.font, fontSize: sceneryStyle.fontSize, fill: 0xffffff, letterSpacing: 0.5 },
+    resolution: sceneryStyle.textRes,
   });
   t.anchor.set(0.5);
   const w = t.width + 14,
-    h = 20;
+    h = Math.max(20, t.height + 8);
   const g = new Graphics()
-    .roundRect(-w / 2, -h / 2, w, h, 4)
-    .fill({ color: filled ? border : 0x0b0e14, alpha: filled ? 0.95 : 0.9 })
-    .roundRect(-w / 2, -h / 2, w, h, 4)
-    .stroke({ width: 1.5, color: border });
+    .rect(-w / 2 + 3, -h / 2 + 3, w, h)
+    .fill({ color: 0x000000, alpha: 0.6 }) // hard pixel drop shadow
+    .rect(-w / 2, -h / 2, w, h)
+    .fill({ color: filled ? border : 0x000000, alpha: filled ? 1 : 0.85 })
+    .rect(-w / 2, -h / 2, w, h)
+    .stroke({ width: 2, color: border, alignment: 1 });
   c.addChild(g, t);
   c.position.set(x, y);
   parent.addChild(c);

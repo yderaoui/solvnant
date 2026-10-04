@@ -73,7 +73,8 @@
         </div>
 
         <aside id="lab-panel" class="lab-panel" aria-label="Track Lab">
-          <h2>Track Lab</h2>
+          <div class="map-title"><span class="map-mark" aria-hidden="true"></span><h2>CIRCUIT <em>MAP</em></h2></div>
+          <div class="map-sub" id="lab-sub"></div>
           <p class="muted">Every track comes from its seed. Same seed, same track, always.</p>
           <form id="lab-form">
             <label for="lab-input">Seed</label>
@@ -92,6 +93,21 @@
           <h3>Corners</h3>
           <ol id="lab-corners" class="lab-corners"></ol>
         </aside>
+
+        <aside class="lab-legend" aria-label="Map legend">
+          <ul>
+            <li><span class="lg lg-kerb"></span>Track / kerbs</li>
+            <li><span class="lg lg-edge"></span>Track edge</li>
+            <li><span class="lg lg-runoff"></span>Run-off area</li>
+            <li><span class="lg lg-stand"></span>Grandstands</li>
+            <li><span class="lg lg-s1"></span>Sector 1</li>
+            <li><span class="lg lg-s2"></span>Sector 2</li>
+            <li><span class="lg lg-s3"></span>Sector 3</li>
+            <li><span class="lg lg-tree"></span>Trees / nature</li>
+            <li><span class="lg lg-light"></span>Floodlights</li>
+          </ul>
+        </aside>
+        <div class="lab-compass" aria-hidden="true"><svg width="28" height="34" viewBox="0 0 28 34"><path d="M14 0 26 30 14 23 2 30Z" fill="#e5e7eb"/><path d="M14 0 14 23 2 30Z" fill="#9aa3b5"/></svg><span>N</span></div>
 
         <aside id="code-drawer" class="drawer" role="dialog" aria-modal="false" aria-labelledby="drawer-name">
           <div class="drawer-top">

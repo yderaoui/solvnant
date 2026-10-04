@@ -2,6 +2,7 @@
 import { Application, Circle, Container, Graphics, Text } from 'pixi.js';
 import type { Track } from '../sim/track';
 import { FLAG } from '../sim/race';
+import { buildScenery, SCENE_COLORS } from './scenery';
 
 export interface CarVisual {
   x: number;
@@ -32,10 +33,10 @@ interface Particle {
 }
 
 const COLORS = {
-  grass: 0x14261a,
-  verge: 0x1d3524,
-  asphalt: 0x353a43,
-  line: 0xe9edf2,
+  grass: SCENE_COLORS.ground,
+  verge: SCENE_COLORS.verge,
+  asphalt: SCENE_COLORS.asphalt,
+  line: SCENE_COLORS.edge,
   kerbRed: 0xd8262c,
   kerbWhite: 0xf1f1f1,
 };
@@ -51,6 +52,8 @@ export class RaceRenderer {
   private cars: CarSprite[] = [];
   private particles: Particle[] = Array.from({ length: 400 }, () => ({ x: 0, y: 0, life: 0, max: 1, size: 1, color: 0 }));
   private liveParticles = 0; // particles[0..liveParticles) are alive
+  private crowdSpots: number[] = []; // where camera flashes can pop
+  private flashes: number[] = []; // x, y, life triples (reused)
   private track: Track | null = null;
   private zoom = 1;
   private camX = 0;
@@ -101,16 +104,19 @@ export class RaceRenderer {
       g.poly(a).fill(color).poly(b).cut();
       return g;
     };
-    const b = track.bounds;
-    const bg = new Graphics().rect(b.minX - 2000, b.minY - 2000, b.maxX - b.minX + 4000, b.maxY - b.minY + 4000).fill(COLORS.grass);
-    this.trackLayer.addChild(bg);
-    this.trackLayer.addChild(ring(edge((i) => -track.widths[i] / 2 - 5), edge((i) => track.widths[i] / 2 + 5), COLORS.verge));
+    const scenery = buildScenery(track);
+    this.crowdSpots = scenery.crowd;
+    this.flashes.length = 0;
+    this.trackLayer.addChild(scenery.ground);
+    this.trackLayer.addChild(ring(edge((i) => -track.widths[i] / 2 - 2.5), edge((i) => track.widths[i] / 2 + 2.5), COLORS.verge));
     this.trackLayer.addChild(ring(edge((i) => -track.widths[i] / 2), edge((i) => track.widths[i] / 2), COLORS.asphalt));
 
+    // Glowing white edges (a soft wide stroke under a crisp thin one)
     const lines = new Graphics();
     for (const side of [-1, 1]) {
       const e = edge((i) => side * (track.widths[i] / 2 - 0.5));
-      lines.poly(e, true).stroke({ width: 0.35, color: COLORS.line, alpha: 0.85 });
+      lines.poly(e, true).stroke({ width: 2.4, color: COLORS.line, alpha: 0.12 });
+      lines.poly(e, true).stroke({ width: 0.45, color: COLORS.line, alpha: 0.95 });
     }
     this.trackLayer.addChild(lines);
 
@@ -163,22 +169,8 @@ export class RaceRenderer {
     }
     this.trackLayer.addChild(sf);
 
-    // Corner numbers
-    for (const c of track.corners) {
-      const [cx, cy] = normal(c.apex);
-      const side = c.direction === 'right' ? -1 : 1;
-      const off = (track.widths[c.apex] / 2 + 12) * side;
-      const t = new Text({
-        text: `T${c.id}`,
-        style: { fontFamily: 'Chakra Petch, sans-serif', fontSize: 13, fontWeight: '700', fill: 0xc8d0dc },
-        resolution: 2,
-      });
-      t.anchor.set(0.5);
-      t.alpha = 0.7;
-      t.position.set(track.points[c.apex][0] + cx * off, track.points[c.apex][1] + cy * off);
-      this.trackLayer.addChild(t);
-      this.scaleFixed.push(t);
-    }
+    this.trackLayer.addChild(scenery.above);
+    this.scaleFixed.push(...scenery.fixed);
     this.snap = true;
   }
 
@@ -313,6 +305,22 @@ export class RaceRenderer {
 
     // Particles
     this.fx.clear();
+    // Camera flashes in the grandstands
+    const fl = this.flashes;
+    if (this.crowdSpots.length && Math.random() < (animateFx ? 0.9 : 0.25)) {
+      const k = Math.floor(Math.random() * (this.crowdSpots.length / 2)) * 2;
+      fl.push(this.crowdSpots[k], this.crowdSpots[k + 1], 0.18);
+    }
+    for (let i = 0; i < fl.length; ) {
+      fl[i + 2] -= dt;
+      if (fl[i + 2] <= 0) {
+        fl.splice(i, 3);
+        continue;
+      }
+      const a = fl[i + 2] / 0.18;
+      this.fx.circle(fl[i], fl[i + 1], 1.6 * a + 0.4).fill({ color: 0xffffff, alpha: a });
+      i += 3;
+    }
     const ps = this.particles;
     for (let i = 0; i < this.liveParticles; ) {
       const p = ps[i];

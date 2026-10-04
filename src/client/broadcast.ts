@@ -467,7 +467,7 @@ export class Broadcast {
   private setHudVisible(v: boolean) {
     document.body.classList.toggle('no-race', !v);
     // Keep the track clear of the panels: race HUD (top bar, tower right, controls bottom) or the Track Lab panel (left).
-    this.renderer.insets = v ? { top: 72, right: 300, bottom: 64, left: 16 } : { top: 16, right: 16, bottom: 16, left: 350 };
+    this.renderer.insets = v ? { top: 72, right: 300, bottom: 64, left: 16 } : { top: 16, right: 200, bottom: 16, left: 350 };
     this.renderer.resetCamera();
   }
 }

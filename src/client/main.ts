@@ -191,6 +191,8 @@ function openLab(seed: string) {
   broadcast.showTrack(seed);
   const t = generateTrack(seed);
   $('lab-seed').textContent = seed;
+  const clockwise = t.curvature.reduce((s, k) => s + k, 0) > 0;
+  $('lab-sub').textContent = `${t.corners.length} TURNS · ${clockwise ? 'CLOCKWISE' : 'ANTI-CLOCKWISE'}`;
   $<HTMLInputElement>('lab-input').value = seed;
   const stat = (v: string, label: string) => `<div class="stat"><b>${v}</b><span>${label}</span></div>`;
   $('lab-stats').innerHTML =

@@ -189,31 +189,37 @@ export class Broadcast {
     }
   }
 
+  // Reused every frame (no allocation in the render loop).
+  private carBuf: CarVisual[] = [];
+  private progressBuf: number[] = [];
+  private orderBuf: number[] = [];
+
   private sample(t: number): { cars: CarVisual[]; progress: number[] } {
     const rec = this.record!;
     const n = rec.carCount,
       S = rec.stride;
+    const cars = this.carBuf,
+      progress = this.progressBuf;
+    while (cars.length < n) cars.push({ x: 0, y: 0, h: 0, speed: 0, slip: 0, flags: 0 });
+    cars.length = progress.length = n;
     const f = Math.max(0, Math.min(t * rec.frameRate, rec.frameCount - 1));
     const i0 = Math.floor(f),
       i1 = Math.min(i0 + 1, rec.frameCount - 1),
       a = f - i0;
-    const cars: CarVisual[] = [];
-    const progress: number[] = [];
     for (let c = 0; c < n; c++) {
       const o0 = (i0 * n + c) * S,
         o1 = (i1 * n + c) * S;
       const F = rec.frames;
       let dh = F[o1 + 2] - F[o0 + 2];
       dh -= Math.round(dh / (2 * Math.PI)) * 2 * Math.PI;
-      cars.push({
-        x: F[o0] + (F[o1] - F[o0]) * a,
-        y: F[o0 + 1] + (F[o1 + 1] - F[o0 + 1]) * a,
-        h: F[o0 + 2] + dh * a,
-        speed: F[o0 + 3] + (F[o1 + 3] - F[o0 + 3]) * a,
-        slip: F[o0 + 4],
-        flags: F[o0 + 7],
-      });
-      progress.push(F[o0 + 5] + (F[o1 + 5] - F[o0 + 5]) * a);
+      const car = cars[c];
+      car.x = F[o0] + (F[o1] - F[o0]) * a;
+      car.y = F[o0 + 1] + (F[o1 + 1] - F[o0 + 1]) * a;
+      car.h = F[o0 + 2] + dh * a;
+      car.speed = F[o0 + 3] + (F[o1 + 3] - F[o0 + 3]) * a;
+      car.slip = F[o0 + 4];
+      car.flags = F[o0 + 7];
+      progress[c] = F[o0 + 5] + (F[o1 + 5] - F[o0 + 5]) * a;
     }
     return { cars, progress };
   }
@@ -223,9 +229,10 @@ export class Broadcast {
       const ft = this.record!.finishTimes.get(i);
       return ft !== undefined && ft <= t ? ft : null;
     };
-    return cars
-      .map((_, i) => i)
-      .sort((a, b) => {
+    const order = this.orderBuf;
+    order.length = cars.length;
+    for (let i = 0; i < cars.length; i++) order[i] = i;
+    return order.sort((a, b) => {
         const fa = fin(a),
           fb = fin(b);
         if (fa !== null && fb !== null) return fa - fb;

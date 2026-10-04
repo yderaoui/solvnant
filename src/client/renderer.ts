@@ -49,7 +49,8 @@ export class RaceRenderer {
   private labelLayer = new Container();
   private scaleFixed: Container[] = []; // labels kept at constant screen size
   private cars: CarSprite[] = [];
-  private particles: Particle[] = [];
+  private particles: Particle[] = Array.from({ length: 400 }, () => ({ x: 0, y: 0, life: 0, max: 1, size: 1, color: 0 }));
+  private liveParticles = 0; // particles[0..liveParticles) are alive
   private track: Track | null = null;
   private zoom = 1;
   private camX = 0;
@@ -82,7 +83,7 @@ export class RaceRenderer {
     this.track = track;
     this.trackLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.scaleFixed = this.scaleFixed.filter((c) => !c.destroyed);
-    this.particles = [];
+    this.liveParticles = 0;
     const N = track.points.length;
     const normal = (i: number): [number, number] => [-Math.sin(track.headings[i]), Math.cos(track.headings[i])];
     const edge = (off: (i: number) => number) =>
@@ -273,12 +274,20 @@ export class RaceRenderer {
 
     // Particles
     this.fx.clear();
-    for (const p of this.particles) {
+    const ps = this.particles;
+    for (let i = 0; i < this.liveParticles; ) {
+      const p = ps[i];
       p.life -= dt;
-      const a = Math.max(0, p.life / p.max);
+      if (p.life <= 0) {
+        // swap-remove: move the last live particle into this slot
+        ps[i] = ps[--this.liveParticles];
+        ps[this.liveParticles] = p;
+        continue;
+      }
+      const a = p.life / p.max;
       this.fx.circle(p.x, p.y, p.size * (2 - a)).fill({ color: p.color, alpha: a * 0.35 });
+      i++;
     }
-    this.particles = this.particles.filter((p) => p.life > 0);
   }
 
   resetCamera() {
@@ -286,15 +295,13 @@ export class RaceRenderer {
   }
 
   private puff(c: CarVisual, color: number, size: number) {
-    if (this.particles.length > 400) return;
-    this.particles.push({
-      x: c.x - Math.cos(c.h) * 2 + (Math.random() - 0.5),
-      y: c.y - Math.sin(c.h) * 2 + (Math.random() - 0.5),
-      life: 0.9,
-      max: 0.9,
-      size,
-      color,
-    });
+    if (this.liveParticles >= this.particles.length) return;
+    const p = this.particles[this.liveParticles++];
+    p.x = c.x - Math.cos(c.h) * 2 + (Math.random() - 0.5);
+    p.y = c.y - Math.sin(c.h) * 2 + (Math.random() - 0.5);
+    p.life = p.max = 0.9;
+    p.size = size;
+    p.color = color;
   }
 }
 

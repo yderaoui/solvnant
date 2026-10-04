@@ -17,6 +17,7 @@ import {
   cleanName,
   type ClientMsg,
   type LobbyEntry,
+  type RecentWinner,
   type Phase,
   type RoomInfo,
   type ServerMsg,
@@ -52,7 +53,14 @@ export class GameRoom {
   private lobbyMs = COUNTDOWN_MS;
   private maxRace = MAX_RACE_SECONDS;
 
-  constructor(_state: unknown, env: Record<string, string | undefined>) {
+  private recent: RecentWinner[] = [];
+  private storage: { get(k: string): Promise<unknown>; put(k: string, v: unknown): Promise<void> } | null = null;
+
+  constructor(state: { storage?: GameRoom['storage'] } | undefined, env: Record<string, string | undefined>) {
+    this.storage = state?.storage ?? null;
+    void this.storage?.get('recent').then((r) => {
+      if (Array.isArray(r)) this.recent = r as RecentWinner[];
+    });
     if (env?.SLOT_SECONDS) this.slotMs = Number(env.SLOT_SECONDS) * 1000;
     if (env?.LOBBY_SECONDS) this.lobbyMs = Number(env.LOBBY_SECONDS) * 1000;
     this.maxRace = Math.min(MAX_RACE_SECONDS, (this.slotMs - this.lobbyMs) / 1000 - 20);
@@ -241,7 +249,24 @@ export class GameRoom {
   private finishRace() {
     if (!this.sim || this.phase !== 'race') return;
     this.phase = 'results';
-    this.broadcast({ t: 'results', results: this.sim.results(), duration: this.sim.t });
+    const results = this.sim.results();
+    const win = results[0];
+    const e = this.raceEntries[win.car];
+    if (e) {
+      this.recent.unshift({
+        slot: this.slot,
+        name: e.name,
+        color: e.color,
+        kind: e.kind,
+        time: win.finishTime,
+        field: this.raceEntries.length,
+        humans: this.raceEntries.filter((x) => x.kind === 'human').length,
+        at: Date.now(),
+      });
+      this.recent = this.recent.slice(0, 5);
+      void this.storage?.put('recent', this.recent);
+    }
+    this.broadcast({ t: 'results', results, duration: this.sim.t });
     this.broadcastRoom();
     // TODO(persist): store { seed, laps, entries, inputLog: this.sim.inputLog, results } in Supabase for replays.
   }
@@ -258,6 +283,7 @@ export class GameRoom {
       entries: this.phase === 'lobby' ? this.players : this.raceEntries,
       maxPlayers: MAX_PLAYERS,
       viewers: this.conns.size,
+      recent: this.recent,
     };
   }
 

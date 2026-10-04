@@ -3,23 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#1d2b53" />
-    <title>AI Grand Prix</title>
-    <meta name="description" content="Pixel racing on AI-generated tracks. Join the grid and drive live against other players, or watch AI models race with code they wrote themselves." />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23E10600'/><path d='M3 4h2v2H3zm4 0h2v2H7zm4 0h2v2h-2zM5 6h2v2H5zm4 0h2v2H9zM3 8h2v2H3zm4 0h2v2H7zm4 0h2v2h-2zM5 10h2v2H5zm4 0h2v2H9z' fill='white'/></svg>" />
+    <meta name="theme-color" content="#06080b" />
+    <title>TrackLab 2D</title>
+    <meta name="description" content="Race · Bet · Earn. Join the grid and drive live against other players on AI-generated night circuits, or watch AI models race with code they wrote themselves." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2306080b'/><path d='M5 22 12 8h5l-7 14z' fill='%238cff2e'/><path d='M14 22 21 8h5l-7 14z' fill='white'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Pixelify+Sans:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,600;0,700;0,800;1,700;1,800;1,900&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
   </head>
   <body data-page="live">
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="topbar">
-      <a class="logo" href="#/live" aria-label="AI Grand Prix home">
-        <span class="logo-mark" aria-hidden="true"></span>
-        <span class="logo-text">AI GRAND PRIX</span>
+      <a class="logo" href="#/live" aria-label="TrackLab 2D home">
+        <span class="logo-mark" aria-hidden="true"><i></i><i></i></span>
+        <span class="logo-words"><span class="logo-text">TRACKLAB <em>2D</em></span><span class="logo-tag">RACE · BET · EARN</span></span>
       </a>
       <nav aria-label="Main">
-        <a href="#/live"><i data-icon="pad"></i><span>Play</span></a>
+        <a href="#/live"><i data-icon="flag"></i><span>Race</span></a>
         <a href="#/league"><i data-icon="bot"></i><span>AI League</span></a>
         <a href="#/leaderboard"><i data-icon="chart"></i><span>Leaderboard</span></a>
         <a href="#/history"><i data-icon="history"></i><span>History</span></a>
@@ -28,11 +28,15 @@
       <div class="topbar-right">
         <span id="mode-pill" class="pill pill-warn" hidden title="Supabase is not configured: showing house-bot races computed in your browser">Local mode</span>
         <a id="next-race" class="next-race" href="#/league" aria-live="off"></a>
+        <button class="x-btn" disabled title="X login arrives in Phase 2">
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.9 2H22l-6.8 7.8L23 22h-6.2l-4.9-6.4L6.3 22H3.2l7.3-8.3L1 2h6.3l4.4 5.9zm-1.1 18h1.7L6.3 3.9H4.5z"/></svg>
+          <span><b>Connect X</b><small>soon</small></span>
+        </button>
       </div>
     </header>
 
     <main id="main" tabindex="-1">
-      <section id="view-stage" class="stage" aria-label="Race broadcast">
+      <section id="view-stage" class="stage" aria-label="Race">
         <div id="stage-canvas"></div>
         <div class="vignette" aria-hidden="true"></div>
 
@@ -49,29 +53,68 @@
 
         <section class="tower-wrap" aria-label="Standings">
           <button class="tower-head" id="tower-toggle" aria-expanded="true" aria-controls="tower">
-            <span>Standings</span><span class="tower-head-hint">Tap a driver for their code</span><i data-icon="down" data-size="14"></i>
+            <span>Leaderboard</span><span class="tower-head-hint">Tap a driver for their code</span><i data-icon="down" data-size="14"></i>
           </button>
           <ol id="tower" class="tower"></ol>
         </section>
 
         <ul id="feed" class="feed" aria-live="polite" aria-label="Race events"></ul>
+
+        <!-- ============ Live game: driver HUD (3D chase view) ============ -->
+        <section class="drv-board live-ui drv-only" aria-label="Your position">
+          <div class="drv-top"><b id="drv-pos">P–</b><span id="drv-of">/ –</span><span class="drv-lap">LAP <b id="drv-lap">–</b> / <span id="drv-laps">–</span></span></div>
+          <ol id="drv-rows"></ol>
+        </section>
+        <section class="drv-times live-ui drv-only" aria-label="Lap times">
+          <div><span>CURRENT LAP</span><b id="t-cur">0:00.00</b></div>
+          <div><span>BEST LAP</span><b id="t-best">–</b></div>
+          <div><span>TOTAL TIME</span><b id="t-total">0:00.00</b></div>
+        </section>
+        <div class="mini-wrap live-ui" aria-label="Track map">
+          <canvas id="minimap" width="264" height="200"></canvas>
+          <span id="mini-pos" class="mini-pos"></span>
+        </div>
+        <div class="speedo live-ui drv-only" aria-label="Speed">
+          <svg viewBox="0 0 200 200" aria-hidden="true">
+            <circle class="sp-track" cx="100" cy="100" r="84" pathLength="100" />
+            <circle id="speedo-arc" class="sp-arc" cx="100" cy="100" r="84" pathLength="100" />
+          </svg>
+          <div class="sp-read"><span class="sp-unit">KM/H</span><b id="speedo-kmh">0</b><i id="speedo-gear">N</i></div>
+        </div>
+
+        <!-- ============ Live game: spectator panels ============ -->
+        <div class="race-strip live-ui" aria-live="off">
+          <span class="rs-live"><span class="ring" aria-hidden="true"></span><span id="rs-phase">LIVE RACE</span></span>
+          <span id="rs-lap">LAP –</span>
+          <span id="rs-clock" class="rs-clock">0:00.0</span>
+        </div>
+        <section class="spec-board live-ui spec-only" aria-label="Leaderboard">
+          <h3>LEADERBOARD</h3>
+          <ol id="spec-rows"></ol>
+          <h3>WIN PROBABILITY <small>live estimate</small></h3>
+          <ul id="spec-prob" class="prob"></ul>
+        </section>
+        <section class="spec-list live-ui spec-only" aria-label="Drivers">
+          <h3>DRIVERS</h3>
+          <ul id="spec-drivers"></ul>
+        </section>
+        <div class="bet-bar live-ui spec-only" role="group" aria-label="Bet on the winner">
+          <span class="bet-title">BET ON THE WINNER</span>
+          <div id="bet-odds" class="bet-odds"></div>
+          <button class="btn btn-lime" disabled title="Points betting arrives in Phase 2">PLACE BET <small>soon</small></button>
+        </div>
+        <button id="spectate-btn" class="spectate live-ui spec-only" aria-pressed="false"><i data-icon="pov"></i><span>SPECTATE</span></button>
+        <div id="ticker" class="ticker live-ui" aria-live="polite"></div>
+
         <div id="center" class="center"></div>
         <div class="buffering" role="status">Simulating ahead…</div>
 
         <div class="cam" role="group" aria-label="Camera">
-          <button id="cam-overview" class="chip active" aria-pressed="true"><i data-icon="overview"></i><span>Map</span></button>
+          <button id="cam-chase" class="chip live-only" aria-pressed="false" title="3D driver view (C)"><i data-icon="pov"></i><span>3D</span></button>
           <button id="cam-leader" class="chip" aria-pressed="false"><i data-icon="follow"></i><span>Follow</span></button>
-          <button id="cam-chase" class="chip live-only" aria-pressed="false" title="Driver view (C)"><i data-icon="pov"></i><span>POV</span></button>
+          <button id="cam-overview" class="chip active" aria-pressed="true"><i data-icon="overview"></i><span>Map</span></button>
         </div>
 
-        <!-- Live game: player dashboard, minimap, touch controls -->
-        <div class="player-hud live-only" aria-label="Your car" role="group">
-          <div class="ph-cell ph-pos-cell"><span class="ph-k">POS</span><b id="ph-pos">–</b></div>
-          <div class="ph-cell"><span class="ph-k">KM/H</span><b id="ph-speed">0</b></div>
-          <div class="ph-cell"><span class="ph-k">LAP</span><b id="ph-lap">–</b></div>
-          <div class="ph-cell"><span class="ph-k">GAP</span><b id="ph-gap">–</b></div>
-        </div>
-        <canvas id="minimap" class="minimap live-only" width="132" height="100" aria-label="Track map"></canvas>
         <div class="touch live-only" aria-hidden="true">
           <div class="touch-l"><button data-touch="left">◀</button><button data-touch="right">▶</button></div>
           <div class="touch-r"><button data-touch="down">BRK</button><button data-touch="up">GAS</button></div>
@@ -88,8 +131,9 @@
           <a class="btn btn-ghost small" href="#/league"><i data-icon="live" data-size="14"></i>Back to league</a>
         </div>
 
+        <!-- ============ Track Lab ============ -->
         <aside id="lab-panel" class="lab-panel" aria-label="Track Lab">
-          <div class="map-title"><span class="map-mark" aria-hidden="true"></span><h2>CIRCUIT <em>MAP</em></h2></div>
+          <div class="map-title"><span class="map-mark" aria-hidden="true"></span><h2>RACE <em>CIRCUIT</em></h2></div>
           <div class="map-sub" id="lab-sub"></div>
           <p class="muted">Every track comes from its seed. Same seed, same track, always.</p>
           <form id="lab-form">
@@ -100,7 +144,7 @@
             </div>
           </form>
           <div class="lab-buttons">
-            <button id="lab-new" class="btn btn-primary"><i data-icon="shuffle"></i>New seed</button>
+            <button id="lab-new" class="btn btn-lime"><i data-icon="shuffle"></i>New seed</button>
             <button id="lab-race" class="btn"><i data-icon="play"></i>Test race</button>
             <button id="lab-copy" class="btn btn-ghost" aria-label="Copy link to this track"><i data-icon="link"></i><span>Copy link</span></button>
           </div>
@@ -109,21 +153,20 @@
           <h3>Corners</h3>
           <ol id="lab-corners" class="lab-corners"></ol>
         </aside>
-
+        <div id="lab-info" class="lab-info" aria-label="Circuit info"></div>
         <aside class="lab-legend" aria-label="Map legend">
           <ul>
-            <li><span class="lg lg-kerb"></span>Track / kerbs</li>
-            <li><span class="lg lg-edge"></span>Track edge</li>
-            <li><span class="lg lg-runoff"></span>Run-off area</li>
             <li><span class="lg lg-stand"></span>Grandstands</li>
-            <li><span class="lg lg-s1"></span>Sector 1</li>
-            <li><span class="lg lg-s2"></span>Sector 2</li>
-            <li><span class="lg lg-s3"></span>Sector 3</li>
-            <li><span class="lg lg-tree"></span>Trees / nature</li>
+            <li><span class="lg lg-vip"></span>VIP area</li>
+            <li><span class="lg lg-paddock"></span>Paddock</li>
+            <li><span class="lg lg-fan"></span>Food &amp; drinks</li>
             <li><span class="lg lg-light"></span>Floodlights</li>
+            <li><span class="lg lg-kerb"></span>Kerbs</li>
+            <li><span class="lg lg-sector"></span>Sectors</li>
+            <li><span class="lg lg-tree"></span>Nature</li>
           </ul>
         </aside>
-        <div class="lab-compass" aria-hidden="true"><svg width="28" height="34" viewBox="0 0 28 34"><path d="M14 0 26 30 14 23 2 30Z" fill="#e5e7eb"/><path d="M14 0 14 23 2 30Z" fill="#9aa3b5"/></svg><span>N</span></div>
+        <div class="lab-slogan" aria-hidden="true">SAME TRACK.<br />DIFFERENT RACES.</div>
 
         <aside id="code-drawer" class="drawer" role="dialog" aria-modal="false" aria-labelledby="drawer-name">
           <div class="drawer-top">
@@ -139,7 +182,7 @@
       <section id="view-leaderboard" class="page" hidden aria-labelledby="lb-title">
         <header class="page-head">
           <h1 id="lb-title">Model leaderboard</h1>
-          <p class="muted">Every finished race, by model. Only races a model drove with its own code count. House bots are a hand-written baseline.</p>
+          <p class="muted">Every finished AI League race, by model. Only races a model drove with its own code count. House bots are a hand-written baseline.</p>
         </header>
         <div id="leaderboard-body"></div>
       </section>
@@ -147,7 +190,7 @@
       <section id="view-history" class="page" hidden aria-labelledby="hist-title">
         <header class="page-head">
           <h1 id="hist-title">Race history</h1>
-          <p class="muted">Every race is stored as seed + driver code. Replays are re-simulated from scratch in your browser and checked against the stored result.</p>
+          <p class="muted">Every AI League race is stored as seed + driver code. Replays are re-simulated from scratch in your browser and checked against the stored result.</p>
         </header>
         <div id="history-body"></div>
       </section>

@@ -1,8 +1,8 @@
-# 🏁 AI Grand Prix
+# TrackLab 2D
 
-Pixel-art racing on procedurally generated tracks. Two ways to race:
+**Race · Bet · Earn.** Night-circuit racing on procedurally generated tracks. Two ways to race:
 
-- **Play** (`#/live`): join the lobby with a nickname, pick a colour and drive your car live with the keyboard (or touch buttons) against up to 9 other people. Empty seats are filled with bots. A new round every 5 minutes. Not driving? You're a viewer: watch from the map, follow any car, or ride along in its POV camera.
+- **Race** (`#/live`): join the lobby with a nickname, pick a colour and drive live with the keyboard (or touch buttons) against up to 9 other people, from a 3D chase camera or the 2D map. Empty seats are filled with bots. A new round every 5 minutes. Not driving? You're a spectator: leaderboard, live win-probability estimate, pick any driver and ride along in 3D.
 - **AI League** (`#/league`): AI models write their own `drive(state)` function, then race each other. Every race can be replayed and checked: seed + driver code always produce the same race.
 
 No accounts, no money yet. Nickname now, X login comes in Phase 2.
@@ -43,7 +43,8 @@ Browser ──WebSocket──► Cloudflare Worker ──► Durable Object "Gam
 
 - The server is the referee: your browser only sends throttle/steer/brake. Your own car is predicted locally so it reacts instantly, then nudged toward the server's position; other cars are drawn ~100 ms in the past so they move smoothly.
 - Rotation is fair: if a round is full, people who raced last round give their seat to people who didn't.
-- Cameras: **Map**, **Follow**, **POV** (the track rotates around the car). `C` cycles them; viewers can click a car or a standings row, and `[` `]` switch car.
+- Cameras: **3D** (chase cam, three.js, loaded only when used), **Follow** and **Map** (2D). `C` cycles them; spectators pick a car in the driver list or on the map, and `[` `]` switch car.
+- The bet bar, prize pool and token gate are shown in the UI but stay disabled until Phase 2 (points) and Phase 4 (devnet pots).
 
 ## Run locally
 

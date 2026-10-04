@@ -1,12 +1,13 @@
-// Live multiplayer: join the lobby, drive with the keyboard (or touch), watch as a viewer.
+// Live multiplayer: join the lobby, drive (3D chase view or 2D map), or spectate.
 // The server is authoritative. Your own car is predicted locally so it responds instantly, then
 // gently corrected toward the server; other cars are interpolated ~100 ms in the past.
 import { generateTrack, type Track } from '../sim/track';
 import { FLAG, newCar, type CarResult, type RaceEvent } from '../sim/race';
 import { PHYS, locate, stepCar, type Car, type Input } from '../sim/physics';
-import { CAR_SNAP_STRIDE, PLAYER_COLORS, type RoomInfo, type ServerMsg } from '../game/protocol';
+import { CAR_SNAP_STRIDE, PLAYER_COLORS, type LobbyEntry, type RoomInfo, type ServerMsg } from '../game/protocol';
 import { GameConnection } from './net';
-import type { CameraMode, CarVisual, RaceRenderer } from './renderer';
+import type { CarVisual, RaceRenderer } from './renderer';
+import type { Chase3D } from './chase3d';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
 
@@ -19,14 +20,32 @@ interface Snap {
   order: number[];
 }
 
-const fmt = (s: number) => {
+type View = '3d' | 'follow' | 'map';
+
+const fmt = (s: number, dp = 1) => {
   const m = Math.floor(s / 60);
-  return `${m}:${(s - m * 60).toFixed(1).padStart(4, '0')}`;
+  return `${m}:${(s - m * 60).toFixed(dp).padStart(dp + 3, '0')}`;
 };
 const fmtCountdown = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
-  return s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : String(s);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
+const ago = (ms: number) => {
+  const m = Math.round(ms / 60000);
+  return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
+};
+const initials = (name: string) =>
+  name
+    .replace(/^BOT\s+/i, '')
+    .split(/[\s_.-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join('') || '?';
+const avatar = (e: { name: string; color: string; kind?: string }) =>
+  `<span class="av" style="--c:${e.color}">${e.kind === 'bot' ? icon('bot', 14) : escapeHtml(initials(e.name))}</span>`;
+const carIcon = (color: string) =>
+  `<svg class="car-ic" viewBox="0 0 48 16" aria-hidden="true"><path d="M2 11 6 6l10-2h12l8 3 8 1 2 3v2H2z" fill="${color}"/><path d="M17 5h9l5 3H14z" fill="#0b1220" opacity=".8"/><circle cx="11" cy="13" r="3" fill="#0b0d10" stroke="#9aa3ad"/><circle cx="37" cy="13" r="3" fill="#0b0d10" stroke="#9aa3ad"/></svg>`;
 
 export class LiveGame {
   active = false;
@@ -46,18 +65,27 @@ export class LiveGame {
   private input: Input = { throttle: 0, steer: 0, brake: 0 };
   private lastSent = 0;
   private sentKey = '';
-  private cam: CameraMode = 'leader';
+  private view: View = 'map';
   private spectate = -1;
   private lastWall = performance.now();
   private lastHud = 0;
-  private overlayFor = '';
+  private overlayFor = 'stale';
   private visuals: CarVisual[] = [];
   private goUntil = 0;
+  // lap timing per car, from snapshots
+  private lapNo: number[] = [];
+  private lapStart: number[] = [];
+  private bestLap: (number | null)[] = [];
+  private tickerUntil = 0;
+  private shownEvents = 0;
+  // 3D chase view (lazy-loaded)
+  private c3d: Chase3D | null = null;
+  private c3dLoading: Promise<void> | null = null;
 
   constructor(private renderer: RaceRenderer) {
     this.conn.onMessage = (m) => this.onMessage(m);
     this.conn.onStatus = (ok) => {
-      $('hud-note').textContent = ok ? '' : 'Reconnecting to the race server…';
+      if (!ok && this.active) this.ticker('Reconnecting to the race server…', 4000);
     };
     renderer.app.ticker.add(() => this.frame());
     window.addEventListener('keydown', (e) => this.onKey(e, true));
@@ -78,6 +106,20 @@ export class LiveGame {
       b.addEventListener('pointerleave', off);
       b.addEventListener('pointercancel', off);
     }
+    const pick = (e: Event) => {
+      const li = (e.target as HTMLElement).closest<HTMLElement>('[data-car]');
+      if (li) this.spectateCar(Number(li.dataset.car));
+    };
+    for (const id of ['spec-drivers', 'spec-rows']) {
+      $(id).addEventListener('click', pick);
+      $(id).addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          pick(e);
+        }
+      });
+    }
+    $('spectate-btn').onclick = () => this.setView(this.view === '3d' ? 'map' : '3d');
   }
 
   start() {
@@ -91,7 +133,9 @@ export class LiveGame {
 
   stop() {
     this.active = false;
-    document.body.classList.remove('is-live', 'is-racing', 'in-lobby');
+    document.body.classList.remove('is-live', 'is-racing', 'in-lobby', 'is-spec', 'view-3d');
+    this.c3d?.setVisible(false);
+    this.renderer.app.stage.visible = true;
     this.conn.close();
     this.room = null;
     this.trackSeed = this.carsSeed = '';
@@ -109,13 +153,14 @@ export class LiveGame {
         this.snaps.push({ recv: performance.now(), rt: m.rt, c: m.c, order: m.order });
         if (this.snaps.length > 40) this.snaps.shift();
         if (m.ev) this.events.push(...m.ev);
+        this.trackLaps(m.c, m.rt);
         if (this.car !== null) this.reconcile(m.c);
         break;
       case 'results':
         this.results = m.results;
         break;
       case 'error':
-        toast(m.msg);
+        this.ticker(m.msg, 4000);
         break;
     }
   }
@@ -129,36 +174,50 @@ export class LiveGame {
       this.track = generateTrack(room.seed);
       this.renderer.setTrack(this.track);
       this.renderer.setCars([]);
+      this.c3d?.setTrack(this.track);
       this.carsSeed = '';
       this.snaps = [];
       this.events = [];
+      this.shownEvents = 0;
       this.results = null;
       this.pred = null;
       this.spectate = -1;
+      this.lapNo = [];
+      this.lapStart = [];
+      this.bestLap = [];
       this.renderer.selected = -1;
-      this.setCamera('overview');
+      this.setView('map');
       this.renderer.resetCamera();
     }
     if (room.phase !== 'lobby' && this.carsSeed !== room.seed + room.phase) {
       this.carsSeed = room.seed + room.phase;
       this.renderer.you = this.car ?? -1;
-      this.renderer.setCars(room.entries.map((e) => ({ name: e.name, color: e.color })));
+      const cars = room.entries.map((e) => ({ name: e.name, color: e.color }));
+      this.renderer.setCars(cars);
+      this.c3d?.setCars(cars, this.car ?? -1);
     }
     if (room.phase === 'race' && prevPhase === 'lobby') {
       this.goUntil = performance.now() + 1200;
-      this.setCamera(this.car !== null ? 'chase' : 'leader');
+      if (this.car !== null) this.setView('3d');
+      else this.spectate = 0;
     }
     if (force || prevPhase !== room.phase) this.overlayFor = 'stale';
+    const driving = room.phase !== 'lobby' && this.car !== null;
     document.body.classList.toggle('in-lobby', room.phase === 'lobby');
-    document.body.classList.toggle('is-racing', room.phase === 'race' && this.car !== null);
-    $('hud-title').textContent = `RACE #${room.slot % 1000}`;
-    $('hud-live-text').textContent = room.phase === 'lobby' ? 'LOBBY' : room.phase === 'race' ? 'LIVE' : 'FINISH';
-    $('hud-seed').textContent = `${room.viewers} watching · seed ${room.seed}`;
+    document.body.classList.toggle('is-racing', driving);
+    document.body.classList.toggle('is-spec', room.phase !== 'lobby' && !driving);
+    $('rs-phase').textContent = room.phase === 'lobby' ? 'LOBBY' : room.phase === 'race' ? 'LIVE RACE' : 'FINISHED';
   }
 
   private join() {
     const name = $<HTMLInputElement>('lb-name').value.trim();
     const color = document.querySelector<HTMLInputElement>('input[name="lb-color"]:checked')?.value ?? PLAYER_COLORS[0];
+    if (!name) {
+      $('lb-err').textContent = 'Pick a nickname first (1–16 letters or numbers).';
+      $('lb-name').focus();
+      return;
+    }
+    $('lb-err').textContent = '';
     try {
       localStorage.setItem('agp-name', name);
       localStorage.setItem('agp-color', color);
@@ -185,7 +244,7 @@ export class LiveGame {
       return;
     }
     if (!down) return;
-    if (e.code === 'KeyC') this.cycleCamera();
+    if (e.code === 'KeyC') this.cycleView();
     if (e.code === 'BracketRight' || e.code === 'BracketLeft') this.cycleSpectate(e.code === 'BracketRight' ? 1 : -1);
   }
 
@@ -259,6 +318,25 @@ export class LiveGame {
     p.finished = t.finished;
   }
 
+  private trackLaps(c: number[], rt: number) {
+    if (!this.track || !this.room) return;
+    const L = this.track.length;
+    const n = c.length / CAR_SNAP_STRIDE;
+    for (let i = 0; i < n; i++) {
+      const lap = Math.max(0, Math.floor(c[i * CAR_SNAP_STRIDE + 7] / L));
+      if (this.lapNo[i] === undefined) {
+        this.lapNo[i] = lap;
+        this.lapStart[i] = 0;
+        this.bestLap[i] = null;
+      } else if (lap > this.lapNo[i]) {
+        const t = rt - this.lapStart[i];
+        if (t > 5) this.bestLap[i] = Math.min(this.bestLap[i] ?? Infinity, t);
+        this.lapNo[i] = lap;
+        this.lapStart[i] = rt;
+      }
+    }
+  }
+
   // ------------------------------------------------------------------ frame
   private frame() {
     if (!this.active) return;
@@ -287,12 +365,22 @@ export class LiveGame {
     }
 
     const { cars, order } = this.sampleCars(now);
-    this.renderer.render(cars, order, dt, room.phase === 'race');
+    const use3d = this.view === '3d' && !!this.c3d && room.phase !== 'lobby' && cars.length > 0;
+    this.c3d?.setVisible(use3d);
+    this.renderer.app.stage.visible = !use3d;
+    if (use3d) this.c3d!.render(cars, this.focusCar(order), dt);
+    else this.renderer.render(cars, order, dt, room.phase === 'race');
 
     if (now - this.lastHud > 100) {
       this.lastHud = now;
       this.updateHud(cars, order);
     }
+  }
+
+  private focusCar(order: number[]): number {
+    if (this.car !== null) return this.car;
+    if (this.spectate >= 0) return this.spectate;
+    return order[0] ?? 0;
   }
 
   /** Cars ~100 ms in the past (smooth), own car from the prediction. */
@@ -333,41 +421,55 @@ export class LiveGame {
     }
     if (this.car !== null && this.pred && this.room?.phase === 'race') {
       const p = this.pred;
-      out[this.car] = { x: p.x, y: p.y, h: p.h, speed: Math.hypot(p.vx, p.vy), slip: p.slip, flags: out[this.car]?.flags ?? 0 };
+      const braking = this.input.brake > 0 ? FLAG.braking : 0;
+      out[this.car] = { x: p.x, y: p.y, h: p.h, speed: Math.hypot(p.vx, p.vy), slip: p.slip, flags: ((out[this.car]?.flags ?? 0) & ~FLAG.braking) | braking };
     }
     return { cars: out, order: last.order };
   }
 
-  // ------------------------------------------------------------------ cameras
+  // ------------------------------------------------------------------ views / cameras
   private bindCamButtons() {
-    $('cam-overview').onclick = () => this.setCamera('overview');
-    $('cam-leader').onclick = () => this.setCamera(this.car !== null || this.spectate >= 0 ? 'car' : 'leader');
-    $('cam-chase').onclick = () => this.setCamera('chase');
+    $('cam-overview').onclick = () => this.setView('map');
+    $('cam-leader').onclick = () => this.setView('follow');
+    $('cam-chase').onclick = () => this.setView('3d');
   }
 
-  private setCamera(mode: CameraMode) {
-    if (mode === 'chase' && this.car === null && this.spectate < 0) this.spectate = this.snaps.at(-1)?.order[0] ?? 0;
-    this.cam = mode;
-    this.renderer.mode = mode;
+  private setView(v: View) {
+    this.view = v;
+    if (v === '3d') void this.ensure3d();
     this.renderer.focus = this.car ?? Math.max(0, this.spectate);
-    const active = mode === 'overview' ? 'cam-overview' : mode === 'chase' ? 'cam-chase' : 'cam-leader';
+    this.renderer.mode = v === 'map' ? 'overview' : this.car !== null || this.spectate >= 0 ? 'car' : 'leader';
+    const active = v === 'map' ? 'cam-overview' : v === '3d' ? 'cam-chase' : 'cam-leader';
     for (const id of ['cam-overview', 'cam-leader', 'cam-chase']) {
       $(id).classList.toggle('active', id === active);
       $(id).setAttribute('aria-pressed', String(id === active));
     }
+    document.body.classList.toggle('view-3d', v === '3d');
+    $('spectate-btn').setAttribute('aria-pressed', String(v === '3d'));
+    $('spectate-btn').querySelector('span')!.textContent = v === '3d' ? 'BACK TO MAP' : 'SPECTATE';
   }
 
-  private cycleCamera() {
-    const order: CameraMode[] = ['chase', 'car', 'overview'];
-    const cur = this.cam === 'leader' ? 'car' : this.cam;
-    this.setCamera(order[(order.indexOf(cur) + 1) % order.length]);
+  private ensure3d(): Promise<void> {
+    if (this.c3d) return Promise.resolve();
+    this.c3dLoading ??= import('./chase3d').then(({ Chase3D }) => {
+      this.c3d = new Chase3D($('stage-canvas'));
+      if (this.track) this.c3d.setTrack(this.track);
+      if (this.room && this.room.phase !== 'lobby') this.c3d.setCars(this.room.entries.map((e) => ({ name: e.name, color: e.color })), this.car ?? -1);
+    });
+    return this.c3dLoading;
+  }
+
+  private cycleView() {
+    const order: View[] = ['3d', 'follow', 'map'];
+    this.setView(order[(order.indexOf(this.view) + 1) % order.length]);
   }
 
   spectateCar(i: number) {
     if (this.car !== null && this.room?.phase === 'race') return; // drivers watch their own car
     this.spectate = i;
     this.renderer.selected = i;
-    this.setCamera(this.cam === 'overview' || this.cam === 'leader' ? 'car' : this.cam);
+    this.setView(this.view === 'map' ? 'follow' : this.view);
+    this.lastHud = 0;
   }
 
   private cycleSpectate(dir: number) {
@@ -378,21 +480,34 @@ export class LiveGame {
   }
 
   // ------------------------------------------------------------------ HUD + overlays
+  private progressOf(i: number): number {
+    const s = this.snaps.at(-1);
+    return s ? s.c[i * CAR_SNAP_STRIDE + 7] : 0;
+  }
+
+  /** Seconds car b is behind car a (negative = b is ahead), from the distance between them. */
+  private gapSeconds(a: number, b: number, cars: CarVisual[]): number {
+    const d = this.progressOf(a) - this.progressOf(b);
+    const v = Math.max(15, ((cars[a]?.speed ?? 0) + (cars[b]?.speed ?? 0)) / 2);
+    return d / v;
+  }
+
   private updateHud(cars: CarVisual[], order: number[]) {
     const room = this.room!;
     const L = this.track!.length;
     const now = this.conn.serverNow();
     const last = this.snaps.at(-1);
     const rt = room.phase === 'race' && last ? last.rt + (performance.now() - last.recv) / 1000 : (last?.rt ?? 0);
+    const lapOf = (i: number) => Math.min(room.laps, Math.max(1, Math.floor(this.progressOf(i) / L) + 1));
 
-    // Header line
+    // Race strip (top right)
     if (room.phase === 'lobby') {
-      $('hud-lap').innerHTML = `<b>${room.laps}</b> ${room.laps === 1 ? 'LAP' : 'LAPS'}`;
-      $('hud-clock').textContent = fmtCountdown(room.startAt - now);
+      $('rs-lap').textContent = `${room.laps} ${room.laps === 1 ? 'LAP' : 'LAPS'}`;
+      $('rs-clock').textContent = fmtCountdown(room.startAt - now);
     } else {
-      const leadProg = order.length ? (cars[order[0]] ? this.progressOf(order[0]) : 0) : 0;
-      $('hud-lap').innerHTML = `LAP <b>${Math.min(room.laps, Math.max(1, Math.floor(leadProg / L) + 1))}</b>/${room.laps}`;
-      $('hud-clock').textContent = fmt(rt);
+      const ref = this.car ?? order[0];
+      $('rs-lap').textContent = ref !== undefined ? `LAP ${lapOf(ref)} / ${room.laps}` : '';
+      $('rs-clock').textContent = fmt(rt, 2);
     }
 
     // Overlay: lobby / results / none
@@ -410,107 +525,216 @@ export class LiveGame {
     }
     $('go-flash').classList.toggle('show', performance.now() < this.goUntil);
 
-    // Tower + feed
-    if (room.phase !== 'lobby' && order.length) this.updateTower(cars, order);
-    else $('tower').innerHTML = '';
-    const feed = this.events.filter((e) => e.type !== 'start').slice(-5).reverse();
-    const feedHtml = feed.map((e) => `<li class="ev-${e.type}"><span class="ev-t">${fmt(e.t)}</span><span>${escapeHtml(e.text.replace(/^🏁\s*/u, ''))}</span></li>`).join('');
-    if ($('feed').innerHTML !== feedHtml) $('feed').innerHTML = feedHtml;
-
-    // Player HUD
-    if (this.car !== null && room.phase !== 'lobby' && cars[this.car]) {
-      const me = cars[this.car];
-      const pos = order.indexOf(this.car) + 1;
-      $('ph-pos').innerHTML = `P${pos}<small>/${order.length}</small>`;
-      $('ph-speed').textContent = String(Math.round(me.speed * 3.6));
-      const prog = this.pred?.progress ?? this.progressOf(this.car);
-      $('ph-lap').textContent = `${Math.min(room.laps, Math.max(1, Math.floor(prog / L) + 1))}/${room.laps}`;
-      const ahead = pos > 1 ? order[pos - 2] : -1;
-      $('ph-gap').textContent = ahead >= 0 ? `+${((this.progressOf(ahead) - prog) / Math.max(me.speed, 15)).toFixed(1)}s` : 'LEADER';
+    // Event ticker (latest event, a few seconds)
+    if (this.events.length > this.shownEvents) {
+      const ev = this.events.slice(this.shownEvents).filter((e) => e.type !== 'start' && e.type !== 'wall').at(-1);
+      this.shownEvents = this.events.length;
+      if (ev) this.ticker(ev.text.replace(/^🏁\s*/u, ''), 3500, ev.type);
     }
-    drawMinimap($<HTMLCanvasElement>('minimap'), this.track!, cars, this.car ?? this.spectate);
+    if (performance.now() > this.tickerUntil) $('ticker').classList.remove('show');
+
+    if (room.phase === 'lobby' || !order.length) return;
+    if (this.car !== null && cars[this.car]) this.updateDriverHud(cars, order, rt, lapOf);
+    else this.updateSpectatorHud(cars, order);
+    const focus = this.focusCar(order);
+    drawMinimap($<HTMLCanvasElement>('minimap'), this.track!, cars, room.entries, focus);
+    const fpos = order.indexOf(focus) + 1;
+    $('mini-pos').textContent = fpos ? `P${fpos}` : '';
   }
 
-  private progressOf(i: number): number {
-    const s = this.snaps.at(-1);
-    return s ? s.c[i * CAR_SNAP_STRIDE + 7] : 0;
-  }
-
-  private updateTower(cars: CarVisual[], order: number[]) {
+  private updateDriverHud(cars: CarVisual[], order: number[], rt: number, lapOf: (i: number) => number) {
     const room = this.room!;
-    const tower = $('tower');
-    while (tower.children.length > order.length) tower.lastElementChild!.remove();
-    while (tower.children.length < order.length) tower.appendChild(document.createElement('li'));
-    const lead = this.progressOf(order[0]);
-    order.forEach((i, p) => {
-      const e = room.entries[i];
-      if (!e) return;
-      const out = (cars[i]?.flags ?? 0) & FLAG.stopped && !((cars[i]?.flags ?? 0) & FLAG.finished);
-      const gap = p === 0 ? 'LEADER' : `+${((lead - this.progressOf(i)) / Math.max(cars[i]?.speed ?? 20, 15)).toFixed(1)}`;
-      const li = tower.children[p] as HTMLElement;
-      li.dataset.car = String(i);
-      li.className = `${i === this.car ? 'me' : ''} ${i === this.spectate ? 'sel' : ''} ${out ? 'is-out' : ''}`;
-      const tag = e.kind === 'human' && !e.connected ? '<span class="tag">AFK</span>' : '';
-      const html = `<span class="pos">${p + 1}</span><span class="bar" style="background:${e.color}"></span><span class="nm">${escapeHtml(e.name)}${tag}</span><span class="delta same">–</span><span class="gap">${out ? '<span class="out">OUT</span>' : gap}</span>`;
-      if (li.innerHTML !== html) li.innerHTML = html;
-    });
+    const me = this.car!;
+    const pos = order.indexOf(me) + 1;
+    $('drv-pos').textContent = `P${pos}`;
+    $('drv-of').textContent = `/ ${order.length}`;
+    $('drv-lap').textContent = String(lapOf(me));
+    $('drv-laps').textContent = String(room.laps);
+    const start = Math.max(0, Math.min(order.length - 5, pos - 3));
+    const rows = order
+      .slice(start, start + 5)
+      .map((i, k) => {
+        const p = start + k + 1;
+        const e = room.entries[i];
+        const isMe = i === me;
+        const g = this.gapSeconds(me, i, cars); // > 0: they're behind me
+        const fin = ((cars[i]?.flags ?? 0) & FLAG.finished) !== 0;
+        const gap = isMe ? '---' : fin ? 'FIN' : `${g > 0 ? '+' : '-'}${Math.abs(g).toFixed(1)}s`;
+        return `<li class="${isMe ? 'me' : ''}"><span class="p">${p}</span><span class="n">${isMe ? 'You' : escapeHtml(e?.name ?? '?')}</span><span class="g">${gap}</span></li>`;
+      })
+      .join('');
+    if ($('drv-rows').innerHTML !== rows) $('drv-rows').innerHTML = rows;
+
+    const finished = (cars[me].flags & FLAG.finished) !== 0;
+    $('t-cur').textContent = finished ? 'FINISHED' : fmt(Math.max(0, rt - (this.lapStart[me] ?? 0)), 2);
+    $('t-best').textContent = this.bestLap[me] ? fmt(this.bestLap[me]!, 2) : '–';
+    $('t-total').textContent = fmt(rt, 2);
+
+    // Speedometer
+    const p = this.pred;
+    const v = cars[me].speed;
+    const fwd = p ? p.vx * Math.cos(p.h) + p.vy * Math.sin(p.h) : v;
+    const kmh = Math.round(v * 3.6);
+    $('speedo-kmh').textContent = String(kmh);
+    $('speedo-arc').style.strokeDasharray = `${(75 * Math.min(1, kmh / 240)).toFixed(1)} 100`;
+    $('speedo-arc').style.opacity = kmh > 0 ? '1' : '0';
+    const gears = [0, 45, 80, 115, 150, 185, 215];
+    $('speedo-gear').textContent = fwd < -0.5 ? 'R' : kmh < 2 ? 'N' : String(gears.filter((g) => kmh >= g).length);
+  }
+
+  private updateSpectatorHud(cars: CarVisual[], order: number[]) {
+    const room = this.room!;
+    const focus = this.focusCar(order);
+    // Leaderboard
+    const lead = order[0];
+    const rows = order
+      .map((i, p) => {
+        const e = room.entries[i];
+        if (!e) return '';
+        const f = cars[i]?.flags ?? 0;
+        const out = f & FLAG.stopped && !(f & FLAG.finished);
+        const gap = p === 0 ? 'LEADER' : out ? 'OUT' : f & FLAG.finished ? 'FIN' : `+${this.gapSeconds(lead, i, cars).toFixed(1)}s`;
+        return `<li data-car="${i}" class="${i === focus ? 'sel' : ''}" tabindex="0"><span class="pb">${p + 1}</span>${avatar(e)}<span class="n">${escapeHtml(e.name)}</span><span class="g">${gap}</span></li>`;
+      })
+      .join('');
+    if ($('spec-rows').innerHTML !== rows) $('spec-rows').innerHTML = rows;
+
+    // Win probability (live estimate from the gaps and how much race is left)
+    const probs = this.winProbabilities(cars, order);
+    const top = order.slice(0, 3);
+    const others = Math.max(0, 1 - top.reduce((s, i) => s + probs[i], 0));
+    const pRow = (label: string, color: string, p: number) =>
+      `<li><span class="dot" style="background:${color}"></span><span class="n">${label}</span><span class="pv">${Math.round(p * 100)}%</span><span class="pbar"><i style="width:${(p * 100).toFixed(0)}%;background:${color}"></i></span></li>`;
+    const probHtml =
+      top.map((i) => pRow(escapeHtml(room.entries[i]?.name ?? '?'), room.entries[i]?.color ?? '#fff', probs[i])).join('') +
+      (order.length > 3 ? pRow('Others', '#6b7280', others) : '');
+    if ($('spec-prob').innerHTML !== probHtml) $('spec-prob').innerHTML = probHtml;
+
+    // Odds chips for the (coming soon) bet bar
+    const odd = (p: number) => Math.min(99, Math.max(1.05, 0.95 / Math.max(p, 0.01))).toFixed(1);
+    const odds =
+      top.map((i) => `<span class="odd">${avatar(room.entries[i])}<span class="n">${escapeHtml(room.entries[i]?.name ?? '?')}</span><b>${odd(probs[i])}x</b></span>`).join('') +
+      (order.length > 3 ? `<span class="odd"><span class="av" style="--c:#6b7280">+</span><span class="n">Others</span><b>${odd(others)}x</b></span>` : '');
+    if ($('bet-odds').innerHTML !== odds) $('bet-odds').innerHTML = odds;
+
+    // Driver list (pick who to follow)
+    const list = room.entries
+      .map((e, i) => `<li data-car="${i}" class="${i === focus ? 'sel' : ''}" tabindex="0" role="button" aria-pressed="${i === focus}">${avatar(e)}<span class="who"><b>${escapeHtml(e.name)}</b><small>${e.kind === 'bot' ? 'AI bot' : e.connected ? 'Player' : 'Player · away'}</small></span><span class="radio" aria-hidden="true"></span></li>`)
+      .join('');
+    if ($('spec-drivers').innerHTML !== list) $('spec-drivers').innerHTML = list;
+  }
+
+  private winProbabilities(cars: CarVisual[], order: number[]): number[] {
+    const p: number[] = new Array(cars.length).fill(0);
+    if (!order.length) return p;
+    if ((cars[order[0]]?.flags ?? 0) & FLAG.finished) {
+      p[order[0]] = 1;
+      return p;
+    }
+    const L = this.track!.length * this.room!.laps;
+    const left = Math.max(0.05, 1 - Math.max(0, this.progressOf(order[0])) / L);
+    const temp = 1.5 + 30 * left; // seconds of "anything can happen": shrinks as the race goes on
+    let sum = 0;
+    for (const i of order) {
+      const out = (cars[i]?.flags ?? 0) & FLAG.stopped;
+      p[i] = out ? 0 : Math.exp(-this.gapSeconds(order[0], i, cars) / temp);
+      sum += p[i];
+    }
+    for (const i of order) p[i] = sum > 0 ? p[i] / sum : 0;
+    return p;
+  }
+
+  private ticker(text: string, ms: number, type = '') {
+    const el = $('ticker');
+    el.className = `ticker live-ui show ev-${type}`;
+    el.textContent = text;
+    this.tickerUntil = performance.now() + ms;
   }
 
   private renderLobby() {
-    const savedName = (() => {
+    const read = (k: string, d: string) => {
       try {
-        return localStorage.getItem('agp-name') ?? '';
+        return localStorage.getItem(k) ?? d;
       } catch {
-        return '';
+        return d;
       }
-    })();
-    const savedColor = (() => {
-      try {
-        return localStorage.getItem('agp-color') ?? PLAYER_COLORS[0];
-      } catch {
-        return PLAYER_COLORS[0];
-      }
-    })();
+    };
+    const savedName = read('agp-name', '');
+    const savedColor = read('agp-color', PLAYER_COLORS[0]);
+    const room = this.room!;
     setCenter(`
-      <div class="card lobby" role="dialog" aria-label="Race lobby">
-        <div class="lobby-top">
-          <div>
-            <div class="lobby-kicker">NEXT RACE · ${this.room!.laps} ${this.room!.laps === 1 ? 'LAP' : 'LAPS'}</div>
+      <div class="lobby" role="dialog" aria-label="Race lobby">
+        <section class="lcard join-card">
+          <h2>JOIN THE NEXT RACE</h2>
+          <p class="sub">Exclusive. Fast. Competitive.</p>
+          <div class="cd-row">
             <div class="lights" aria-hidden="true">${'<span></span>'.repeat(5)}</div>
-            <div class="cd-label" id="lb-label">LIGHTS OUT IN</div>
-            <div class="cd-time" id="lb-time" role="timer"></div>
+            <div class="lobby-cd"><span id="lb-label">LIGHTS OUT IN</span><b id="lb-time" role="timer"></b></div>
           </div>
-        </div>
-        <div class="lobby-cols">
-          <section class="lobby-grid" aria-label="Grid">
-            <h3>GRID <span id="lb-count"></span></h3>
-            <ol id="lb-list"></ol>
-            <p class="muted small">Empty seats race as bots.</p>
-          </section>
-          <section class="lobby-join" id="lb-join">
-            <div id="lb-form">
-              <h3>JOIN THE RACE</h3>
-              <label for="lb-name">Nickname</label>
-              <input id="lb-name" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="speedy" value="${escapeHtml(savedName)}" />
-              <div class="lb-colors" role="radiogroup" aria-label="Car colour">
-                ${PLAYER_COLORS.map((c) => `<label class="swatch-pick" style="--c:${c}"><input type="radio" name="lb-color" value="${c}" ${c === savedColor ? 'checked' : ''} aria-label="Colour ${c}"/><span></span></label>`).join('')}
-              </div>
-              <button class="btn btn-primary btn-big" id="lb-go">${icon('flag')}JOIN GRID</button>
+          <dl class="facts">
+            <div><dt>${icon('trophy', 16)}Pot size</dt><dd>—<small>Token pots in Phase 4 (devnet)</small></dd></div>
+            <div><dt>${icon('zap', 16)}Entry fee</dt><dd class="lime">FREE<small>beta</small></dd></div>
+            <div><dt>${icon('follow', 16)}Players</dt><dd id="lb-count"></dd></div>
+            <div><dt>${icon('clock', 16)}Race duration</dt><dd>${room.laps} ${room.laps === 1 ? 'lap' : 'laps'}<small>≤ ${Math.round((room.slotEnd - room.startAt) / 60000)} min</small></dd></div>
+            <div><dt>${icon('history', 16)}Queue position</dt><dd id="lb-qpos"></dd></div>
+          </dl>
+          <div id="lb-form">
+            <label for="lb-name">Nickname</label>
+            <input id="lb-name" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="e.g. NovaRacer" value="${escapeHtml(savedName)}" aria-describedby="lb-err" />
+            <p id="lb-err" class="err" role="alert"></p>
+            <div class="lb-colors" role="radiogroup" aria-label="Car colour">
+              ${PLAYER_COLORS.map((c) => `<label class="swatch-pick" style="--c:${c}"><input type="radio" name="lb-color" value="${c}" ${c === savedColor ? 'checked' : ''} aria-label="Colour ${c}"/><span></span></label>`).join('')}
             </div>
-            <div id="lb-in" hidden>
-              <h3>YOU'RE ON THE GRID</h3>
-              <p class="muted">Get ready. Your grid spot is drawn at lights out.</p>
-              <button class="btn btn-ghost" id="lb-leave">${icon('x')}Leave</button>
-            </div>
-          </section>
-        </div>
-        <div class="lobby-keys"><kbd>↑</kbd><kbd>W</kbd> GAS <kbd>↓</kbd><kbd>S</kbd> BRAKE / REVERSE <kbd>←</kbd><kbd>→</kbd> STEER <kbd>C</kbd> CAMERA</div>
+            <button class="btn btn-lime btn-big" id="lb-go">JOIN RACE ${icon('play', 16)}</button>
+          </div>
+          <div id="lb-in" hidden>
+            <div class="on-grid">${icon('check', 18)}<span><b>You're on the grid</b><small>Your grid slot is drawn at lights out.</small></span></div>
+            <button class="btn btn-ghost" id="lb-leave">${icon('x')}Leave the grid</button>
+          </div>
+          <div class="ai-row">${icon('bot', 18)}<span><b>AI opponents</b><small>Empty seats are filled with bots</small></span><span class="toggle on" aria-hidden="true"></span></div>
+        </section>
+        <section class="lcard queue-card" aria-label="Race queue">
+          <h3>RACE QUEUE</h3>
+          <p class="sub" id="lb-qcount"></p>
+          <ol id="lb-list" class="queue"></ol>
+        </section>
+        <section class="side-col">
+          <div class="lcard prize-card">
+            <h3>PRIZE POOL</h3>
+            <div class="prize">${icon('trophy', 26)}<b>—</b></div>
+            <p class="sub">Points prizes arrive in Phase 2, token pots on devnet in Phase 4.</p>
+          </div>
+          <div class="lcard">
+            <h3>RECENT WINNERS</h3>
+            <ol class="winners">${this.winnersHtml()}</ol>
+          </div>
+          <div class="lcard">
+            <h3>RACE RULES</h3>
+            <ul class="rules">
+              <li>${icon('follow', 16)}Max 10 players per race</li>
+              <li>${icon('replay', 16)}Last round's racers give up their seat when the grid is full</li>
+              <li>${icon('flag', 16)}One entry per player (nickname now, X login soon)</li>
+              <li>${icon('zap', 16)}Hold $20+ of the token to enter (coming in Phase 2)</li>
+            </ul>
+          </div>
+        </section>
+        <div class="lobby-keys"><kbd>↑</kbd><kbd>W</kbd> gas <kbd>↓</kbd><kbd>S</kbd> brake / reverse <kbd>←</kbd><kbd>→</kbd> steer <kbd>C</kbd> camera</div>
       </div>`);
     $('lb-go').onclick = () => this.join();
     $('lb-name').onkeydown = (e) => {
       if ((e as KeyboardEvent).key === 'Enter') this.join();
     };
     $('lb-leave').onclick = () => this.conn.send({ t: 'leave' });
+  }
+
+  private winnersHtml(): string {
+    const recent = this.room?.recent ?? [];
+    if (!recent.length) return '<li class="empty">No finished races yet. Be the first.</li>';
+    const now = this.conn.serverNow();
+    return recent
+      .slice(0, 3)
+      .map((w, i) => `<li><span class="p">${i + 1}.</span>${avatar(w)}<span class="n">${escapeHtml(w.name)}</span><span class="t">${w.time ? fmt(w.time, 1) : '—'}</span><span class="a">${ago(now - w.at)}</span></li>`)
+      .join('');
   }
 
   private patchLobby(now: number) {
@@ -522,33 +746,45 @@ export class LiveGame {
     $('lb-label').textContent = left > 5000 ? 'LIGHTS OUT IN' : 'GET READY';
     const lit = left <= 5000 ? Math.max(0, Math.min(5, 5 - Math.floor(left / 1000))) : 0;
     document.querySelectorAll('.lobby .lights span').forEach((el, i) => el.classList.toggle('on', i < lit));
-    $('lb-count').textContent = `${room.entries.length}/${room.maxPlayers}`;
-    const me = room.entries.find((e) => e.id === this.conn.id);
-    $('lb-form').hidden = !!me;
-    $('lb-in').hidden = !me;
-    const html =
-      room.entries
-        .map((e) => `<li class="${e.id === this.conn.id ? 'me' : ''}"><span class="bar" style="background:${e.color}"></span>${escapeHtml(e.name)}${e.id === this.conn.id ? ' <span class="tag">YOU</span>' : ''}</li>`)
-        .join('') + (room.entries.length < 6 ? `<li class="empty-slot">+ ${6 - room.entries.length} bot${6 - room.entries.length === 1 ? '' : 's'}</li>` : '');
+    $('lb-count').textContent = `${room.entries.length} / ${room.maxPlayers}`;
+    $('lb-qcount').textContent = `${room.entries.length} ${room.entries.length === 1 ? 'PLAYER' : 'PLAYERS'}`;
+    const myIdx = room.entries.findIndex((e) => e.id === this.conn.id);
+    const qpos = myIdx >= 0 ? `#${myIdx + 1}<small>Next race</small>` : '—<small>Not joined</small>';
+    if ($('lb-qpos').innerHTML !== qpos) $('lb-qpos').innerHTML = qpos;
+    $('lb-form').hidden = myIdx >= 0;
+    $('lb-in').hidden = myIdx < 0;
+    const rows: string[] = [];
+    for (let k = 0; k < room.maxPlayers; k++) {
+      const e: LobbyEntry | undefined = room.entries[k];
+      if (e) {
+        const me = e.id === this.conn.id;
+        rows.push(`<li class="${me ? 'me' : ''}"><span class="qn">${k + 1}</span>${avatar(e)}<span class="n">${me ? 'You' : escapeHtml(e.name)}</span>${carIcon(e.color)}${me ? '<span class="you">YOU</span>' : `<span class="st ${e.connected ? 'on' : ''}" title="${e.connected ? 'online' : 'away'}"></span>`}</li>`);
+      } else {
+        const bot = k < 6;
+        rows.push(`<li class="open"><span class="qn">${k + 1}</span><span class="av ghost">${bot ? icon('bot', 14) : ''}</span><span class="n">${bot ? 'AI bot fills this seat' : 'Open seat'}</span></li>`);
+      }
+    }
+    const html = rows.join('');
     if ($('lb-list').innerHTML !== html) $('lb-list').innerHTML = html;
   }
 
   private renderResults() {
     const room = this.room!;
     const res = this.results!;
+    const win = res[0];
     const rows = res
       .map((r) => {
         const e = room.entries[r.car];
-        const win = res[0];
-        const time = r.finished ? (r.position === 1 ? fmt(r.finishTime!) : `+${(r.finishTime! - win.finishTime!).toFixed(2)}s`) : r.crashed ? 'DNF' : `${Math.max(0, Math.round(r.progress))} m`;
-        return `<tr class="${r.car === this.car ? 'me' : ''}"><td class="pos">${r.position}</td><td><span class="bar" style="background:${e?.color}"></span>${escapeHtml(e?.name ?? '?')}</td><td class="num">${time}</td><td class="num">${r.bestLap ? r.bestLap.toFixed(2) : '–'}</td></tr>`;
+        const time = r.finished ? (r.position === 1 ? fmt(r.finishTime!, 2) : `+${(r.finishTime! - win.finishTime!).toFixed(2)}s`) : r.crashed ? 'DNF' : `${Math.max(0, Math.round(r.progress))} m`;
+        const best = this.bestLap[r.car] ?? r.bestLap;
+        return `<tr class="${r.car === this.car ? 'me' : ''}"><td class="pos">${r.position}</td><td><span class="who">${e ? avatar(e) : ''}${escapeHtml(e?.name ?? '?')}</span></td><td class="num">${time}</td><td class="num">${best ? fmt(best, 2) : '–'}</td></tr>`;
       })
       .join('');
     const mine = this.car !== null ? res.find((r) => r.car === this.car) : null;
-    const head = mine ? (mine.position === 1 ? 'YOU WIN!' : `YOU FINISHED P${mine.position}`) : `${escapeHtml(room.entries[res[0].car]?.name ?? '')} WINS`;
+    const head = mine ? (mine.position === 1 ? 'YOU WIN!' : `YOU FINISHED P${mine.position}`) : `${escapeHtml(room.entries[win.car]?.name ?? '')} WINS`;
     setCenter(`
       <div class="card results" role="dialog" aria-label="Race results">
-        <div class="res-kicker">RACE #${room.slot % 1000} · FINAL</div>
+        <div class="res-kicker">RACE #${room.slot % 1000} · FINAL CLASSIFICATION</div>
         <div class="res-head">${icon('trophy', 26)}${head}</div>
         <table><thead><tr><th>P</th><th>Driver</th><th>Time</th><th>Best lap</th></tr></thead><tbody>${rows}</tbody></table>
         <div class="res-foot"><span>Next lobby opens in <b id="res-next"></b></span></div>
@@ -562,16 +798,6 @@ function setCenter(html: string) {
   el.classList.toggle('show', html !== '');
 }
 
-function toast(text: string) {
-  document.querySelector('.toast')?.remove();
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.setAttribute('role', 'status');
-  t.textContent = text;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3500);
-}
-
 function nearestIndex(track: Track, x: number, y: number): number {
   let best = 0,
     bd = Infinity;
@@ -582,33 +808,49 @@ function nearestIndex(track: Track, x: number, y: number): number {
   return best;
 }
 
-/** Tiny pixel minimap: track outline + car dots, drawn at low resolution and upscaled. */
-function drawMinimap(cv: HTMLCanvasElement, track: Track, cars: CarVisual[], focus: number) {
+/** Minimap: track outline + car dots in their colours; the followed car is bigger with a white ring. */
+function drawMinimap(cv: HTMLCanvasElement, track: Track, cars: CarVisual[], entries: LobbyEntry[], focus: number) {
   const ctx = cv.getContext('2d');
   if (!ctx) return;
   const W = cv.width,
     H = cv.height,
     b = track.bounds;
-  const s = Math.min((W - 8) / (b.maxX - b.minX), (H - 8) / (b.maxY - b.minY));
+  const s = Math.min((W - 24) / (b.maxX - b.minX), (H - 24) / (b.maxY - b.minY));
   const ox = (W - (b.maxX - b.minX) * s) / 2 - b.minX * s,
     oy = (H - (b.maxY - b.minY) * s) / 2 - b.minY * s;
-  ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, W, H);
-  ctx.strokeStyle = '#fff1e8';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  track.points.forEach((p, i) => (i ? ctx.lineTo(Math.round(p[0] * s + ox), Math.round(p[1] * s + oy)) : ctx.moveTo(Math.round(p[0] * s + ox), Math.round(p[1] * s + oy))));
-  ctx.closePath();
+  ctx.lineJoin = 'round';
+  const path = () => {
+    ctx.beginPath();
+    track.points.forEach((p, i) => (i ? ctx.lineTo(p[0] * s + ox, p[1] * s + oy) : ctx.moveTo(p[0] * s + ox, p[1] * s + oy)));
+    ctx.closePath();
+  };
+  path();
+  ctx.strokeStyle = 'rgba(140,255,46,0.25)';
+  ctx.lineWidth = 9;
+  ctx.stroke();
+  path();
+  ctx.strokeStyle = '#e8edf2';
+  ctx.lineWidth = 3.5;
   ctx.stroke();
   const p0 = track.points[0];
-  ctx.fillStyle = '#ff004d';
-  ctx.fillRect(Math.round(p0[0] * s + ox) - 1, Math.round(p0[1] * s + oy) - 3, 3, 6);
+  ctx.fillStyle = '#8cff2e';
+  ctx.fillRect(p0[0] * s + ox - 2, p0[1] * s + oy - 6, 4, 12);
   cars.forEach((c, i) => {
-    if (!c) return;
-    const x = Math.round(c.x * s + ox),
-      y = Math.round(c.y * s + oy);
-    const big = i === focus;
-    ctx.fillStyle = big ? '#ffec27' : '#29adff';
-    ctx.fillRect(x - (big ? 2 : 1), y - (big ? 2 : 1), big ? 5 : 3, big ? 5 : 3);
+    if (!c || i === focus) return;
+    ctx.fillStyle = entries[i]?.color ?? '#fff';
+    ctx.beginPath();
+    ctx.arc(c.x * s + ox, c.y * s + oy, 4.5, 0, Math.PI * 2);
+    ctx.fill();
   });
+  const f = cars[focus];
+  if (f) {
+    ctx.fillStyle = entries[focus]?.color ?? '#8cff2e';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(f.x * s + ox, f.y * s + oy, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
 }

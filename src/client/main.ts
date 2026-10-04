@@ -23,7 +23,7 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 
 hydrateIcons();
 await document.fonts.ready; // badges on the map measure their text, so the real font must be loaded first
-const renderer = await RaceRenderer.create($('stage-canvas'), { pixel: true });
+const renderer = await RaceRenderer.create($('stage-canvas'));
 const broadcast = new Broadcast(renderer);
 const live = new LiveGame(renderer);
 const viewer = new CodeViewer();
@@ -206,6 +206,7 @@ function openLab(seed: string) {
   $('lab-seed').textContent = seed;
   const clockwise = t.curvature.reduce((s, k) => s + k, 0) > 0;
   $('lab-sub').textContent = `${t.corners.length} TURNS · ${clockwise ? 'CLOCKWISE' : 'ANTI-CLOCKWISE'}`;
+  $('lab-info').innerHTML = `<span>${t.corners.length} TURNS</span><span>${(t.length / 1000).toFixed(1)} KM</span><b>WOODLAND CIRCUIT</b>`;
   $<HTMLInputElement>('lab-input').value = seed;
   const stat = (v: string, label: string) => `<div class="stat"><b>${v}</b><span>${label}</span></div>`;
   $('lab-stats').innerHTML =

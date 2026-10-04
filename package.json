@@ -15,11 +15,13 @@
     "@jitl/quickjs-singlefile-mjs-release-sync": "^0.32.0",
     "@supabase/supabase-js": "^2.117.2",
     "pixi.js": "^8.22.0",
-    "quickjs-emscripten-core": "^0.32.0"
+    "quickjs-emscripten-core": "^0.32.0",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261004.1",
     "@types/node": "^26.6.4",
+    "@types/three": "^0.180.0",
     "dotenv": "^18.0.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

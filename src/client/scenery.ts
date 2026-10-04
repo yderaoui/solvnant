@@ -6,29 +6,29 @@ import { Container, Graphics, Text } from 'pixi.js';
 import { Rng } from '../sim/rng';
 import type { Track } from '../sim/track';
 
-// Pixel-art palette (PICO-8 based, a few in-between shades for depth).
+// TrackLab night palette: dark woodland, floodlit asphalt, neon-green accents.
 export const SCENE_COLORS = {
-  ground: 0x00874f,
-  groundPatch: 0x007a47,
-  verge: 0xffccaa, // sand run-off strip
-  asphalt: 0x5f574f,
-  edge: 0xfff1e8,
-  runoff: 0xffec27,
-  stand: 0x1d2b53,
-  standRoof: 0x7e2553,
-  tree: 0x0b5a33,
-  treeHi: 0x00b543,
-  water: 0x1d2b53,
-  waterHi: 0x29adff,
-  light: 0xffec27,
-  sector: [0x00e436, 0xffec27, 0x29adff],
-  red: 0xff004d,
+  ground: 0x081a0e,
+  groundPatch: 0x0c2314,
+  verge: 0x123321,
+  asphalt: 0x2b2f36,
+  edge: 0xf2f5f8,
+  runoff: 0x8cff2e,
+  stand: 0x1a2030,
+  standRoof: 0x262d40,
+  tree: 0x0e2c17,
+  treeHi: 0x1a4a26,
+  water: 0x0b2a3d,
+  waterHi: 0x1b6a8e,
+  light: 0xffe2a0,
+  sector: [0x8cff2e, 0xffd60a, 0x22d3ee],
+  red: 0xe3122d,
 };
 
 /** Text style for map badges (the renderer switches this to a pixel font in pixel mode). */
-export const sceneryStyle = { font: 'Russo One, Chakra Petch, sans-serif', textRes: 2, fontSize: 12 };
+export const sceneryStyle = { font: '"Exo 2", Barlow, sans-serif', textRes: 2, fontSize: 12 };
 
-const CROWD = [0xfff1e8, 0xffec27, 0xff004d, 0x29adff, 0x00e436, 0xff77a8, 0x83769c, 0xffa300, 0xc2c3c7];
+const CROWD = [0xf5f5f5, 0xffd60a, 0xff3b3b, 0x3b82ff, 0x8cff2e, 0xff3dbb, 0xa259ff, 0xff8a1f, 0xd4d4d8, 0x22d3ee];
 
 export interface Scenery {
   ground: Container; // under the track
@@ -393,19 +393,17 @@ function badge(parent: Container, text: string, x: number, y: number, border: nu
   const c = new Container();
   const t = new Text({
     text,
-    style: { fontFamily: sceneryStyle.font, fontSize: sceneryStyle.fontSize, fill: 0xffffff, letterSpacing: 0.5 },
+    style: { fontFamily: sceneryStyle.font, fontSize: sceneryStyle.fontSize, fontStyle: 'italic', fontWeight: '800', fill: 0xffffff, letterSpacing: 0.5 },
     resolution: sceneryStyle.textRes,
   });
   t.anchor.set(0.5);
-  const w = t.width + 14,
-    h = Math.max(20, t.height + 8);
+  const w = t.width + 16,
+    h = Math.max(20, t.height + 6);
   const g = new Graphics()
-    .rect(-w / 2 + 3, -h / 2 + 3, w, h)
-    .fill({ color: 0x000000, alpha: 0.6 }) // hard pixel drop shadow
-    .rect(-w / 2, -h / 2, w, h)
-    .fill({ color: filled ? border : 0x000000, alpha: filled ? 1 : 0.85 })
-    .rect(-w / 2, -h / 2, w, h)
-    .stroke({ width: 2, color: border, alignment: 1 });
+    .roundRect(-w / 2, -h / 2, w, h, 4)
+    .fill({ color: filled ? border : 0x06090c, alpha: filled ? 0.95 : 0.9 })
+    .roundRect(-w / 2, -h / 2, w, h, 4)
+    .stroke({ width: 1.5, color: border });
   c.addChild(g, t);
   c.position.set(x, y);
   parent.addChild(c);

@@ -38,8 +38,8 @@ const COLORS = {
   verge: SCENE_COLORS.verge,
   asphalt: SCENE_COLORS.asphalt,
   line: SCENE_COLORS.edge,
-  kerbRed: 0xff004d,
-  kerbWhite: 0xfff1e8,
+  kerbRed: 0xe3122d,
+  kerbWhite: 0xf2f5f8,
 };
 
 export class RaceRenderer {
@@ -64,7 +64,7 @@ export class RaceRenderer {
   /** Pixel-art mode: render at low resolution and upscale with hard pixel edges. */
   pixel = false;
   private textRes = 2;
-  private labelFont = 'Chakra Petch, sans-serif';
+  private labelFont = 'Barlow, sans-serif';
   /** Car index of the local player (gets a "YOU" tag and ring). */
   you = -1;
   mode: CameraMode = 'overview';
@@ -226,7 +226,7 @@ export class RaceRenderer {
           fontFamily: this.labelFont,
           fontSize: this.pixel ? 14 : 12,
           fontWeight: '700',
-          fill: i === this.you ? 0xffec27 : 0xffffff,
+          fill: i === this.you ? 0x8cff2e : 0xffffff,
           stroke: { color: 0x000000, width: this.pixel ? 4 : 3 },
         },
         resolution: this.textRes,

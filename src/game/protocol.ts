@@ -6,8 +6,8 @@ export const MIN_GRID = 6; // empty slots are filled with bots up to this many c
 export const SNAP_HZ = 20;
 export const CAR_SNAP_STRIDE = 9; // x, y, h, vx, vy, steer, slip, progress, flags
 
-/** Pixel-palette car colours (PICO-8 inspired). */
-export const PLAYER_COLORS = ['#ff004d', '#29adff', '#ffec27', '#00e436', '#ff77a8', '#ffa300', '#83769c', '#fff1e8', '#ab5236', '#7e2553'];
+/** Neon car colours (TrackLab night theme). */
+export const PLAYER_COLORS = ['#8cff2e', '#22d3ee', '#ff3dbb', '#ffd60a', '#ff8a1f', '#a259ff', '#ff3b3b', '#3b82ff', '#f1f5f9', '#ff7ab6'];
 
 export type Phase = 'lobby' | 'race' | 'results';
 
@@ -17,6 +17,17 @@ export interface LobbyEntry {
   color: string;
   kind: 'human' | 'bot';
   connected: boolean;
+}
+
+export interface RecentWinner {
+  slot: number;
+  name: string;
+  color: string;
+  kind: 'human' | 'bot';
+  time: number | null; // race time of the winner, s
+  field: number; // cars in that race
+  humans: number; // people in that race
+  at: number; // server epoch ms
 }
 
 export interface RoomInfo {
@@ -29,6 +40,7 @@ export interface RoomInfo {
   entries: LobbyEntry[]; // in the race phase, index = car index
   maxPlayers: number;
   viewers: number;
+  recent: RecentWinner[]; // last few live-race winners, newest first
 }
 
 export type ServerMsg =

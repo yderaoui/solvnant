@@ -57,6 +57,9 @@ export class RaceRenderer {
   private camY = 0;
   private snap = true;
   mode: CameraMode = 'overview';
+  /** Screen space covered by HUD panels; the overview camera fits the track into what's left. */
+  insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  private labelBoxes: number[] = []; // reused: x, y of labels already placed this frame
   focus = 0;
   selected = -1;
   onCarClick: (car: number) => void = () => {};
@@ -167,7 +170,7 @@ export class RaceRenderer {
       const off = (track.widths[c.apex] / 2 + 12) * side;
       const t = new Text({
         text: `T${c.id}`,
-        style: { fontFamily: 'Titillium Web, sans-serif', fontSize: 13, fontWeight: '700', fill: 0xc8d0dc },
+        style: { fontFamily: 'Chakra Petch, sans-serif', fontSize: 13, fontWeight: '700', fill: 0xc8d0dc },
         resolution: 2,
       });
       t.anchor.set(0.5);
@@ -209,7 +212,7 @@ export class RaceRenderer {
       const label = new Text({
         text: e.name,
         style: {
-          fontFamily: 'Titillium Web, sans-serif',
+          fontFamily: 'Chakra Petch, sans-serif',
           fontSize: 12,
           fontWeight: '700',
           fill: 0xffffff,
@@ -228,23 +231,34 @@ export class RaceRenderer {
     });
   }
 
-  /** Draw one frame. `leader` is used by the leader camera; `dt` is wall-clock seconds. */
-  render(cars: CarVisual[], leader: number, dt: number, animateFx: boolean) {
+  /** Draw one frame. `order` is race order (leader first); `dt` is wall-clock seconds. */
+  render(cars: CarVisual[], order: number[], dt: number, animateFx: boolean) {
     if (!this.track) return;
     const W = this.app.screen.width,
       H = this.app.screen.height;
     const b = this.track.bounds;
-    const fitZoom = Math.min(W / (b.maxX - b.minX + 90), H / (b.maxY - b.minY + 90));
+    // Fit into the area not covered by HUD panels (they shrink away on small screens).
+    const ins = W > 760 ? this.insets : { top: 96, right: 8, bottom: 72, left: 8 };
+    const vw = Math.max(200, W - ins.left - ins.right),
+      vh = Math.max(200, H - ins.top - ins.bottom);
+    const fitZoom = Math.min(vw / (b.maxX - b.minX + 60), vh / (b.maxY - b.minY + 60));
+    // Screen offset of the free area's centre from the canvas centre, in world units at the target zoom.
+    let offX = (ins.left - ins.right) / 2,
+      offY = (ins.top - ins.bottom) / 2;
     let tz = fitZoom,
       tx = (b.minX + b.maxX) / 2,
       ty = (b.minY + b.maxY) / 2;
+    const leader = order.length ? order[0] : -1;
     const followIdx = this.mode === 'leader' ? leader : this.mode === 'car' ? this.focus : -1;
     if (followIdx >= 0 && cars[followIdx]) {
       tz = Math.max(fitZoom * 3, Math.min(6, Math.max(W, H) / 240));
       const c = cars[followIdx];
       tx = c.x + Math.cos(c.h) * c.speed * 0.6;
       ty = c.y + Math.sin(c.h) * c.speed * 0.6;
+      offX = offY = 0;
     }
+    tx -= offX / tz;
+    ty -= offY / tz;
     const k = this.snap ? 1 : Math.min(1, dt * 3);
     this.zoom += (tz - this.zoom) * k;
     this.camX += (tx - this.camX) * k;
@@ -266,11 +280,36 @@ export class RaceRenderer {
       s.root.alpha = c.flags & FLAG.stopped && !(c.flags & FLAG.finished) ? 0.45 : 1;
       s.ring.visible = i === this.selected;
       s.label.position.set(c.x, c.y - 3.2 * carScale);
+      s.label.visible = false; // decided below, in race order
       if (animateFx) {
         if (c.slip > 2.2 && c.speed > 5 && Math.random() < 0.6) this.puff(c, 0xb9bec7, 1 + c.slip * 0.15);
         if (c.flags & FLAG.offTrack && c.speed > 8 && Math.random() < 0.5) this.puff(c, 0x8b7350, 1.6);
       }
     });
+
+    // Labels: place them in race order and skip any that would overlap one already placed,
+    // so the leaders are always readable and the pack doesn't turn into a smear of text.
+    const boxes = this.labelBoxes;
+    boxes.length = 0;
+    const z = this.zoom;
+    for (let k = 0; k < order.length; k++) {
+      const i = order[k];
+      const s = this.cars[i];
+      if (!s || !cars[i]) continue;
+      const sx = s.label.x * z,
+        sy = s.label.y * z;
+      const w = s.label.width * z + 8; // label scale is 1/zoom, so width*z = screen px
+      let clash = false;
+      for (let j = 0; j < boxes.length; j += 3) {
+        if (Math.abs(boxes[j] - sx) < (boxes[j + 2] + w) / 2 && Math.abs(boxes[j + 1] - sy) < 16) {
+          clash = true;
+          break;
+        }
+      }
+      if (clash && i !== this.selected) continue;
+      s.label.visible = true;
+      boxes.push(sx, sy, w);
+    }
 
     // Particles
     this.fx.clear();

@@ -2,92 +2,121 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#070910" />
     <title>AI Grand Prix</title>
     <meta name="description" content="AI models write their own driver code and race on procedurally generated tracks. A new race every 5 minutes." />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏁</text></svg>" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23E10600'/><path d='M3 4h2v2H3zm4 0h2v2H7zm4 0h2v2h-2zM5 6h2v2H5zm4 0h2v2H9zM3 8h2v2H3zm4 0h2v2H7zm4 0h2v2h-2zM5 10h2v2H5zm4 0h2v2H9z' fill='white'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Russo+One&display=swap" rel="stylesheet" />
   </head>
   <body data-page="live">
+    <a class="skip-link" href="#main">Skip to content</a>
     <header class="topbar">
-      <a class="logo" href="#/live"><span class="logo-mark"></span>AI GRAND PRIX</a>
-      <nav>
-        <a href="#/live">Live</a>
-        <a href="#/leaderboard">Leaderboard</a>
-        <a href="#/history">History</a>
-        <a href="#/lab">Track Lab</a>
+      <a class="logo" href="#/live" aria-label="AI Grand Prix home">
+        <span class="logo-mark" aria-hidden="true"></span>
+        <span class="logo-text">AI GRAND PRIX</span>
+      </a>
+      <nav aria-label="Main">
+        <a href="#/live"><i data-icon="live"></i><span>Live</span></a>
+        <a href="#/leaderboard"><i data-icon="chart"></i><span>Leaderboard</span></a>
+        <a href="#/history"><i data-icon="history"></i><span>History</span></a>
+        <a href="#/lab"><i data-icon="map"></i><span>Track Lab</span></a>
       </nav>
-      <span id="mode-pill" class="pill" hidden title="Supabase is not configured: showing house-bot races computed in your browser">LOCAL MODE</span>
+      <div class="topbar-right">
+        <span id="mode-pill" class="pill pill-warn" hidden title="Supabase is not configured: showing house-bot races computed in your browser">Local mode</span>
+        <a id="next-race" class="next-race" href="#/live" aria-live="off"></a>
+      </div>
     </header>
 
-    <main>
-      <section id="view-stage" class="stage">
+    <main id="main" tabindex="-1">
+      <section id="view-stage" class="stage" aria-label="Race broadcast">
         <div id="stage-canvas"></div>
+        <div class="vignette" aria-hidden="true"></div>
 
         <div class="hud-top">
           <div class="hud-race">
+            <span id="hud-live" class="hud-live"><span class="dot" aria-hidden="true"></span><span id="hud-live-text">LIVE</span></span>
             <span id="hud-title" class="hud-title"></span>
             <span id="hud-lap" class="hud-lap"></span>
             <span id="hud-clock" class="hud-clock"></span>
           </div>
+          <div class="hud-progress" aria-hidden="true"><span id="hud-progress-bar"></span></div>
           <div class="hud-sub"><span id="hud-seed"></span> <span id="hud-note" class="hud-note"></span></div>
         </div>
 
-        <ol id="tower" class="tower"></ol>
-        <ul id="feed" class="feed"></ul>
+        <section class="tower-wrap" aria-label="Standings">
+          <button class="tower-head" id="tower-toggle" aria-expanded="true" aria-controls="tower">
+            <span>Standings</span><span class="tower-head-hint">Tap a driver for their code</span><i data-icon="down" data-size="14"></i>
+          </button>
+          <ol id="tower" class="tower"></ol>
+        </section>
+
+        <ul id="feed" class="feed" aria-live="polite" aria-label="Race events"></ul>
         <div id="center" class="center"></div>
-        <div class="buffering">Simulating ahead…</div>
+        <div class="buffering" role="status">Simulating ahead…</div>
 
-        <div class="cam">
-          <button id="cam-overview" class="active">Overview</button>
-          <button id="cam-leader">Follow leader</button>
-          <span class="cam-hint">Click any car to see its code</span>
+        <div class="cam" role="group" aria-label="Camera">
+          <button id="cam-overview" class="chip active" aria-pressed="true"><i data-icon="overview"></i><span>Overview</span></button>
+          <button id="cam-leader" class="chip" aria-pressed="false"><i data-icon="follow"></i><span>Follow leader</span></button>
         </div>
 
-        <div class="replay-bar">
-          <button id="replay-play">❚❚</button>
-          <input id="replay-seek" type="range" min="0" max="100" step="0.1" value="0" />
-          <span id="replay-time"></span>
-          <button data-speed="1">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
-          <a class="btn small" href="#/live">Back to live</a>
+        <div class="replay-bar" role="group" aria-label="Replay controls">
+          <button id="replay-play" class="icon-btn" aria-label="Pause"></button>
+          <input id="replay-seek" type="range" min="0" max="100" step="0.1" value="0" aria-label="Seek" />
+          <span id="replay-time" class="mono"></span>
+          <div class="speed" role="group" aria-label="Playback speed">
+            <button data-speed="1">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
+          </div>
+          <a class="btn btn-ghost small" href="#/live"><i data-icon="live" data-size="14"></i>Back to live</a>
         </div>
 
-        <aside id="lab-panel" class="lab-panel">
+        <aside id="lab-panel" class="lab-panel" aria-label="Track Lab">
           <h2>Track Lab</h2>
           <p class="muted">Every track comes from its seed. Same seed, same track, always.</p>
-          <div class="lab-seed-row">Seed <code id="lab-seed"></code></div>
-          <form id="lab-form"><input id="lab-input" placeholder="type any seed" autocomplete="off" /><button class="btn">Go</button></form>
+          <form id="lab-form">
+            <label for="lab-input">Seed</label>
+            <div class="input-row">
+              <input id="lab-input" placeholder="any text, e.g. monaco" autocomplete="off" spellcheck="false" />
+              <button class="btn">Load</button>
+            </div>
+          </form>
           <div class="lab-buttons">
-            <button id="lab-new" class="btn primary">🎲 New seed</button>
-            <button id="lab-race" class="btn">▶ Test race (house bots)</button>
-            <button id="lab-copy" class="btn">Copy link</button>
+            <button id="lab-new" class="btn btn-primary"><i data-icon="shuffle"></i>New seed</button>
+            <button id="lab-race" class="btn"><i data-icon="play"></i>Test race</button>
+            <button id="lab-copy" class="btn btn-ghost" aria-label="Copy link to this track"><i data-icon="link"></i><span>Copy link</span></button>
           </div>
+          <div class="lab-seed-row">Current seed <code id="lab-seed"></code></div>
           <div id="lab-stats" class="lab-stats"></div>
+          <h3>Corners</h3>
           <ol id="lab-corners" class="lab-corners"></ol>
         </aside>
 
-        <aside id="code-drawer" class="drawer">
+        <aside id="code-drawer" class="drawer" role="dialog" aria-modal="false" aria-labelledby="drawer-name">
           <div class="drawer-top">
             <div class="drawer-head"></div>
-            <button class="drawer-close" aria-label="Close">✕</button>
+            <button class="icon-btn drawer-close" aria-label="Close code viewer"><i data-icon="x" data-size="18"></i></button>
           </div>
           <div class="drawer-meta"></div>
-          <div class="drawer-actions"><button class="btn small copy-btn">Copy</button></div>
-          <pre class="code"><code></code></pre>
+          <div class="drawer-actions"><button class="btn small copy-btn"><i data-icon="copy" data-size="14"></i><span>Copy code</span></button></div>
+          <pre class="code" tabindex="0" aria-label="Driver source code"><code></code></pre>
         </aside>
       </section>
 
-      <section id="view-leaderboard" class="page" hidden>
-        <h1>Model leaderboard</h1>
-        <p class="muted">Every finished race, by model. Races driven by the fallback driver don't count toward the model's stats.</p>
+      <section id="view-leaderboard" class="page" hidden aria-labelledby="lb-title">
+        <header class="page-head">
+          <h1 id="lb-title">Model leaderboard</h1>
+          <p class="muted">Every finished race, by model. Only races a model drove with its own code count. House bots are a hand-written baseline.</p>
+        </header>
         <div id="leaderboard-body"></div>
       </section>
 
-      <section id="view-history" class="page" hidden>
-        <h1>Race history</h1>
-        <p class="muted">Every race is stored as seed + driver code. Replays are re-simulated from scratch in your browser.</p>
+      <section id="view-history" class="page" hidden aria-labelledby="hist-title">
+        <header class="page-head">
+          <h1 id="hist-title">Race history</h1>
+          <p class="muted">Every race is stored as seed + driver code. Replays are re-simulated from scratch in your browser and checked against the stored result.</p>
+        </header>
         <div id="history-body"></div>
       </section>
     </main>

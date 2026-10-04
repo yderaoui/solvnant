@@ -7,9 +7,21 @@ import { MAX_RACE_SECONDS } from '../sim/schedule';
 import { RaceRenderer, type CameraMode, type CarVisual } from './renderer';
 import { simulate, type LiveRecord } from './simClient';
 import { escapeHtml } from './codeViewer';
+import { icon, type IconName } from './icons';
 import type { RaceInfo, StoredResult } from './data';
 
 export type PlayMode = 'live' | 'replay';
+
+const EVENT_ICON: Record<string, IconName> = {
+  overtake: 'overtake',
+  crash: 'alert',
+  dnf: 'alert',
+  contact: 'zap',
+  wall: 'alert',
+  fastest_lap: 'clock',
+  final_lap: 'flag',
+  finish: 'flag',
+};
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -75,12 +87,14 @@ export class Broadcast {
     this.setCamera('overview');
     this.setHudVisible(true);
     $('hud-title').textContent = race.local ? (race.slot !== null ? 'HOUSE RACE' : 'TEST RACE') : `RACE #${race.id}`;
+    $('hud-live-text').textContent = mode === 'live' ? 'LIVE' : 'REPLAY';
+    $('hud-progress-bar').style.width = '0';
     $('hud-seed').textContent = `seed ${race.seed}`;
     $('hud-note').textContent = note ?? '';
     $('feed').innerHTML = '';
     $('tower').innerHTML = '';
     document.body.classList.toggle('is-replay', mode === 'replay');
-    this.center(`<div class="loading"><div class="spinner"></div><div>Loading drivers into the sandbox…</div></div>`);
+    this.center(`<div class="card loading" role="status"><div class="spinner"></div><div>Loading AI drivers into the sandbox…</div></div>`);
 
     const record = await simulate(
       { seed: race.seed, entries: race.entries, laps: race.laps ?? undefined, maxTime: MAX_RACE_SECONDS },
@@ -121,7 +135,11 @@ export class Broadcast {
   setCamera(mode: CameraMode, car = -1) {
     this.renderer.mode = mode;
     if (car >= 0) this.renderer.focus = car;
-    for (const id of ['cam-overview', 'cam-leader']) $(id).classList.toggle('active', id === `cam-${mode}`);
+    for (const id of ['cam-overview', 'cam-leader']) {
+      const on = id === `cam-${mode}`;
+      $(id).classList.toggle('active', on);
+      $(id).setAttribute('aria-pressed', String(on));
+    }
   }
 
   private togglePause() {
@@ -132,7 +150,13 @@ export class Broadcast {
       this.pausedAt = this.raceTime();
       this.paused = true;
     }
-    $('replay-play').textContent = this.paused ? '▶' : '❚❚';
+    this.updatePlayButton();
+  }
+
+  private updatePlayButton() {
+    const b = $('replay-play');
+    b.innerHTML = icon(this.paused ? 'play' : 'pause', 18);
+    b.setAttribute('aria-label', this.paused ? 'Play' : 'Pause');
   }
 
   private seek(t: number) {
@@ -151,8 +175,12 @@ export class Broadcast {
   }
 
   private highlightSpeed() {
-    for (const b of document.querySelectorAll<HTMLButtonElement>('[data-speed]')) b.classList.toggle('active', Number(b.dataset.speed) === this.replaySpeed);
-    $('replay-play').textContent = this.paused ? '▶' : '❚❚';
+    for (const b of document.querySelectorAll<HTMLButtonElement>('[data-speed]')) {
+      const on = Number(b.dataset.speed) === this.replaySpeed;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
+    this.updatePlayButton();
   }
 
   replay() {
@@ -171,7 +199,7 @@ export class Broadcast {
     this.lastWall = now;
     const rec = this.record;
     if (!rec || !this.race) {
-      this.renderer.render([], -1, dtWall, false);
+      this.renderer.render([], [], dtWall, false);
       return;
     }
     const t = this.raceTime();
@@ -181,7 +209,7 @@ export class Broadcast {
     const { cars, progress } = this.sample(tc);
     const order = this.order(cars, progress, tc);
     const playing = t > 0 && t < rec.duration && !buffering && !(this.mode === 'replay' && this.paused);
-    this.renderer.render(cars, order[0], dtWall, playing);
+    this.renderer.render(cars, order, dtWall, playing);
 
     if (now - this.lastHud > 120) {
       this.lastHud = now;
@@ -252,29 +280,24 @@ export class Broadcast {
     const finishTimes = rec.finishTimes;
     const leaderFinished = finishTimes.has(leader) && finishTimes.get(leader)! <= t;
     const lap = Math.min(rec.laps, Math.max(1, Math.floor(progress[leader] / L) + 1));
-    $('hud-lap').innerHTML = t < 0 ? `<b>${rec.laps}</b> LAPS` : leaderFinished ? 'FINISHED' : `LAP <b>${lap}</b>/${rec.laps}`;
+    $('hud-lap').innerHTML = t < 0 ? `<b>${rec.laps}</b> ${rec.laps === 1 ? 'LAP' : 'LAPS'}` : leaderFinished ? 'FINISHED' : `LAP <b>${lap}</b>/${rec.laps}`;
     $('hud-clock').textContent = t < 0 ? '' : fmtTime(Math.min(t, rec.duration));
+    const done = Math.max(0, Math.min(1, progress[leader] / (rec.laps * L)));
+    $('hud-progress-bar').style.width = `${(leaderFinished ? 1 : done) * 100}%`;
 
     // Countdown / lights / results
-    if (t < 0) {
-      const secs = Math.ceil(-t);
-      const lights = Math.max(0, Math.min(5, 5 - Math.floor(-t)));
-      this.center(`
-        <div class="countdown">
-          <div class="lights">${[0, 1, 2, 3, 4].map((i) => `<span class="${i < lights && -t <= 5 ? 'on' : ''}"></span>`).join('')}</div>
-          <div class="cd-label">${-t > 5 ? 'LIGHTS OUT IN' : 'GET READY'}</div>
-          <div class="cd-time">${secs >= 60 ? fmtTime(secs).slice(0, -2) : secs}</div>
-          <div class="cd-sub">${rec.carCount} AI drivers · ${rec.laps} laps · ${(L / 1000).toFixed(2)} km · ${this.track!.corners.length} corners</div>
-        </div>`);
-    } else if (t >= rec.duration && rec.complete) {
+    if (t < 0) this.renderCountdown(t);
+    else if (t >= rec.duration && rec.complete) {
       if (!this.resultsShown) this.showResults();
-    } else if (this.resultsShown || $('center').innerHTML.includes('countdown')) {
+    } else if (this.resultsShown || document.querySelector('#center .countdown')) {
       this.resultsShown = false;
       this.center('');
     }
 
     // Timing tower
     const winnerTime = Math.min(...finishTimes.values());
+    let fastestCar = -1;
+    for (const ev of rec.events) if (ev.type === 'fastest_lap' && ev.t <= t) fastestCar = ev.car;
     // Rows are kept and patched in place (not rebuilt) so clicks on them always land.
     const tower = $('tower');
     while (tower.children.length > order.length) tower.lastElementChild!.remove();
@@ -286,7 +309,7 @@ export class Broadcast {
       const out = cars[i].flags & FLAG.stopped && !finished;
       let gap: string;
       if (out) gap = '<span class="out">OUT</span>';
-      else if (finished) gap = p === 0 ? '🏁' : `+${(ft! - winnerTime).toFixed(2)}`;
+      else if (finished) gap = p === 0 ? icon('flag', 14) : `+${(ft! - winnerTime).toFixed(2)}`;
       else if (p === 0) gap = t < 0 ? '' : 'LEADER';
       else {
         const m = progress[order[0]] - progress[i];
@@ -295,9 +318,19 @@ export class Broadcast {
       const li = tower.children[p] as HTMLElement;
       li.dataset.car = String(i);
       li.className = `${i === this.renderer.selected ? 'sel' : ''} ${out ? 'is-out' : ''}`;
+      // Places gained/lost since the start (arrow + number, not colour alone).
+      const delta = t < 0 ? 0 : rec.grid.indexOf(i) - p;
+      const deltaHtml =
+        delta > 0
+          ? `<span class="delta up" title="Gained ${delta}">${icon('up', 12)}${delta}</span>`
+          : delta < 0
+            ? `<span class="delta down" title="Lost ${-delta}">${icon('down', 12)}${-delta}</span>`
+            : '<span class="delta same">–</span>';
       const html = `<span class="pos">${p + 1}</span><span class="bar" style="background:${e.color}"></span>
-        <span class="nm">${escapeHtml(e.name)}${e.source === 'fallback' ? ' <i title="model failed - fallback driver">⚠</i>' : ''}</span>
-        <span class="gap">${gap}</span>`;
+        <span class="nm">${escapeHtml(e.name)}${i === fastestCar ? `<span class="fl" title="Fastest lap">${icon('clock', 13)}</span>` : ''}</span>
+        ${deltaHtml}<span class="gap">${gap}</span>`;
+      li.setAttribute('aria-label', `P${p + 1} ${e.name}. View driver code`);
+      li.tabIndex = 0;
       if (li.innerHTML !== html) li.innerHTML = html;
     });
 
@@ -308,7 +341,7 @@ export class Broadcast {
       $('feed').innerHTML = visible
         .slice(-5)
         .reverse()
-        .map((e) => `<li class="ev-${e.type}"><span class="ev-t">${fmtTime(e.t)}</span>${escapeHtml(e.text)}</li>`)
+        .map((e) => `<li class="ev-${e.type}">${icon(EVENT_ICON[e.type] ?? 'flag', 14)}<span class="ev-t">${fmtTime(e.t)}</span><span>${escapeHtml(e.text.replace(/^🏁\s*/u, ''))}</span></li>`)
         .join('');
     }
 
@@ -319,45 +352,109 @@ export class Broadcast {
     }
   }
 
+  private renderCountdown(t: number) {
+    const rec = this.record!;
+    const race = this.race!;
+    // Build once, then patch: rebuilding every tick would swallow clicks on the grid.
+    if (!document.querySelector('#center .countdown')) {
+      const grid = rec.grid
+        .map((car, slot) => {
+          const e = race.entries[car];
+          return `<li data-car="${car}" tabindex="0" aria-label="Grid P${slot + 1} ${escapeHtml(e.name)}. View driver code">
+            <span class="gp">P${slot + 1}</span><span class="bar" style="background:${e.color}"></span><span class="gn">${escapeHtml(e.name)}</span></li>`;
+        })
+        .join('');
+      this.center(`
+        <div class="card countdown">
+          <div class="lights" aria-hidden="true">${'<span></span>'.repeat(5)}</div>
+          <div class="cd-label" id="cd-label"></div>
+          <div class="cd-time" id="cd-time" role="timer"></div>
+          <div class="cd-sub">${rec.carCount} AI drivers · ${rec.laps} ${rec.laps === 1 ? 'lap' : 'laps'} · ${(rec.trackLength / 1000).toFixed(2)} km · ${this.track!.corners.length} corners</div>
+          <div class="grid-title">STARTING GRID</div>
+          <ol class="grid-list">${grid}</ol>
+        </div>`);
+      for (const li of document.querySelectorAll<HTMLElement>('.grid-list li')) {
+        li.onclick = () => this.onSelectCar(Number(li.dataset.car));
+        li.onkeydown = (ev) => {
+          if (ev.key === 'Enter') this.onSelectCar(Number(li.dataset.car));
+        };
+      }
+    }
+    const secs = Math.ceil(-t);
+    const lit = -t <= 5 ? Math.max(0, Math.min(5, 5 - Math.floor(-t))) : 0;
+    document.querySelectorAll('.lights span').forEach((el, i) => el.classList.toggle('on', i < lit));
+    $('cd-label').textContent = -t > 5 ? 'LIGHTS OUT IN' : 'GET READY';
+    $('cd-time').textContent = secs >= 60 ? fmtTime(secs).slice(0, -2) : String(secs);
+  }
+
   private showResults() {
     const rec = this.record!;
     const race = this.race!;
     this.resultsShown = true;
     const results = rec.results!;
     const win = results[0];
-    const rows = results
+    const timeOf = (r: (typeof results)[number]) =>
+      r.finished
+        ? r.position === 1
+          ? fmtTime(r.finishTime!)
+          : `+${(r.finishTime! - win.finishTime!).toFixed(2)}s`
+        : r.crashed
+          ? `<span class="out" title="${escapeHtml(r.crashReason ?? '')}">DNF</span>`
+          : `${Math.max(0, Math.round(r.progress))} m`;
+    const step = (idx: number) => {
+      const r = results[idx];
+      if (!r) return '<div></div>';
+      const e = race.entries[r.car];
+      return `<div class="step p${idx + 1}" data-car="${r.car}" tabindex="0" role="button" aria-label="P${idx + 1} ${escapeHtml(e.name)}. View driver code">
+        <div class="pn">P${idx + 1}</div>
+        <div class="who"><span class="bar" style="background:${e.color};height:14px"></span>${escapeHtml(e.name)}</div>
+        <div class="tm">${timeOf(r)}</div></div>`;
+    };
+    const rest = results
+      .slice(3)
       .map((r) => {
         const e = race.entries[r.car];
-        const status = r.finished
-          ? r.position === 1
-            ? fmtTime(r.finishTime!)
-            : `+${(r.finishTime! - win.finishTime!).toFixed(2)}s`
-          : r.crashed
-            ? `<span class="out" title="${escapeHtml(r.crashReason ?? '')}">DNF · crashed</span>`
-            : `${r.lapsDone}/${rec.laps} laps`;
-        return `<tr data-car="${r.car}"><td class="pos">${r.position}</td><td><span class="bar" style="background:${e.color}"></span>${escapeHtml(e.name)}<div class="sub">${escapeHtml(e.model)}</div></td>
-          <td>${status}</td><td>${r.bestLap ? r.bestLap.toFixed(2) : '–'}</td></tr>`;
+        return `<tr data-car="${r.car}" tabindex="0"><td class="pos">${r.position}</td><td><span class="bar" style="background:${e.color}"></span>${escapeHtml(e.name)}<div class="sub">${escapeHtml(e.model)}</div></td>
+          <td class="num">${timeOf(r)}</td><td class="num">${r.bestLap ? r.bestLap.toFixed(2) : '–'}</td></tr>`;
       })
       .join('');
     const badge =
       this.verified === 'yes'
-        ? '<div class="verify ok">✓ Verified: your browser re-ran this race and got the same result as the server.</div>'
+        ? `<div class="verify ok">${icon('check')}Verified: your browser re-ran this race and got the same result as the server.</div>`
         : this.verified === 'no'
-          ? '<div class="verify bad">⚠ Your result differs from the stored result.</div>'
+          ? `<div class="verify bad">${icon('alert')}Your browser's result differs from the stored result.</div>`
           : '';
     const live = this.mode === 'live' && race.slot !== null;
+    const link = race.id !== null ? `#/replay/${race.id}` : race.slot !== null ? `#/replay/local/${race.slot}` : null;
+    const winner = race.entries[win.car];
     this.center(`
-      <div class="results">
-        <div class="res-head">${win.finished ? '🏆 ' + escapeHtml(race.entries[win.car].name) + ' wins' : 'Race over'}</div>
-        <table><thead><tr><th>P</th><th>Driver</th><th>Time</th><th>Best lap</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="card results" role="dialog" aria-label="Race results">
+        <div class="res-kicker">${race.id !== null ? `Race #${race.id}` : 'Race'} · Final classification</div>
+        <div class="res-head">${icon('trophy', 26)}${win.finished ? `${escapeHtml(winner.name)} wins` : `${escapeHtml(winner.name)} leads at the flag`}</div>
+        <div class="podium">${step(1)}${step(0)}${step(2)}</div>
+        ${rest ? `<table><thead><tr><th>P</th><th>Driver</th><th>Time</th><th>Best lap</th></tr></thead><tbody>${rest}</tbody></table>` : ''}
         ${badge}
         <div class="res-foot">
-          ${live ? `<span>Next race in <b id="next-in"></b></span>` : ''}
-          <button class="btn" id="btn-replay">↺ Replay</button>
+          ${live ? `<span>Next race in <b id="next-in"></b></span>` : '<span></span>'}
+          <div class="res-actions">
+            ${link ? `<button class="btn btn-ghost small" id="btn-share">${icon('link', 14)}Copy replay link</button>` : ''}
+            <button class="btn small" id="btn-replay">${icon('replay', 14)}Watch again</button>
+          </div>
         </div>
       </div>`);
     $('btn-replay').onclick = () => this.replay();
-    for (const tr of document.querySelectorAll<HTMLElement>('.results tr[data-car]')) tr.onclick = () => this.onSelectCar(Number(tr.dataset.car));
+    const share = document.getElementById('btn-share');
+    if (share && link)
+      share.onclick = async () => {
+        await navigator.clipboard.writeText(location.origin + location.pathname + link);
+        share.innerHTML = `${icon('check', 14)}Link copied`;
+      };
+    for (const el of document.querySelectorAll<HTMLElement>('.results [data-car]')) {
+      el.onclick = () => this.onSelectCar(Number(el.dataset.car));
+      el.onkeydown = (ev) => {
+        if (ev.key === 'Enter') this.onSelectCar(Number(el.dataset.car));
+      };
+    }
     this.onPostRace();
   }
 
@@ -369,6 +466,9 @@ export class Broadcast {
 
   private setHudVisible(v: boolean) {
     document.body.classList.toggle('no-race', !v);
+    // Keep the track clear of the panels: race HUD (top bar, tower right, controls bottom) or the Track Lab panel (left).
+    this.renderer.insets = v ? { top: 72, right: 300, bottom: 64, left: 16 } : { top: 16, right: 16, bottom: 16, left: 350 };
+    this.renderer.resetCamera();
   }
 }
 

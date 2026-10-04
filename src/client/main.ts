@@ -2,6 +2,7 @@ import './style.css';
 import { RaceRenderer } from './renderer';
 import { Broadcast, fmtTime } from './broadcast';
 import { CodeViewer, escapeHtml } from './codeViewer';
+import { hydrateIcons, icon } from './icons';
 import {
   db,
   fetchHistory,
@@ -19,6 +20,7 @@ import { raceStartAt, slotAt, slotStart } from '../sim/schedule';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
+hydrateIcons();
 const renderer = await RaceRenderer.create($('stage-canvas'));
 const broadcast = new Broadcast(renderer);
 const viewer = new CodeViewer();
@@ -38,6 +40,51 @@ $('tower').addEventListener('click', (e) => {
   const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-car]');
   if (li) broadcast.onSelectCar(Number(li.dataset.car));
 });
+$('tower').addEventListener('keydown', (e) => {
+  const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-car]');
+  if (li && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    broadcast.onSelectCar(Number(li.dataset.car));
+  }
+});
+// Mobile: the standings panel starts collapsed (it would cover the track) and expands on tap.
+if (matchMedia('(max-width: 760px)').matches) {
+  $('tower-toggle').parentElement!.classList.add('collapsed');
+  $('tower-toggle').setAttribute('aria-expanded', 'false');
+}
+$('tower-toggle').addEventListener('click', () => {
+  if (!matchMedia('(max-width: 760px)').matches) return;
+  const wrap = $('tower-toggle').parentElement!;
+  const collapsed = wrap.classList.toggle('collapsed');
+  $('tower-toggle').setAttribute('aria-expanded', String(!collapsed));
+});
+
+// Header: always show when the next race starts (or that one is live now).
+function updateNextRace() {
+  const now = Date.now();
+  const slot = slotAt(now);
+  const start = raceStartAt(slot);
+  const el = $('next-race');
+  const live = now >= start && now < start + 150_000;
+  el.classList.toggle('is-live', live);
+  if (live) el.innerHTML = `<span class="dot" aria-hidden="true"></span><span>Race live now</span>`;
+  else {
+    const target = now < start ? start : raceStartAt(slot + 1);
+    el.innerHTML = `${icon('clock', 14)}<span class="lbl">Next race</span><b>${fmtTime((target - now) / 1000).slice(0, -2)}</b>`;
+  }
+}
+updateNextRace();
+setInterval(updateNextRace, 1000);
+
+export function toast(text: string) {
+  document.querySelector('.toast')?.remove();
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.setAttribute('role', 'status');
+  t.innerHTML = `${icon('check', 16)}${escapeHtml(text)}`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
 
 if (isLocalMode) $('mode-pill').hidden = false;
 
@@ -48,7 +95,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)))
 function show(view: 'stage' | 'leaderboard' | 'history') {
   for (const v of ['stage', 'leaderboard', 'history']) $(`view-${v}`).hidden = v !== view;
   for (const a of document.querySelectorAll<HTMLAnchorElement>('nav a')) {
-    a.classList.toggle('active', location.hash.startsWith(a.getAttribute('href')!) || (a.getAttribute('href') === '#/live' && location.hash === ''));
+    const href = a.getAttribute('href')!;
+    const on = location.hash.startsWith(href) || (href === '#/live' && (location.hash === '' || location.hash.startsWith('#/replay')));
+    a.classList.toggle('active', on);
+    if (on) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
   }
 }
 
@@ -58,6 +109,8 @@ async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const page = parts[0] || 'live';
   document.body.dataset.page = page;
+  document.body.classList.remove('is-replay');
+  if (my > 1) $('main').focus({ preventScroll: true }); // screen readers: announce the new view
   switch (page) {
     case 'leaderboard':
       show('leaderboard');
@@ -120,7 +173,9 @@ async function openReplay(args: string[]) {
   if (args[0] === 'local' && args[1]) race = localRace(Number(args[1]));
   else if (args[0]) race = await fetchRaceById(Number(args[0]));
   if (!race) {
-    broadcast.center(`<div class="results"><div class="res-head">Race not found</div><p>It may not have finished yet, or Supabase isn't configured.</p><a class="btn" href="#/live">Back to live</a></div>`);
+    broadcast.center(`<div class="card results"><div class="res-head">${icon('alert', 24)}Race not found</div>
+      <p class="muted">It may not have finished yet, or the database isn't configured.</p>
+      <a class="btn btn-primary" href="#/live">${icon('live')}Watch live</a></div>`);
     return;
   }
   await broadcast.load(race, 'replay');
@@ -137,13 +192,14 @@ function openLab(seed: string) {
   const t = generateTrack(seed);
   $('lab-seed').textContent = seed;
   $<HTMLInputElement>('lab-input').value = seed;
-  $('lab-stats').innerHTML = `
-    <div><b>${(t.length / 1000).toFixed(2)}</b> km</div>
-    <div><b>${t.corners.length}</b> corners</div>
-    <div><b>${lapsFor(t)}</b> laps</div>
-    <div><b>${Math.min(...t.widths).toFixed(0)}–${Math.max(...t.widths).toFixed(0)}</b> m wide</div>`;
+  const stat = (v: string, label: string) => `<div class="stat"><b>${v}</b><span>${label}</span></div>`;
+  $('lab-stats').innerHTML =
+    stat((t.length / 1000).toFixed(2), 'km length') +
+    stat(String(t.corners.length), 'corners') +
+    stat(String(lapsFor(t)), lapsFor(t) === 1 ? 'lap per race' : 'laps per race') +
+    stat(`${Math.min(...t.widths).toFixed(0)}–${Math.max(...t.widths).toFixed(0)}`, 'm wide');
   $('lab-corners').innerHTML = t.corners
-    .map((c) => `<li><b>T${c.id}</b> ${c.direction} · ${c.angle}° · r ${c.radius} m <span>${c.distance} m</span></li>`)
+    .map((c) => `<li><b>T${c.id}</b>${c.direction === 'left' ? 'Left' : 'Right'} · ${c.angle}° · r ${c.radius} m<span>${c.distance} m</span></li>`)
     .join('');
 }
 
@@ -162,62 +218,77 @@ $('lab-race').onclick = () => {
 };
 $('lab-copy').onclick = async () => {
   await navigator.clipboard.writeText(location.href);
-  $('lab-copy').textContent = 'Link copied ✓';
-  setTimeout(() => ($('lab-copy').textContent = 'Copy link'), 1500);
+  toast('Track link copied');
 };
 
 // ---------------------------------------------------------------- leaderboard / history
+const skeleton = (rows: number) => `<div class="table-wrap" style="border:0;background:none">${'<div class="skeleton"></div>'.repeat(rows)}</div>`;
+const empty = (ic: Parameters<typeof icon>[0], text: string, action = `<a class="btn btn-primary" href="#/live">${icon('live')}Watch the live race</a>`) =>
+  `<div class="empty">${icon(ic, 32)}<p>${text}</p>${action}</div>`;
+
 async function renderLeaderboard() {
   const el = $('leaderboard-body');
   if (isLocalMode) {
-    el.innerHTML = `<p class="empty">The model leaderboard needs Supabase. Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code> (see README).</p>`;
+    el.innerHTML = empty('chart', 'The model leaderboard needs the database. Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code> (see README).');
     return;
   }
-  el.innerHTML = '<p class="empty">Loading…</p>';
+  el.innerHTML = skeleton(6);
   try {
     const rows = await fetchLeaderboard();
     if (!rows.length) {
-      el.innerHTML = '<p class="empty">No finished races yet.</p>';
+      el.innerHTML = empty('trophy', 'No finished races yet. The first results land here a few minutes after the first race.');
       return;
     }
-    el.innerHTML = `<table class="table"><thead><tr><th>#</th><th>Model</th><th>Races</th><th>Wins</th><th>Podiums</th><th>Avg pos</th><th>Crashes</th><th>Best lap</th></tr></thead><tbody>
+    el.innerHTML = `<div class="table-wrap"><table class="table"><thead><tr>
+        <th>#</th><th>Model</th><th class="num hide-sm">Races</th><th class="num">Wins</th><th class="num">Win rate</th><th class="num hide-sm">Podiums</th>
+        <th class="num">Avg pos</th><th class="num hide-sm">Crashes</th><th class="num hide-sm">Best lap</th></tr></thead><tbody>
       ${rows
-        .map(
-          (r, i) => `<tr><td>${i + 1}</td><td class="model">${escapeHtml(r.model)}</td><td>${r.races}</td><td><b>${r.wins}</b></td><td>${r.podiums}</td>
-            <td>${Number(r.avg_position).toFixed(2)}</td><td>${r.crashes}</td><td>${r.best_lap ? Number(r.best_lap).toFixed(2) + 's' : '–'}</td></tr>`,
-        )
-        .join('')}</tbody></table>`;
+        .map((r, i) => {
+          const rate = r.races ? r.wins / r.races : 0;
+          const house = r.model.startsWith('House Bot');
+          const [vendor, id] = r.model.includes('/') ? r.model.split('/') : ['', r.model];
+          return `<tr><td><span class="rank ${i < 3 ? 'r' + (i + 1) : ''}">${i + 1}</span></td>
+            <td class="model">${escapeHtml(id.replace(/:free$/, ''))}${house ? '<span class="tag">BASELINE</span>' : ''}<small>${escapeHtml(vendor)}</small></td>
+            <td class="num hide-sm">${r.races}</td><td class="num"><b>${r.wins}</b></td>
+            <td class="num"><div class="winbar">${Math.round(rate * 100)}%<span><i style="width:${rate * 100}%"></i></span></div></td>
+            <td class="num hide-sm">${r.podiums}</td><td class="num">${Number(r.avg_position).toFixed(2)}</td>
+            <td class="num hide-sm">${r.crashes}</td><td class="num hide-sm">${r.best_lap ? Number(r.best_lap).toFixed(2) + 's' : '–'}</td></tr>`;
+        })
+        .join('')}</tbody></table></div>`;
   } catch (e) {
-    el.innerHTML = `<p class="empty">Couldn't load leaderboard: ${escapeHtml(String(e))}</p>`;
+    el.innerHTML = empty('alert', `Couldn't load the leaderboard: ${escapeHtml(String(e))}`, `<button class="btn" onclick="location.reload()">${icon('replay')}Try again</button>`);
   }
 }
 
 async function renderHistory() {
   const el = $('history-body');
+  const replayBtn = (href: string) => `<a class="btn small" href="${href}">${icon('play', 14)}Replay</a>`;
   if (isLocalMode) {
     const now = slotAt(Date.now());
     const rows = [];
     for (let s = now - 1; s > now - 13; s--) {
-      rows.push(`<tr><td>${new Date(raceStartAt(s)).toLocaleTimeString()}</td><td>local-${s}</td><td>House bots</td><td><a class="btn small" href="#/replay/local/${s}">Replay</a></td></tr>`);
+      rows.push(`<tr><td class="mono">${new Date(raceStartAt(s)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+        <td class="mono hide-sm">local-${s}</td><td>House bots</td><td class="num">${replayBtn(`#/replay/local/${s}`)}</td></tr>`);
     }
-    el.innerHTML = `<p class="empty">Local mode: these are house races, re-computed in your browser from the slot number.</p>
-      <table class="table"><thead><tr><th>Started</th><th>Seed</th><th>Field</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+    el.innerHTML = `<p class="muted" style="margin-top:16px">Local mode: house races, re-computed in your browser from the time slot.</p>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Started</th><th class="hide-sm">Seed</th><th>Field</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
     return;
   }
-  el.innerHTML = '<p class="empty">Loading…</p>';
+  el.innerHTML = skeleton(8);
   try {
     const rows = await fetchHistory();
     el.innerHTML = rows.length
-      ? `<table class="table"><thead><tr><th>Race</th><th>Started</th><th>Seed</th><th>Winner</th><th></th></tr></thead><tbody>
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>Race</th><th>Started</th><th class="hide-sm">Seed</th><th>Winner</th><th></th></tr></thead><tbody>
         ${rows
           .map(
-            (r) => `<tr><td>#${r.id}</td><td>${new Date(r.start_at).toLocaleString()}</td><td>${escapeHtml(r.seed)}</td>
-              <td>${escapeHtml(r.winner ?? '–')}</td><td><a class="btn small" href="#/replay/${r.id}">Replay</a></td></tr>`,
+            (r) => `<tr><td class="mono">#${r.id}</td><td>${new Date(r.start_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+              <td class="mono hide-sm">${escapeHtml(r.seed)}</td>
+              <td>${r.winner ? `${icon('trophy', 14)} ${escapeHtml(r.winner)}` : '–'}</td><td class="num">${replayBtn(`#/replay/${r.id}`)}</td></tr>`,
           )
-          .join('')}</tbody></table>`
-      : '<p class="empty">No finished races yet.</p>';
+          .join('')}</tbody></table></div>`
+      : empty('history', 'No finished races yet. Races run every 5 minutes.');
   } catch (e) {
-    el.innerHTML = `<p class="empty">Couldn't load history: ${escapeHtml(String(e))}</p>`;
+    el.innerHTML = empty('alert', `Couldn't load history: ${escapeHtml(String(e))}`, `<button class="btn" onclick="location.reload()">${icon('replay')}Try again</button>`);
   }
 }
 

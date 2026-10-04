@@ -1,6 +1,7 @@
 // Side drawer showing the driver code a model wrote.
 import type { EntryInfo } from './data';
 import type { CarResult } from '../sim/race';
+import { icon } from './icons';
 
 const KEYWORDS =
   /^(const|let|var|function|return|if|else|for|while|do|break|continue|new|typeof|of|in|true|false|null|undefined|this|switch|case|default|throw|try|catch)$/;
@@ -37,6 +38,7 @@ const SOURCE_LABEL: Record<string, string> = {
 export class CodeViewer {
   private el = document.getElementById('code-drawer')!;
   private onClose: () => void = () => {};
+  private lastFocus: HTMLElement | null = null;
 
   constructor() {
     this.el.querySelector('.drawer-close')!.addEventListener('click', () => this.close());
@@ -52,30 +54,34 @@ export class CodeViewer {
     this.el.querySelector('.drawer-head')!.innerHTML = `
       <span class="swatch" style="background:${entry.color}"></span>
       <div>
-        <div class="drawer-name">${escapeHtml(entry.name)}</div>
+        <div class="drawer-name" id="drawer-name">${escapeHtml(entry.name)}</div>
         <div class="drawer-model">${escapeHtml(entry.model)}</div>
       </div>`;
     const crash = result?.crashReason
-      ? `<div class="crash-box"><b>Crashed${result.crashTime ? ` at ${result.crashTime.toFixed(1)}s` : ''}:</b> ${escapeHtml(result.crashReason)}</div>`
+      ? `<div class="crash-box">${icon('alert', 14)}<div><b>Crashed${result.crashTime ? ` at ${result.crashTime.toFixed(1)}s` : ''}:</b> ${escapeHtml(result.crashReason)}</div></div>`
       : '';
     this.el.querySelector('.drawer-meta')!.innerHTML = `
-      <span class="badge badge-${entry.source}">${SOURCE_LABEL[entry.source] ?? entry.source}</span>
+      <span class="badge badge-${entry.source}">${icon(entry.source === 'llm' ? 'code' : 'alert', 12)}${SOURCE_LABEL[entry.source] ?? entry.source}</span>
       <span>${lines} lines · ${(bytes / 1024).toFixed(1)} KB</span>
       ${entry.createdAt ? `<span>written ${new Date(entry.createdAt).toLocaleString()}</span>` : ''}
       ${crash}`;
     this.el.querySelector('code')!.innerHTML = highlight(entry.code);
     const copy = this.el.querySelector<HTMLButtonElement>('.copy-btn')!;
-    copy.textContent = 'Copy';
+    const label = copy.querySelector('span')!;
+    label.textContent = 'Copy code';
     copy.onclick = async () => {
       await navigator.clipboard.writeText(entry.code);
-      copy.textContent = 'Copied ✓';
+      label.textContent = 'Copied';
     };
+    this.lastFocus = document.activeElement as HTMLElement | null;
     this.el.classList.add('open');
+    this.el.querySelector<HTMLElement>('.drawer-close')!.focus({ preventScroll: true });
   }
 
   close() {
     if (!this.el.classList.contains('open')) return;
     this.el.classList.remove('open');
+    this.lastFocus?.focus?.({ preventScroll: true });
     this.onClose();
   }
 }

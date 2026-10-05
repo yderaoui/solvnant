@@ -53,6 +53,8 @@ export class Broadcast {
   active = true;
   /** 3D camera for this broadcast: off, chase behind the followed car, or first person from the crowd. */
   private view3d: 'none' | '3d' | 'fan' = 'none';
+  /** The camera the viewer last picked; every new race opens with it (3D unless they chose the map). */
+  private prefer: 'none' | '3d' | 'fan' = '3d';
   private ob: Obstacles | null = null;
   private pushed3d = '';
   private lastEvT = -1;
@@ -88,6 +90,7 @@ export class Broadcast {
   /** Switch to a 3D camera (loads three.js on first use). */
   setCamera3d(mode: '3d' | 'fan') {
     this.view3d = mode;
+    if (this.race) this.prefer = mode;
     audio.start();
     this.paintCams();
     void load3d($('stage-canvas')).then((c) => {
@@ -163,8 +166,11 @@ export class Broadcast {
     this.race = null;
     this.record = null;
     this.track = generateTrack(seed);
+    this.ob = generateObstacles(this.track);
     this.renderer.setTrack(this.track);
+    this.renderer.setObstacles(this.ob);
     this.renderer.setCars([]);
+    this.paintCams();
     this.renderer.mode = 'overview';
     this.renderer.resetCamera();
     this.setHudVisible(false);
@@ -190,7 +196,9 @@ export class Broadcast {
     this.renderer.setCars(race.entries);
     this.push3d();
     this.renderer.selected = -1;
+    const prefer = this.prefer;
     this.setCamera('overview');
+    if (prefer !== 'none') this.setCamera3d(prefer);
     this.setHudVisible(true);
     $('hud-title').textContent = race.local ? (race.slot !== null ? 'HOUSE RACE' : 'TEST RACE') : `RACE #${race.id}`;
     $('hud-live-text').textContent = mode === 'live' ? 'LIVE' : 'REPLAY';
@@ -242,7 +250,10 @@ export class Broadcast {
     this.renderer.mode = mode;
     if (car >= 0) this.renderer.focus = car;
     // Picking a car while in 3D keeps the 3D camera (it follows the new car); map/leader buttons leave 3D.
-    if (car < 0) this.view3d = 'none';
+    if (car < 0) {
+      this.view3d = 'none';
+      if (this.race && mode === 'overview') this.prefer = 'none';
+    }
     this.paintCams();
   }
 
@@ -303,7 +314,16 @@ export class Broadcast {
     const dtWall = Math.min(0.1, (now - this.lastWall) / 1000);
     this.lastWall = now;
     const rec = this.record;
+    const c3 = this.view3d !== 'none' ? get3d() : null;
     if (!rec || !this.race) {
+      // Track Lab (or still loading): the 3D view flies over the empty circuit
+      if (c3 && this.pushed3d && this.track) {
+        c3.setVisible(true);
+        this.renderer.app.stage.visible = false;
+        c3.render([], -1, dtWall);
+        audio.update(0, 0, 0, 0.1, dtWall);
+        return;
+      }
       get3d()?.setVisible(false);
       this.renderer.app.stage.visible = true;
       this.renderer.render([], [], dtWall, false);
@@ -316,7 +336,6 @@ export class Broadcast {
     const { cars, progress } = this.sample(tc);
     const order = this.order(cars, progress, tc);
     const playing = t > 0 && t < rec.duration && !buffering && !(this.mode === 'replay' && this.paused);
-    const c3 = this.view3d !== 'none' ? get3d() : null;
     if (c3 && this.pushed3d) {
       const focus = this.renderer.selected >= 0 ? this.renderer.selected : order[0];
       this.play3dEvents(c3, tc, cars);

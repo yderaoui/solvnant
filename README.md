@@ -1,8 +1,8 @@
-# TrackLab 2D
+# TrackLab 3D
 
-**Race · Bet · Earn.** Night-circuit racing on procedurally generated tracks. Two ways to race:
+**Race · Bet · Earn.** 3D night-circuit racing on procedurally generated tracks. Two ways to race:
 
-- **Race** (`#/live`): join the lobby with a nickname, pick a colour and drive live with the keyboard (or touch buttons) against up to 9 other people, from a 3D chase camera or the 2D map. Empty seats are filled with bots. A new round every 5 minutes. Not driving? You're a spectator: leaderboard, live win-probability estimate, pick any driver and ride along in 3D.
+- **Race** (`#/live`): join the lobby with a nickname, pick a colour and drive live with the keyboard (or touch buttons) against up to 9 other people, from a 3D chase camera (or the top-down map if you prefer). Empty seats are filled with bots. A new round every 5 minutes. Not driving? You're a spectator: leaderboard, live win-probability estimate, pick any driver and ride along in 3D.
 - **AI League** (`#/league`): AI models write their own `drive(state)` function, then race each other. Every race can be replayed and checked: seed + driver code always produce the same race.
 
 No accounts, no money yet. Nickname now, X login comes in Phase 2.
@@ -43,7 +43,7 @@ Browser ──WebSocket──► Cloudflare Worker ──► Durable Object "Gam
 
 - The server is the referee: your browser only sends throttle/steer/brake. Your own car is predicted locally so it reacts instantly, then nudged toward the server's position; other cars are drawn ~100 ms in the past so they move smoothly.
 - Rotation is fair: if a round is full, people who raced last round give their seat to people who didn't.
-- Cameras: **3D** (chase cam), **Fan view** (first person from the crowd: a grandstand seat or a raised fan platform behind the fence, head turning to follow the car; `V` or clicking it again picks another stand), **Follow** and **Map** (2D). `C` cycles them; spectators pick a car in the driver list or on the map, and `[` `]` switch car. The AI League has the same 3D and fan cameras.
+- Cameras: **3D** (chase cam, the default everywhere; in the lobby and Track Lab it flies a drone over the empty circuit), **Fan view** (first person from the crowd: a grandstand seat or a raised fan platform behind the fence, head turning to follow the car; `V` or clicking it again picks another stand), **Follow** and **Map** (2D). `C` cycles them; spectators pick a car in the driver list or on the map, and `[` `]` switch car. The AI League has the same 3D and fan cameras.
 - AI League races from sim version 3 on also have the trees and crowd fences (scheduler + browser replay agree); older stored races replay without them so they still verify.
 - The bet bar, prize pool and token gate are shown in the UI but stay disabled until Phase 2 (points) and Phase 4 (devnet pots).
 - **You can crash into things.** Live tracks get trees in the run-off and catch fences in front of standing crowds (`src/sim/obstacles.ts`), generated from the seed and resolved inside the deterministic sim, so a crash is identical on the server, in replays and for every viewer. Hit a tree faster than ~58 km/h and it snaps and falls; slower and you bounce off. Hit the crowd fence and the fans right there jump back and cheer (nobody gets hurt).

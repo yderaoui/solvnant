@@ -508,6 +508,7 @@ body.in-lobby .center.show { background: rgba(3, 5, 7, 0.72); backdrop-filter: b
 body[data-page='lab'] .lab-panel { display: block; }
 body[data-page='lab'] .hud-top, body[data-page='lab'] .feed { display: none !important; }
 body[data-page='lab']:not(.is-replay) .lab-legend, body[data-page='lab']:not(.is-replay) .lab-info { display: block; }
+body.lab-3d[data-page='lab'] .lab-legend { display: none; }
 body[data-page='lab']:not(.is-replay) .lab-slogan { display: block; }
 body[data-page='lab'].is-replay .lab-panel { display: none; }
 .lab-panel h2 { font-family: var(--font-display); font-weight: 900; margin: 0; font-size: 26px; font-style: italic; letter-spacing: 0.02em; }

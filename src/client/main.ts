@@ -232,6 +232,9 @@ function randomSeed(): string {
 
 function openLab(seed: string) {
   broadcast.showTrack(seed);
+  $('lab-3d').setAttribute('aria-pressed', 'false');
+  document.body.classList.remove('lab-3d');
+  $('lab-3d').querySelector('span')!.textContent = '3D flyover';
   const t = generateTrack(seed);
   $('lab-seed').textContent = seed;
   const clockwise = t.curvature.reduce((s, k) => s + k, 0) > 0;
@@ -249,6 +252,14 @@ function openLab(seed: string) {
     .join('');
 }
 
+$('lab-3d').onclick = () => {
+  const on = !broadcast.in3d;
+  if (on) broadcast.setCamera3d('3d');
+  else broadcast.setCamera('overview');
+  $('lab-3d').setAttribute('aria-pressed', String(on));
+  document.body.classList.toggle('lab-3d', on);
+  $('lab-3d').querySelector('span')!.textContent = on ? '2D map' : '3D flyover';
+};
 $('lab-new').onclick = () => (location.hash = `#/lab/${encodeURIComponent(randomSeed())}`);
 $('lab-form').onsubmit = (e) => {
   e.preventDefault();

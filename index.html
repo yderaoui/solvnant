@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#06080b" />
-    <title>TrackLab 2D</title>
+    <title>TrackLab 3D</title>
     <meta name="description" content="Race · Bet · Earn. Join the grid and drive live against other players on AI-generated night circuits, or watch AI models race with code they wrote themselves." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2306080b'/><path d='M5 22 12 8h5l-7 14z' fill='%238cff2e'/><path d='M14 22 21 8h5l-7 14z' fill='white'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -14,9 +14,9 @@
   <body data-page="live">
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="topbar">
-      <a class="logo" href="#/live" aria-label="TrackLab 2D home">
+      <a class="logo" href="#/live" aria-label="TrackLab 3D home">
         <span class="logo-mark" aria-hidden="true"><i></i><i></i></span>
-        <span class="logo-words"><span class="logo-text">TRACKLAB <em>2D</em></span><span class="logo-tag">RACE · BET · EARN</span></span>
+        <span class="logo-words"><span class="logo-text">TRACKLAB <em>3D</em></span><span class="logo-tag">RACE · BET · EARN</span></span>
       </a>
       <nav aria-label="Main">
         <a href="#/live"><i data-icon="flag"></i><span>Race</span></a>
@@ -103,17 +103,17 @@
           <div id="bet-odds" class="bet-odds"></div>
           <button class="btn btn-lime" disabled title="Points betting arrives in Phase 2">PLACE BET <small>soon</small></button>
         </div>
-        <button id="spectate-btn" class="spectate live-ui spec-only" aria-pressed="false"><i data-icon="pov"></i><span>SPECTATE</span></button>
+        <button id="spectate-btn" class="spectate live-ui spec-only" aria-pressed="true"><i data-icon="overview"></i><span>MAP VIEW</span></button>
         <div id="ticker" class="ticker live-ui" aria-live="polite"></div>
 
         <div id="center" class="center"></div>
         <div class="buffering" role="status">Simulating ahead…</div>
 
         <div class="cam" role="group" aria-label="Camera">
-          <button id="cam-chase" class="chip cam3d" aria-pressed="false" title="3D chase camera (C)"><i data-icon="pov"></i><span>3D</span></button>
+          <button id="cam-chase" class="chip cam3d active" aria-pressed="true" title="3D chase camera (C)"><i data-icon="pov"></i><span>3D</span></button>
           <button id="cam-fan" class="chip cam3d cam-fan" aria-pressed="false" title="First person from the crowd. Click again or press V for another stand"><i data-icon="users"></i><span>Fan view</span></button>
           <button id="cam-leader" class="chip" aria-pressed="false"><i data-icon="follow"></i><span>Follow</span></button>
-          <button id="cam-overview" class="chip active" aria-pressed="true"><i data-icon="overview"></i><span>Map</span></button>
+          <button id="cam-overview" class="chip" aria-pressed="false"><i data-icon="overview"></i><span>Map</span></button>
           <button id="mute-btn" class="chip cam3d" aria-pressed="false" aria-label="Mute sound (M)" title="Sound (M)"><i data-icon="sound"></i></button>
         </div>
 
@@ -168,6 +168,7 @@
           <div class="lab-buttons">
             <button id="lab-new" class="btn btn-lime"><i data-icon="shuffle"></i>New seed</button>
             <button id="lab-race" class="btn"><i data-icon="play"></i>Test race</button>
+            <button id="lab-3d" class="btn" aria-pressed="false"><i data-icon="pov"></i><span>3D flyover</span></button>
             <button id="lab-copy" class="btn btn-ghost" aria-label="Copy link to this track"><i data-icon="link"></i><span>Copy link</span></button>
           </div>
           <div class="lab-seed-row">Current seed <code id="lab-seed"></code></div>

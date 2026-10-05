@@ -1,5 +1,5 @@
 // Realistic 3D race view (chase camera). Same race as the 2D map: sim (x, y) -> three (x, 0, y),
-// heading h -> rotation.y = -h. Loaded on demand so 2D pages never download three.js or the assets.
+// heading h -> rotation.y = -h. Loaded on demand so the 2D map pages never download three.js or the assets.
 //
 // Assets (public/assets, credited in README):
 //   - Ferrari 458 Italia model by vicent091036 (from the three.js examples)
@@ -154,6 +154,7 @@ export class Chase3D {
   private yaw = 0;
   private pitch = 0;
   private userFov = 0; // 0 = automatic
+  private tourS = 0; // flyover camera: metres travelled along the track
   private eye = new THREE.Vector3();
   private walkKeys = new Set<string>();
   private dragging: { x: number; y: number } | null = null;
@@ -1023,7 +1024,7 @@ export class Chase3D {
       this.moon.target.position.set(f.x, 0, f.y);
       this.headlight.position.set(f.x + dx * 2.3, 0.8, f.y + dz * 2.3);
       this.headlight.target.position.set(f.x + dx * 30, 0, f.y + dz * 30);
-    }
+    } else if (this.track) this.flyover(dt);
 
     // Floodlights: the real spot lights go to the towers nearest the camera
     if (this.towers.length) {
@@ -1065,6 +1066,44 @@ export class Chase3D {
     this.sparks.update(dt);
     if (!this.gl.shadowMap.autoUpdate && Math.floor(this.time * 60) % 4 === 0) this.gl.shadowMap.needsUpdate = true;
     this.composer.render(dt);
+  }
+
+  /** No car to follow (lobby, Track Lab): a drone glides around the circuit, drifting in and out. */
+  private flyover(dt: number) {
+    const tr = this.track!;
+    const P = tr.points,
+      N = P.length;
+    this.tourS += dt * 16;
+    const at = (s: number): Pt => {
+      const k = ((((s / tr.length) * N) % N) + N) % N;
+      const i = Math.floor(k),
+        j = (i + 1) % N,
+        a = k - i;
+      return [P[i][0] + (P[j][0] - P[i][0]) * a, P[i][1] + (P[j][1] - P[i][1]) * a];
+    };
+    const [x, z] = at(this.tourS),
+      [lx, lz] = at(this.tourS + 70);
+    const d = Math.hypot(lx - x, lz - z) || 1;
+    const side = 22 * Math.sin(this.time * 0.06);
+    const want = new THREE.Vector3(x - ((lz - z) / d) * side, 20 + 8 * Math.sin(this.time * 0.09), z + ((lx - x) / d) * side);
+    const look = new THREE.Vector3(lx, 0, lz);
+    if (this.snap) {
+      this.camPos.copy(want);
+      this.camLook.copy(look);
+      this.snap = false;
+    } else {
+      this.camPos.lerp(want, 1 - Math.exp(-dt * 2));
+      this.camLook.lerp(look, 1 - Math.exp(-dt * 2));
+    }
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(this.camLook);
+    if (Math.abs(this.camera.fov - 55) > 0.05) {
+      this.camera.fov = 55;
+      this.camera.updateProjectionMatrix();
+    }
+    this.headlight.intensity = 0;
+    this.moon.position.set(x - 60, 120, z - 40);
+    this.moon.target.position.set(x, 0, z);
   }
 }
 
@@ -1847,7 +1886,7 @@ function chainlinkTexture() {
 
 function adTexture() {
   const ads = [
-    ['TRACKLAB 2D', '#06080b', '#8cff2e'],
+    ['TRACKLAB 3D', '#06080b', '#8cff2e'],
     ['RACE · BET · EARN', '#8cff2e', '#06080b'],
     ['AI GRAND PRIX', '#101826', '#22d3ee'],
     ['NIGHT SERIES', '#3a0f4f', '#ff3dbb'],
@@ -1900,7 +1939,7 @@ function bannerTexture() {
     c.fillStyle = '#ffffff';
     c.fillText('TRACKLAB', 220, 34);
     c.fillStyle = '#8cff2e';
-    c.fillText('2D', 345, 34);
+    c.fillText('3D', 345, 34);
   }, false);
 }
 
@@ -1920,7 +1959,7 @@ function screenTexture() {
     c.fillText('LIVE', 128, 60);
     c.fillStyle = '#8cff2e';
     c.font = '600 18px "Barlow", sans-serif';
-    c.fillText('TRACKLAB 2D', 128, 92);
+    c.fillText('TRACKLAB 3D', 128, 92);
   }, false);
 }
 

@@ -105,7 +105,7 @@ The versions CI uses are pinned in `.github/workflows/onchain.yml`:
 | Tool | Version |
 | --- | --- |
 | Rust | 1.89.0 |
-| Solana CLI (Anza / Agave) | v2.3.13 |
+| Solana CLI (Anza / Agave) | v3.0.14 |
 | Anchor CLI / anchor-lang / @coral-xyz/anchor | 0.32.1 |
 | Node | 22 |
 
@@ -115,7 +115,7 @@ On Windows, use WSL2 (Ubuntu). Native Windows isn't supported by the Solana test
 # Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Solana CLI
-sh -c "$(curl -sSfL https://release.anza.xyz/v2.3.13/install)"
+sh -c "$(curl -sSfL https://release.anza.xyz/v3.0.14/install)"
 # Anchor (avm), then pick the pinned version
 cargo install --git https://github.com/solana-foundation/anchor avm --force
 avm install 0.32.1 && avm use 0.32.1

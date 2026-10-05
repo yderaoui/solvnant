@@ -264,6 +264,7 @@ body.is-live.is-racing .drv-only { display: block !important; }
 body.is-live.is-racing .mini-wrap { display: block !important; }
 body.is-live.is-spec .spec-only { display: block !important; }
 body.is-live.is-spec .bet-bar, body.is-live.is-spec .spectate { display: flex !important; }
+body.is-live.is-spec:not(.has-market) .bet-bar { display: none !important; }
 body.is-live .cam .live-only { display: inline-flex !important; }
 .cam .cam3d { display: none; }
 body[data-page='live'] .cam .cam3d, body[data-page='league'] .cam .cam3d, body[data-page='replay'] .cam .cam3d { display: inline-flex; }

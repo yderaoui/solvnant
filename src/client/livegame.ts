@@ -276,6 +276,7 @@ export class LiveGame {
     if (force || prevPhase !== room.phase) this.overlayFor = 'stale';
     this.bets.open = room.betsOpen;
     this.bets.setMarket(room.market);
+    document.body.classList.toggle('has-market', !!room.market); // bots-only races have no betting
     if (prevPhase === 'race' && room.phase === 'results') void account.refresh(); // prizes, bet payouts
     const driving = room.phase !== 'lobby' && this.car !== null;
     document.body.classList.toggle('in-lobby', room.phase === 'lobby');

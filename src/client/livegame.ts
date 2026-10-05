@@ -1,4 +1,4 @@
-// Live multiplayer: join the lobby, drive (3D chase view or 2D map), or spectate.
+// Live multiplayer: join the lobby, drive (3D chase view by default, 2D map optional), or spectate.
 // The server is authoritative. Your own car is predicted locally so it responds instantly, then
 // gently corrected toward the server; other cars are interpolated ~100 ms in the past.
 import { generateTrack, type Track } from '../sim/track';
@@ -66,7 +66,7 @@ export class LiveGame {
   private input: Input = { throttle: 0, steer: 0, brake: 0 };
   private lastSent = 0;
   private sentKey = '';
-  private view: View = 'map';
+  private view: View = '3d';
   private spectate = -1;
   private lastWall = performance.now();
   private lastHud = 0;
@@ -127,7 +127,7 @@ export class LiveGame {
     }
     $('spectate-btn').onclick = () => {
       this.audio.start();
-      this.setView(this.view === '3d' ? 'map' : '3d');
+      this.setView(this.view === 'map' ? '3d' : 'map');
     };
     $('mute-btn').addEventListener('click', () => {
       if (this.active) this.toggleMute();
@@ -219,6 +219,7 @@ export class LiveGame {
       this.renderer.setTrack(this.track);
       this.renderer.setCars([]);
       this.c3d?.setTrack(this.track);
+      this.c3d?.setCars([], -1);
       this.ob = generateObstacles(this.track);
       this.predOb = { ...this.ob, down: [...this.ob.down] };
       this.renderer.setObstacles(this.ob);
@@ -234,7 +235,7 @@ export class LiveGame {
       this.lapStart = [];
       this.bestLap = [];
       this.renderer.selected = -1;
-      this.setView('map');
+      this.setView(this.view === 'fan' ? '3d' : this.view); // keep the viewer's camera (3D unless they picked the map)
       this.renderer.resetCamera();
     }
     if (room.phase !== 'lobby' && this.carsSeed !== room.seed + room.phase) {
@@ -439,7 +440,8 @@ export class LiveGame {
     }
 
     const { cars, order } = this.sampleCars(now);
-    const use3d = (this.view === '3d' || this.view === 'fan') && !!this.c3d && this.pushed3d !== '' && room.phase !== 'lobby' && cars.length > 0;
+    // In the lobby (no cars yet) the 3D view flies over the circuit behind the join card.
+    const use3d = (this.view === '3d' || this.view === 'fan') && !!this.c3d && this.pushed3d !== '';
     this.c3d?.setVisible(use3d);
     this.renderer.app.stage.visible = !use3d;
     if (use3d) this.c3d!.render(cars, this.focusCar(order), dt);
@@ -539,8 +541,8 @@ export class LiveGame {
     }
     document.body.classList.toggle('view-3d', v === '3d' || v === 'fan');
     document.body.classList.toggle('view-fan', v === 'fan');
-    $('spectate-btn').setAttribute('aria-pressed', String(v === '3d'));
-    $('spectate-btn').querySelector('span')!.textContent = v === '3d' ? 'BACK TO MAP' : 'SPECTATE';
+    $('spectate-btn').setAttribute('aria-pressed', String(v !== 'map'));
+    $('spectate-btn').querySelector('span')!.textContent = v === 'map' ? 'WATCH IN 3D' : 'MAP VIEW';
   }
 
   /** Load the shared 3D view if needed and give it our track, obstacles and cars. */
@@ -553,7 +555,7 @@ export class LiveGame {
     this.pushed3d = key;
     if (this.track) c.setTrack(this.track);
     if (this.ob) c.setObstacles(this.ob);
-    if (this.room && this.room.phase !== 'lobby') c.setCars(this.room.entries.map((e) => ({ name: e.name, color: e.color })), this.car ?? -1);
+    c.setCars(this.room && this.room.phase !== 'lobby' ? this.room.entries.map((e) => ({ name: e.name, color: e.color })) : [], this.car ?? -1);
     c.warmUp();
   }
 

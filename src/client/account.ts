@@ -342,6 +342,7 @@ export function showAuthModal(error?: string) {
       ${error ? `<p class="err" role="alert">${escapeHtml(error)}</p>` : ''}
       ${cfg ? x + guest : '<p class="err">The game server is offline. Start it with <code>npm run game</code>.</p>'}
       ${cfg && !cfg.x && !cfg.guests ? '<p class="err">Sign-in is not set up on this server.</p>' : ''}
+      <p class="muted small">By signing in you agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms</a> and <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p>
     </div>`;
   m.hidden = false;
   $('auth-close').onclick = closeAuthModal;

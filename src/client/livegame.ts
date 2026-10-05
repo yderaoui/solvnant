@@ -272,7 +272,7 @@ export class LiveGame {
     } catch {
       /* ignore */
     }
-    this.conn.send({ t: 'join', name, color });
+    this.conn.send({ t: 'join', color });
   }
 
   // ------------------------------------------------------------------ input

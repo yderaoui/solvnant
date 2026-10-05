@@ -17,6 +17,7 @@ export interface LobbyEntry {
   color: string;
   kind: 'human' | 'bot';
   connected: boolean;
+  priority?: boolean; // bought a priority pass: guaranteed seat, can't be bumped
 }
 
 export interface RecentWinner {
@@ -41,6 +42,15 @@ export interface RoomInfo {
   maxPlayers: number;
   viewers: number;
   recent: RecentWinner[]; // last few live-race winners, newest first
+  waitlist: LobbyEntry[]; // signed up while the grid was full (first gets the next free seat)
+  entryFee: number; // points, into the prize pot
+  priorityFee: number; // points for a guaranteed seat
+  priorityLeft: number; // priority passes still available this race
+  pot: number; // prize pot (points): 60/30/10 to the top three human drivers
+  market: string | null; // spectator betting market id (races with at least one human)
+  betsOpen: boolean;
+  prizes: { name: string; points: number }[] | null; // after the race
+  replayId: number | null; // saved race (Supabase live_races) once stored
 }
 
 export type ServerMsg =
@@ -49,11 +59,12 @@ export type ServerMsg =
   | { t: 'snap'; tick: number; rt: number; c: number[]; order: number[]; ev?: RaceEvent[]; catchup?: boolean }
   | { t: 'results'; results: CarResult[]; duration: number }
   | { t: 'pong'; ts: number; st: number }
+  | { t: 'points'; points: number } // your balance changed (entry fee, refund, prize)
   | { t: 'error'; msg: string };
 
 export type ClientMsg =
-  | { t: 'hello'; id: string }
-  | { t: 'join'; name: string; color: string }
+  | { t: 'hello'; id: string; token?: string | null } // token = session from /api or X login
+  | { t: 'join'; color: string; priority?: boolean }
   | { t: 'leave' }
   | { t: 'in'; th: number; st: number; br: number }
   | { t: 'ping'; ts: number };

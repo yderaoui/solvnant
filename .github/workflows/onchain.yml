@@ -50,7 +50,6 @@ jobs:
         run: |
           rustup toolchain install "$RUST_VERSION" --profile minimal
           rustup default "$RUST_VERSION"
-          rustc --version
 
       - name: Install Solana CLI (Anza)
         run: |
@@ -67,12 +66,8 @@ jobs:
 
       - name: Versions
         run: |
-          rustc --version
-          cargo --version
-          solana --version
-          cargo-build-sbf --version
-          anchor --version
-          node --version
+          { rustc --version; cargo --version; solana --version; cargo-build-sbf --version; anchor --version; echo "node $(node --version)"; } | tee versions.txt
+          echo "::notice title=toolchain::$(paste -sd ';' versions.txt)"
 
       - name: Throwaway test wallet (generated per run, never committed)
         run: solana-keygen new --no-bip39-passphrase --silent --force -o "$HOME/.config/solana/id.json"
@@ -82,12 +77,36 @@ jobs:
 
       - name: anchor build
         run: |
-          anchor build
-          # The program keypair is not committed; align declare_id!/Anchor.toml with this
-          # runner's target/deploy keypair, then rebuild.
-          anchor keys sync
-          anchor build
-          anchor keys list
+          set -o pipefail
+          {
+            anchor build
+            # The program keypair is not committed; align declare_id!/Anchor.toml with this
+            # runner's target/deploy keypair, then rebuild.
+            anchor keys sync
+            anchor build
+            anchor keys list
+          } 2>&1 | tee ci-output.log
 
       - name: anchor test
-        run: anchor test --skip-build
+        run: |
+          set -o pipefail
+          anchor test --skip-build 2>&1 | tee -a ci-output.log
+
+      # Downloading job logs needs repo-admin auth; surface the output tail as annotations too.
+      - name: Summarize output
+        if: always()
+        run: |
+          [ -f ci-output.log ] || exit 0
+          JOB_STATUS="${{ job.status }}" node -e '
+            const fs = require("fs");
+            const lines = fs.readFileSync("ci-output.log", "utf8")
+              .replace(/\x1b\[[0-9;]*m/g, "")
+              .split("\n")
+              .filter((l) => !/^\s*(Compiling|Downloaded|Downloading|Checking|Locking|Adding)\s/.test(l));
+            const level = process.env.JOB_STATUS === "success" ? "notice" : "error";
+            const tail = lines.slice(-240);
+            for (let i = 0; i < tail.length; i += 60) {
+              const msg = tail.slice(i, i + 60).join("\n")
+                .replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+              console.log(`::${level} title=output part ${i / 60 + 1}::${msg}`);
+            }'

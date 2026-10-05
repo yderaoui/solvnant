@@ -13,7 +13,12 @@ export function get3d(): Chase3D | null {
 }
 
 export function load3d(host: HTMLElement): Promise<Chase3D> {
-  loading ??= import('./chase3d').then(({ Chase3D }) => (view = new Chase3D(host)));
+  // The view is handed out only once its assets and shaders are ready; until then callers keep the map.
+  loading ??= import('./chase3d').then(async ({ Chase3D }) => {
+    const v = new Chase3D(host);
+    await v.ready;
+    return (view = v);
+  });
   return loading;
 }
 

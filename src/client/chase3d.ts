@@ -121,6 +121,8 @@ export class Chase3D {
   private headlight: THREE.SpotLight;
   // assets
   private carProto: THREE.Object3D | null = null;
+  /** Resolves once the sky, the car model and every shader the game draws with are ready. */
+  readonly ready: Promise<void>;
   private aoTex: THREE.Texture;
   private T: Mats;
   // trees
@@ -171,6 +173,8 @@ export class Chase3D {
     this.gl.toneMappingExposure = 1.0;
     this.gl.shadowMap.enabled = true;
     this.gl.shadowMap.type = THREE.PCFShadowMap;
+    // Asking the driver "did this shader compile?" blocks until it has; skip that outside development.
+    this.gl.debug.checkShaderErrors = import.meta.env.DEV;
     this.canvas = this.gl.domElement;
     this.canvas.className = 'chase3d';
     this.canvas.style.display = 'none';
@@ -202,21 +206,39 @@ export class Chase3D {
 
     this.T = loadTextures(this.gl);
     this.aoTex = new THREE.TextureLoader().load(ASSET('models/ferrari_ao.png'));
-    new HDRLoader().load(ASSET('tex/night_1k.hdr'), (t) => {
-      t.mapping = THREE.EquirectangularReflectionMapping;
-      this.scene.environment = t;
-      this.scene.environmentIntensity = 0.9;
-      this.scene.background = t;
-      this.scene.backgroundIntensity = 0.55;
-    });
+    // The sky and the car change which shader every material needs, so 3D waits for both (and then
+    // compiles everything up front) instead of compiling mid-race, which froze the page for seconds.
+    const sky = new Promise<void>((done) =>
+      new HDRLoader().load(
+        ASSET('tex/night_1k.hdr'),
+        (t) => {
+          t.mapping = THREE.EquirectangularReflectionMapping;
+          this.scene.environment = t;
+          this.scene.environmentIntensity = 0.9;
+          this.scene.background = t;
+          this.scene.backgroundIntensity = 0.55;
+          done();
+        },
+        undefined,
+        () => done(),
+      ),
+    );
     const draco = new DRACOLoader();
     draco.setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
     const gltf = new GLTFLoader();
     gltf.setDRACOLoader(draco);
-    gltf.load(ASSET('models/ferrari.glb'), (g) => {
-      this.carProto = g.scene.children[0];
-      if (this.carEntries.length) this.setCars(this.carEntries, this.you);
-    });
+    const car = new Promise<void>((done) =>
+      gltf.load(
+        ASSET('models/ferrari.glb'),
+        (g) => {
+          this.carProto = g.scene.children[0];
+          if (this.carEntries.length) this.setCars(this.carEntries, this.you);
+          done();
+        },
+        undefined,
+        () => done(), // box cars instead
+      ),
+    );
 
     this.cu = crowdUniforms();
     this.humanMat = humanMaterial(this.cu);
@@ -235,6 +257,8 @@ export class Chase3D {
     this.composer.addPass(new OutputPass());
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
+    const timeout = new Promise<void>((done) => setTimeout(done, 20_000)); // slow network: don't wait forever
+    this.ready = Promise.race([Promise.all([sky, car]), timeout]).then(() => this.warmUp());
   }
 
   get visible() {
@@ -913,11 +937,56 @@ export class Chase3D {
     });
   }
 
-  /** Compile all shaders up front so opening the 3D view doesn't stutter. */
-  warmUp() {
-    const gl = this.gl as THREE.WebGLRenderer & { compileAsync?: (s: THREE.Object3D, c: THREE.Camera) => Promise<unknown> };
-    if (gl.compileAsync) void gl.compileAsync(this.scene, this.camera).catch(() => {});
+  /**
+   * Compile every shader the scene needs before it is drawn, in the background (parallel compile), so
+   * the first frames don't freeze. Compiles the variants actually used: drawn into the composer's
+   * render target (linear colour), hidden things included (near fans, fallen trees), plus a car.
+   */
+  async warmUp(): Promise<void> {
+    const gl = this.gl;
+    const hidden: THREE.Object3D[] = [];
+    this.scene.traverse((o) => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
+    const extra = this.carProto ? ferrari(this.carProto, '#ffffff', this.aoTex).root : null;
+    if (extra) this.scene.add(extra);
+    const prev = gl.getRenderTarget();
+    gl.setRenderTarget(this.composer.renderTarget1);
+    let compiling: Promise<unknown> = Promise.resolve();
+    try {
+      compiling = gl.compileAsync(this.scene, this.camera); // the programs are created right here, synchronously
+    } catch {
+      /* compile on first use instead */
+    }
+    gl.setRenderTarget(prev);
+    for (const o of hidden) o.visible = false;
+    if (extra) this.scene.remove(extra);
+    await compiling.catch(() => {});
+    if (this.passesWarm) return;
+    // Post-processing isn't part of the scene: compile the bloom shaders the same way...
+    const fx = new THREE.Scene();
+    const quad = new THREE.PlaneGeometry(2, 2);
+    const b = this.bloom;
+    for (const m of [b.materialHighPassFilter, ...b.separableBlurMaterials, b.compositeMaterial, b.blendMaterial]) fx.add(new THREE.Mesh(quad, m));
+    gl.setRenderTarget(this.composer.renderTarget1);
+    let passes: Promise<unknown> = Promise.resolve();
+    try {
+      passes = gl.compileAsync(fx, this.camera);
+    } catch {
+      /* first use instead */
+    }
+    gl.setRenderTarget(prev);
+    await passes.catch(() => {});
+    quad.dispose();
+    // ...then draw one frame while the view is still hidden: builds the output pass and uploads the
+    // textures now, during loading, rather than on the first visible frame.
+    if (!this.visible) this.composer.render(0);
+    this.passesWarm = true;
   }
+  private passesWarm = false;
 
   /** 0..1: how close the followed car is to a crowd (drives the crowd sound). */
   crowdNear(cars: CarVisual[], focus: number): number {

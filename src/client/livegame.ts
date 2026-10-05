@@ -63,6 +63,7 @@ export class LiveGame {
   private trackSeed = '';
   private carsSeed = '';
   private snaps: Snap[] = [];
+  private snapGap = 0.06; // s of race time between snapshots (smoothed); sets the interpolation delay
   private events: RaceEvent[] = [];
   private results: CarResult[] | null = null;
   private pred: Car | null = null;
@@ -204,6 +205,8 @@ export class LiveGame {
         this.applyRoom(m.room, false);
         break;
       case 'snap':
+        const prevRt = this.snaps.at(-1)?.rt;
+        if (prevRt !== undefined && m.rt > prevRt && m.rt - prevRt < 0.5) this.snapGap += (m.rt - prevRt - this.snapGap) * 0.1;
         this.snaps.push({ recv: performance.now(), rt: m.rt, c: m.c, order: m.order });
         if (this.snaps.length > 40) this.snaps.shift();
         if (m.ev && m.catchup) {
@@ -498,7 +501,10 @@ export class LiveGame {
     if (!snaps.length || this.room?.phase === 'lobby') return { cars: [], order: [] };
     const last = snaps[snaps.length - 1];
     const serverRt = last.rt + (now - last.recv) / 1000;
-    const rt = this.room?.phase === 'race' ? serverRt - 0.075 : last.rt; // 1.5 snapshots of cushion
+    // Draw other cars a little in the past so there is always a newer snapshot to slide towards: about
+    // two snapshot gaps (the server sends ~15-20 a second; a fixed 75 ms ran dry and made cars stutter).
+    const cushion = Math.min(0.25, Math.max(0.09, this.snapGap * 2));
+    const rt = this.room?.phase === 'race' ? serverRt - cushion : last.rt;
     let a = snaps[0],
       b = snaps[0];
     for (let i = 0; i < snaps.length; i++) {

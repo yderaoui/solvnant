@@ -1,8 +1,8 @@
 // Smoke-test driver code before it's allowed to race.
 import type { QuickJSWASMModule } from 'quickjs-emscripten-core';
-import { runRace } from '../sim/race';
-import { SANDBOX_LIMITS } from '../sim/sandbox';
-import { HOUSE_BOTS, fallbackDriverCode } from '../sim/fallbackDriver';
+import { runRace } from './race';
+import { SANDBOX_LIMITS } from './sandbox';
+import { HOUSE_BOTS, fallbackDriverCode } from './fallbackDriver';
 
 export function validateDriver(qjs: QuickJSWASMModule, code: string): { ok: true } | { ok: false; error: string } {
   if (new TextEncoder().encode(code).length > SANDBOX_LIMITS.codeBytes) return { ok: false, error: 'code too large' };

@@ -27,7 +27,7 @@ export interface Entry {
   color: string;
   code: string; // driver source (ignored for 'human' and 'bot')
   // llm/fallback/house = sandboxed JS code; human = live keyboard input; bot = native driver
-  source: 'llm' | 'fallback' | 'house' | 'human' | 'bot';
+  source: 'llm' | 'agent' | 'fallback' | 'house' | 'human' | 'bot';
   driverId?: string | null;
   botParams?: FallbackParams;
 }

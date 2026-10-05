@@ -200,7 +200,7 @@ export class Broadcast {
     this.setCamera('overview');
     if (prefer !== 'none') this.setCamera3d(prefer);
     this.setHudVisible(true);
-    $('hud-title').textContent = race.local ? (race.slot !== null ? 'HOUSE RACE' : 'TEST RACE') : `RACE #${race.id}`;
+    $('hud-title').textContent = race.local ? (race.slot !== null ? 'HOUSE RACE' : 'TEST RACE') : race.live ? `LIVE RACE #${race.id}` : `RACE #${race.id}`;
     $('hud-live-text').textContent = mode === 'live' ? 'LIVE' : 'REPLAY';
     $('hud-progress-bar').style.width = '0';
     $('hud-seed').textContent = `seed ${race.seed}`;
@@ -211,7 +211,7 @@ export class Broadcast {
     this.center(`<div class="card loading" role="status"><div class="spinner"></div><div>Loading AI drivers into the sandbox…</div></div>`);
 
     const record = await simulate(
-      { seed: race.seed, entries: race.entries, laps: race.laps ?? undefined, maxTime: MAX_RACE_SECONDS, obstacles },
+      { seed: race.seed, entries: race.entries, laps: race.laps ?? undefined, maxTime: race.live?.maxTime ?? MAX_RACE_SECONDS, obstacles, inputLog: race.live?.inputLog },
       (r) => {
         if (token !== this.loadToken) return;
         $<HTMLInputElement>('replay-seek').max = String(r.duration);

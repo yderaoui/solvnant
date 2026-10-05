@@ -87,6 +87,6 @@ export default {
         return back(`error=${encodeURIComponent(e instanceof Error ? e.message : 'X login failed.')}`);
       }
     }
-    return new Response('TrackLab 2D game server. WebSocket: /ws  API: /api/*', { headers: { 'content-type': 'text/plain' } });
+    return new Response('TrackLab 3D game server. WebSocket: /ws  API: /api/*', { headers: { 'content-type': 'text/plain' } });
   },
 };

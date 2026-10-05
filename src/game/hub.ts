@@ -51,6 +51,8 @@ const fail = (msg: string, status = 400) => json({ error: msg }, status);
 const LEAGUE_COUNTDOWN_MS = 45_000; // must match src/sim/schedule.ts COUNTDOWN_MS
 const LIVE_POT_TIMEOUT_MS = 15 * 60_000;
 const HOLD_CACHE_MS = 10 * 60_000;
+const AGENT_MAX_BYTES = 20_000; // = SANDBOX_LIMITS.codeBytes
+const AGENT_PER_DAY = 5;
 
 export class Hub {
   private cfg: GameConfig;
@@ -126,6 +128,8 @@ export class Hub {
           return json(await this.me(this.user(u.id)!));
         case '/api/bet':
           return await this.bet(u, (await req.json()) as { market?: string; pick?: string; amount?: number });
+        case '/api/agents':
+          return req.method === 'POST' ? await this.submitAgent(u, (await req.json()) as { name?: string; code?: string }) : json(await this.myAgents(u));
       }
       return fail('Not found', 404);
     } catch (e) {
@@ -502,11 +506,41 @@ export class Hub {
     if (pending > 0 || now - this.lastActivity < 3600_000) await this.state.storage.setAlarm(now + 60_000);
   }
 
-  private async supa<T>(path: string): Promise<T> {
+  private async supa<T>(path: string, body?: unknown): Promise<T> {
     const s = this.cfg.supabase!;
-    const r = await fetch(`${s.url}/rest/v1/${path}`, { headers: { apikey: s.key, authorization: `Bearer ${s.key}` } });
+    const r = await fetch(`${s.url}/rest/v1/${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { apikey: s.key, authorization: `Bearer ${s.key}`, 'content-type': 'application/json', prefer: 'return=representation' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
     if (!r.ok) throw new Error(`Supabase ${r.status}`);
     return (await r.json()) as T;
+  }
+
+  // ================================================================== player agents (AI League)
+  // Submissions go to Supabase `agent_submissions`; the scheduler smoke-tests them in the sandbox and
+  // gives valid ones seats in upcoming AI League races.
+  private async myAgents(u: UserRow) {
+    if (!this.cfg.supabase) return { enabled: false, agents: [] };
+    const agents = await this.supa<unknown[]>(`agent_submissions?select=id,name,status,error,created_at,model&owner=eq.${encodeURIComponent(u.id)}&order=created_at.desc&limit=10`);
+    return { enabled: true, agents };
+  }
+
+  private async submitAgent(u: UserRow, b: { name?: string; code?: string }): Promise<Response> {
+    if (!this.cfg.supabase) return fail('The AI League database is not set up on this server.');
+    const el = await this.eligibility(u);
+    if (!el.ok) return fail(el.reason ?? 'Your account can’t enter agents yet.');
+    const name = cleanName(b.name);
+    const code = String(b.code ?? '');
+    if (!name) return fail('Give your agent a name (letters and numbers, up to 16).');
+    if (!/function\s+drive\s*\(/.test(code)) return fail('Your code needs a function drive(state) { … }.');
+    if (new TextEncoder().encode(code).length > AGENT_MAX_BYTES) return fail(`Code is limited to ${AGENT_MAX_BYTES / 1000} KB.`);
+    const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+    const recent = await this.supa<unknown[]>(`agent_submissions?select=id&owner=eq.${encodeURIComponent(u.id)}&created_at=gte.${encodeURIComponent(since)}`);
+    if (recent.length >= AGENT_PER_DAY) return fail(`You can submit ${AGENT_PER_DAY} agents a day. Try again tomorrow.`);
+    const handle = u.handle ?? u.name;
+    const rows = await this.supa<unknown[]>('agent_submissions', { owner: u.id, owner_name: handle, name, code, model: `agent:@${handle}/${name}`, status: 'pending' });
+    return json({ ok: true, agent: rows[0] ?? null });
   }
 
   /** Open a pool market for each upcoming AI League race; settle the ones that finished. */

@@ -11,6 +11,9 @@ import type { CarVisual, RaceRenderer } from './renderer';
 import { audio, get3d, load3d } from './view3d';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
+import { account, fmtPts, showAuthModal } from './account';
+import { BetWidget } from './bets';
+import { toast } from './toast';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -52,6 +55,9 @@ export class LiveGame {
   active = false;
   private conn = new GameConnection();
   private room: RoomInfo | null = null;
+  private you: string | null = null; // our id in the room (account uid when signed in)
+  private bets = new BetWidget($('bet-bar'), 'BET ON THE WINNER', toast);
+  private priority = false;
   private car: number | null = null;
   private track: Track | null = null;
   private trackSeed = '';
@@ -94,6 +100,14 @@ export class LiveGame {
       if (!ok && this.active) this.ticker('Reconnecting to the race server…', 4000);
     };
     renderer.app.ticker.add(() => this.frame());
+    // Signing in/out mid-session: re-introduce ourselves to the room and redraw the lobby.
+    account.onChange(() => {
+      if (this.conn.token !== account.token) {
+        this.conn.token = account.token;
+        this.conn.hello();
+      }
+      if (this.active && this.room?.phase === 'lobby') this.overlayFor = 'stale';
+    });
     window.addEventListener('keydown', (e) => this.onKey(e, true));
     window.addEventListener('keyup', (e) => this.onKey(e, false));
     window.addEventListener('blur', () => this.keys.clear());
@@ -159,6 +173,7 @@ export class LiveGame {
     document.body.classList.add('is-live');
     this.bindCamButtons();
     this.renderer.onCarClick = (i) => this.spectateCar(i);
+    this.conn.token = account.token;
     if (!this.conn.connected) this.conn.connect();
     if (this.room) this.applyRoom(this.room, true);
     // Warm up the 3D view (three.js, car model, textures) while people sit in the lobby.
@@ -185,6 +200,7 @@ export class LiveGame {
     switch (m.t) {
       case 'room':
         this.car = m.car;
+        this.you = m.you;
         this.applyRoom(m.room, false);
         break;
       case 'snap':
@@ -203,8 +219,15 @@ export class LiveGame {
       case 'results':
         this.results = m.results;
         break;
+      case 'points':
+        account.setPoints(m.points);
+        break;
       case 'error':
         this.ticker(m.msg, 4000);
+        if (this.room?.phase === 'lobby') {
+          const err = document.getElementById('lb-err');
+          if (err) err.textContent = m.msg;
+        }
         break;
     }
   }
@@ -251,6 +274,9 @@ export class LiveGame {
       else this.spectate = 0;
     }
     if (force || prevPhase !== room.phase) this.overlayFor = 'stale';
+    this.bets.open = room.betsOpen;
+    this.bets.setMarket(room.market);
+    if (prevPhase === 'race' && room.phase === 'results') void account.refresh(); // prizes, bet payouts
     const driving = room.phase !== 'lobby' && this.car !== null;
     document.body.classList.toggle('in-lobby', room.phase === 'lobby');
     document.body.classList.toggle('is-racing', driving);
@@ -259,21 +285,16 @@ export class LiveGame {
   }
 
   private join() {
-    const name = $<HTMLInputElement>('lb-name').value.trim();
+    const me = account.me;
+    if (!me) return showAuthModal();
     const color = document.querySelector<HTMLInputElement>('input[name="lb-color"]:checked')?.value ?? PLAYER_COLORS[0];
-    if (!name) {
-      $('lb-err').textContent = 'Pick a nickname first (1–16 letters or numbers).';
-      $('lb-name').focus();
-      return;
-    }
     $('lb-err').textContent = '';
     try {
-      localStorage.setItem('agp-name', name);
       localStorage.setItem('agp-color', color);
     } catch {
       /* ignore */
     }
-    this.conn.send({ t: 'join', color });
+    this.conn.send({ t: 'join', color, priority: this.priority });
   }
 
   // ------------------------------------------------------------------ input
@@ -612,7 +633,7 @@ export class LiveGame {
     }
 
     // Overlay: lobby / results / none
-    const want = room.phase === 'lobby' ? `lobby${room.slot}` : room.phase === 'results' && this.results ? `res${room.slot}` : '';
+    const want = room.phase === 'lobby' ? `lobby${room.slot}` : room.phase === 'results' && this.results ? `res${room.slot}:${room.prizes?.length ?? 0}:${room.replayId ?? ''}` : ''; // redraw once prizes/replay land
     if (want !== this.overlayFor) {
       this.overlayFor = want;
       if (want.startsWith('lobby')) this.renderLobby();
@@ -711,13 +732,6 @@ export class LiveGame {
       (order.length > 3 ? pRow('Others', '#6b7280', others) : '');
     if ($('spec-prob').innerHTML !== probHtml) $('spec-prob').innerHTML = probHtml;
 
-    // Odds chips for the (coming soon) bet bar
-    const odd = (p: number) => Math.min(99, Math.max(1.05, 0.95 / Math.max(p, 0.01))).toFixed(1);
-    const odds =
-      top.map((i) => `<span class="odd">${avatar(room.entries[i])}<span class="n">${escapeHtml(room.entries[i]?.name ?? '?')}</span><b>${odd(probs[i])}x</b></span>`).join('') +
-      (order.length > 3 ? `<span class="odd"><span class="av" style="--c:#6b7280">+</span><span class="n">Others</span><b>${odd(others)}x</b></span>` : '');
-    if ($('bet-odds').innerHTML !== odds) $('bet-odds').innerHTML = odds;
-
     // Driver list (pick who to follow)
     const list = room.entries
       .map((e, i) => `<li data-car="${i}" class="${i === focus ? 'sel' : ''}" tabindex="0" role="button" aria-pressed="${i === focus}">${avatar(e)}<span class="who"><b>${escapeHtml(e.name)}</b><small>${e.kind === 'bot' ? 'AI bot' : e.connected ? 'Player' : 'Player · away'}</small></span><span class="radio" aria-hidden="true"></span></li>`)
@@ -753,16 +767,31 @@ export class LiveGame {
   }
 
   private renderLobby() {
-    const read = (k: string, d: string) => {
+    const savedColor = (() => {
       try {
-        return localStorage.getItem(k) ?? d;
+        return localStorage.getItem('agp-color') ?? PLAYER_COLORS[0];
       } catch {
-        return d;
+        return PLAYER_COLORS[0];
       }
-    };
-    const savedName = read('agp-name', '');
-    const savedColor = read('agp-color', PLAYER_COLORS[0]);
+    })();
     const room = this.room!;
+    const me = account.me;
+    const cfg = account.cfg;
+    const fee = room.entryFee;
+    const signin = !me
+      ? `<div class="lb-signin">
+           <p>${icon('flag', 16)}<span>Sign in to take a seat${cfg?.x ? ' (X account)' : ''}. New accounts get <b>${fmtPts(cfg?.points.signup ?? 1000)} points</b>.</span></p>
+           <button class="btn btn-lime btn-big" id="lb-signin">SIGN IN TO RACE ${icon('play', 16)}</button>
+         </div>`
+      : !me.canRace
+        ? `<p class="lb-block">${icon('alert', 16)}<span>${escapeHtml(me.raceBlock ?? 'You can’t race yet.')}</span></p>`
+        : `<div class="lb-me">${icon('check', 14)}<span>Racing as <b>${escapeHtml(me.handle ? '@' + me.handle : me.name)}</b></span><span class="pts">${fmtPts(me.points)} pts</span></div>
+           <div class="lb-colors" role="radiogroup" aria-label="Car colour">
+             ${PLAYER_COLORS.map((c) => `<label class="swatch-pick" style="--c:${c}"><input type="radio" name="lb-color" value="${c}" ${c === savedColor ? 'checked' : ''} aria-label="Colour ${c}"/><span></span></label>`).join('')}
+           </div>
+           <label class="lb-prio"><input type="checkbox" id="lb-prio" ${this.priority ? 'checked' : ''}/><span><b>Priority pass</b> +${fmtPts(room.priorityFee)} pts<small id="lb-prio-left">Guaranteed seat, can’t be bumped</small></span></label>
+           <p id="lb-err" class="err" role="alert"></p>
+           <button class="btn btn-lime btn-big" id="lb-go">JOIN RACE <small id="lb-cost">${fmtPts(fee + (this.priority ? room.priorityFee : 0))} PTS</small></button>`;
     setCenter(`
       <div class="lobby" role="dialog" aria-label="Race lobby">
         <section class="lcard join-card">
@@ -773,24 +802,16 @@ export class LiveGame {
             <div class="lobby-cd"><span id="lb-label">LIGHTS OUT IN</span><b id="lb-time" role="timer"></b></div>
           </div>
           <dl class="facts">
-            <div><dt>${icon('trophy', 16)}Pot size</dt><dd>—<small>Token pots in Phase 4 (devnet)</small></dd></div>
-            <div><dt>${icon('zap', 16)}Entry fee</dt><dd class="lime">FREE<small>beta</small></dd></div>
+            <div><dt>${icon('trophy', 16)}Pot size</dt><dd id="lb-pot"></dd></div>
+            <div><dt>${icon('zap', 16)}Entry fee</dt><dd class="lime">${fee ? `${fmtPts(fee)} PTS` : 'FREE'}<small>refunded if you leave before lights out</small></dd></div>
             <div><dt>${icon('follow', 16)}Players</dt><dd id="lb-count"></dd></div>
             <div><dt>${icon('clock', 16)}Race duration</dt><dd>${room.laps} ${room.laps === 1 ? 'lap' : 'laps'}<small>≤ ${Math.round((room.slotEnd - room.startAt) / 60000)} min</small></dd></div>
             <div><dt>${icon('history', 16)}Queue position</dt><dd id="lb-qpos"></dd></div>
           </dl>
-          <div id="lb-form">
-            <label for="lb-name">Nickname</label>
-            <input id="lb-name" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="e.g. NovaRacer" value="${escapeHtml(savedName)}" aria-describedby="lb-err" />
-            <p id="lb-err" class="err" role="alert"></p>
-            <div class="lb-colors" role="radiogroup" aria-label="Car colour">
-              ${PLAYER_COLORS.map((c) => `<label class="swatch-pick" style="--c:${c}"><input type="radio" name="lb-color" value="${c}" ${c === savedColor ? 'checked' : ''} aria-label="Colour ${c}"/><span></span></label>`).join('')}
-            </div>
-            <button class="btn btn-lime btn-big" id="lb-go">JOIN RACE ${icon('play', 16)}</button>
-          </div>
+          <div id="lb-form">${signin}</div>
           <div id="lb-in" hidden>
-            <div class="on-grid">${icon('check', 18)}<span><b>You're on the grid</b><small>Your grid slot is drawn at lights out.</small></span></div>
-            <button class="btn btn-ghost" id="lb-leave">${icon('x')}Leave the grid</button>
+            <div class="on-grid">${icon('check', 18)}<span><b id="lb-in-title">You're on the grid</b><small id="lb-in-sub">Your grid slot is drawn at lights out.</small></span></div>
+            <button class="btn btn-ghost" id="lb-leave">${icon('x')}<span id="lb-leave-text">Leave the grid (refund)</span></button>
           </div>
           <div class="ai-row">${icon('bot', 18)}<span><b>AI opponents</b><small>Empty seats are filled with bots</small></span><span class="toggle on" aria-hidden="true"></span></div>
         </section>
@@ -798,12 +819,13 @@ export class LiveGame {
           <h3>RACE QUEUE</h3>
           <p class="sub" id="lb-qcount"></p>
           <ol id="lb-list" class="queue"></ol>
+          <div id="lb-wait"></div>
         </section>
         <section class="side-col">
           <div class="lcard prize-card">
             <h3>PRIZE POOL</h3>
-            <div class="prize">${icon('trophy', 26)}<b>—</b></div>
-            <p class="sub">Points prizes arrive in Phase 2, token pots on devnet in Phase 4.</p>
+            <div class="prize">${icon('trophy', 26)}<b id="lb-prize">${fmtPts(room.pot)}</b><span class="pts">PTS</span></div>
+            <p class="sub">Play-money points. Entry fees go into the pot: 60% / 30% / 10% to the top three human drivers.</p>
           </div>
           <div class="lcard">
             <h3>RECENT WINNERS</h3>
@@ -814,20 +836,25 @@ export class LiveGame {
             <ul class="rules">
               <li>${icon('follow', 16)}Max 10 players per race</li>
               <li>${icon('replay', 16)}Last round's racers give up their seat when the grid is full</li>
-              <li>${icon('flag', 16)}One entry per player (nickname now, X login soon)</li>
-              <li>${icon('zap', 16)}Hold $20+ of the token to enter (coming in Phase 2)</li>
+              <li>${icon('flag', 16)}One entry per account${cfg?.x ? ' (X login keeps bots out)' : ''}</li>
+              ${cfg?.gate ? `<li>${icon('zap', 16)}No X account? Hold $${cfg.gate.minUsd}+ of the token in a linked wallet</li>` : ''}
+              <li>${icon('trophy', 16)}Priority pass: a guaranteed seat that can't be bumped</li>
             </ul>
           </div>
         </section>
         <div class="lobby-keys"><kbd>↑</kbd><kbd>W</kbd> gas <kbd>↓</kbd><kbd>S</kbd> brake / reverse <kbd>←</kbd><kbd>→</kbd> steer <kbd>C</kbd> camera</div>
       </div>`);
-    $('lb-go').onclick = () => {
+    document.getElementById('lb-signin')?.addEventListener('click', () => showAuthModal());
+    document.getElementById('lb-go')?.addEventListener('click', () => {
       this.audio.start();
       this.join();
-    };
-    $('lb-name').onkeydown = (e) => {
-      if ((e as KeyboardEvent).key === 'Enter') this.join();
-    };
+    });
+    const prio = document.getElementById('lb-prio') as HTMLInputElement | null;
+    if (prio)
+      prio.onchange = () => {
+        this.priority = prio.checked;
+        $('lb-cost').textContent = `${fmtPts(room.entryFee + (this.priority ? room.priorityFee : 0))} PTS`;
+      };
     $('lb-leave').onclick = () => this.conn.send({ t: 'leave' });
   }
 
@@ -851,18 +878,29 @@ export class LiveGame {
     const lit = left <= 5000 ? Math.max(0, Math.min(5, 5 - Math.floor(left / 1000))) : 0;
     document.querySelectorAll('.lobby .lights span').forEach((el, i) => el.classList.toggle('on', i < lit));
     $('lb-count').textContent = `${room.entries.length} / ${room.maxPlayers}`;
-    $('lb-qcount').textContent = `${room.entries.length} ${room.entries.length === 1 ? 'PLAYER' : 'PLAYERS'}`;
-    const myIdx = room.entries.findIndex((e) => e.id === this.conn.id);
-    const qpos = myIdx >= 0 ? `#${myIdx + 1}<small>Next race</small>` : '—<small>Not joined</small>';
+    $('lb-qcount').textContent = `${room.entries.length} ${room.entries.length === 1 ? 'PLAYER' : 'PLAYERS'}${room.waitlist.length ? ` · ${room.waitlist.length} WAITING` : ''}`;
+    const pot = `${fmtPts(room.pot)}<small>points · 60/30/10 to the top 3 players</small>`;
+    if ($('lb-pot').innerHTML !== pot) $('lb-pot').innerHTML = pot;
+    $('lb-prize').textContent = fmtPts(room.pot);
+    const pl = document.getElementById('lb-prio-left');
+    if (pl) pl.textContent = room.priorityLeft ? `Guaranteed seat, can’t be bumped · ${room.priorityLeft} left` : 'None left this race';
+    const myIdx = this.you ? room.entries.findIndex((e) => e.id === this.you) : -1;
+    const waitIdx = this.you ? room.waitlist.findIndex((e) => e.id === this.you) : -1;
+    const qpos = myIdx >= 0 ? `#${myIdx + 1}<small>Next race</small>` : waitIdx >= 0 ? `W${waitIdx + 1}<small>Waitlist</small>` : '—<small>Not joined</small>';
     if ($('lb-qpos').innerHTML !== qpos) $('lb-qpos').innerHTML = qpos;
-    $('lb-form').hidden = myIdx >= 0;
-    $('lb-in').hidden = myIdx < 0;
+    $('lb-form').hidden = myIdx >= 0 || waitIdx >= 0;
+    $('lb-in').hidden = myIdx < 0 && waitIdx < 0;
+    $('lb-in-title').textContent = myIdx >= 0 ? (room.entries[myIdx].priority ? "You're on the grid (priority)" : "You're on the grid") : `You're #${waitIdx + 1} on the waitlist`;
+    $('lb-in-sub').textContent = myIdx >= 0 ? 'Your grid slot is drawn at lights out.' : 'You get the next free seat. Nothing is charged until then.';
+    $('lb-leave-text').textContent = myIdx >= 0 ? 'Leave the grid (refund)' : 'Leave the waitlist';
     const rows: string[] = [];
     for (let k = 0; k < room.maxPlayers; k++) {
       const e: LobbyEntry | undefined = room.entries[k];
       if (e) {
-        const me = e.id === this.conn.id;
-        rows.push(`<li class="${me ? 'me' : ''}"><span class="qn">${k + 1}</span>${avatar(e)}<span class="n">${me ? 'You' : escapeHtml(e.name)}</span>${carIcon(e.color)}${me ? '<span class="you">YOU</span>' : `<span class="st ${e.connected ? 'on' : ''}" title="${e.connected ? 'online' : 'away'}"></span>`}</li>`);
+        const me = e.id === this.you;
+        rows.push(
+          `<li class="${me ? 'me' : ''}"><span class="qn">${k + 1}</span>${avatar(e)}<span class="n">${me ? 'You' : escapeHtml(e.name)}${e.priority ? ' <span class="prio" title="Priority pass">P</span>' : ''}</span>${carIcon(e.color)}${me ? '<span class="you">YOU</span>' : `<span class="st ${e.connected ? 'on' : ''}" title="${e.connected ? 'online' : 'away'}"></span>`}</li>`,
+        );
       } else {
         const bot = k < 6;
         rows.push(`<li class="open"><span class="qn">${k + 1}</span><span class="av ghost">${bot ? icon('bot', 14) : ''}</span><span class="n">${bot ? 'AI bot fills this seat' : 'Open seat'}</span></li>`);
@@ -870,6 +908,10 @@ export class LiveGame {
     }
     const html = rows.join('');
     if ($('lb-list').innerHTML !== html) $('lb-list').innerHTML = html;
+    const wait = room.waitlist.length
+      ? `<h3 class="wait-h">WAITLIST</h3><ol class="queue wait">${room.waitlist.map((e, k) => `<li class="${e.id === this.you ? 'me' : ''}"><span class="qn">W${k + 1}</span>${avatar(e)}<span class="n">${e.id === this.you ? 'You' : escapeHtml(e.name)}</span></li>`).join('')}</ol>`
+      : '';
+    if ($('lb-wait').innerHTML !== wait) $('lb-wait').innerHTML = wait;
   }
 
   private renderResults() {
@@ -891,7 +933,8 @@ export class LiveGame {
         <div class="res-kicker">RACE #${room.slot % 1000} · FINAL CLASSIFICATION</div>
         <div class="res-head">${icon('trophy', 26)}${head}</div>
         <table><thead><tr><th>P</th><th>Driver</th><th>Time</th><th>Best lap</th></tr></thead><tbody>${rows}</tbody></table>
-        <div class="res-foot"><span>Next lobby opens in <b id="res-next"></b></span></div>
+        ${room.prizes?.length ? `<div class="res-prizes">${icon('trophy', 16)}<span>Prize pot paid: ${room.prizes.map((p) => `<b>${escapeHtml(p.name)}</b> +${fmtPts(p.points)}`).join(' · ')} pts</span></div>` : ''}
+        <div class="res-foot"><span>Next lobby opens in <b id="res-next"></b></span>${room.replayId ? `<a class="btn small" href="#/replay/live/${room.replayId}">${icon('replay', 14)}Watch replay</a>` : ''}</div>
       </div>`);
   }
 }

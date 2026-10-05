@@ -3,7 +3,7 @@ import type { ClientMsg, ServerMsg } from '../game/protocol';
 
 export const GAME_URL = (import.meta.env.VITE_GAME_URL as string | undefined) || 'ws://127.0.0.1:8787/ws';
 
-/** Stable anonymous id for this browser (identifies "you" across reconnects until X login lands). */
+/** Stable anonymous id for this browser (identifies a signed-out viewer across reconnects). */
 export function clientId(): string {
   try {
     let id = localStorage.getItem('agp-id');
@@ -22,6 +22,8 @@ export class GameConnection {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private closedByUs = false;
   readonly id = clientId();
+  /** Session token (signed in), sent with every hello. */
+  token: string | null = null;
   rtt = 100; // ms, smoothed
   offset = 0; // serverEpoch ≈ Date.now() + offset
   connected = false;
@@ -35,7 +37,7 @@ export class GameConnection {
     ws.onopen = () => {
       this.connected = true;
       this.onStatus(true);
-      this.send({ t: 'hello', id: this.id });
+      this.hello();
       this.ping();
       this.pingTimer = setInterval(() => this.ping(), 2000);
     };
@@ -60,6 +62,11 @@ export class GameConnection {
       if (this.pingTimer) clearInterval(this.pingTimer);
       if (!this.closedByUs) setTimeout(() => this.connect(), 1500);
     };
+  }
+
+  /** (Re)introduce ourselves, e.g. after signing in or out. */
+  hello() {
+    this.send({ t: 'hello', id: this.id, token: this.token });
   }
 
   close() {

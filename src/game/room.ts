@@ -17,6 +17,7 @@ import { generateTrack, lapsFor } from '../sim/track';
 import { COUNTDOWN_MS, MAX_RACE_SECONDS, SLOT_MS } from '../sim/schedule';
 import { readConfig, type GameConfig } from './config';
 import { verifySession } from './auth';
+import { liveSimEntries } from './liveEntries';
 import {
   CAR_SNAP_STRIDE,
   MAX_PLAYERS,
@@ -401,14 +402,7 @@ export class GameRoom {
   }
 
   private simEntries(entries: LobbyEntry[]): Entry[] {
-    return entries.map((e) => ({
-      name: e.name,
-      model: e.kind === 'bot' ? HOUSE_BOTS[Number(e.id.slice(4))].name : `player:${e.name}`,
-      color: e.color,
-      code: '',
-      source: e.kind === 'human' ? 'human' : 'bot',
-      botParams: e.kind === 'bot' ? { ...HOUSE_BOTS[Number(e.id.slice(4))].params, grip: HOUSE_BOTS[Number(e.id.slice(4))].params.grip * 0.92 } : undefined,
-    }));
+    return liveSimEntries(entries.map((e) => ({ name: e.name, color: e.color, kind: e.kind, bot: e.kind === 'bot' ? Number(e.id.slice(4)) : null })));
   }
 
   private finishing = false;

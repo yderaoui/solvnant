@@ -1,0 +1,14 @@
+# Game server secrets for local development: copy to .dev.vars (never commit .dev.vars).
+# In production use `npx wrangler secret put NAME` instead. Public settings live in wrangler.toml [vars].
+
+# Signs login sessions. Any long random string. Required in production.
+SESSION_SECRET=
+
+# Supabase (same project as the site; the SECRET service-role key). Enables AI League betting,
+# player agent submissions and saving live races for replays.
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Sign in with X (developer.x.com, OAuth 2.0 Web App). Without these, guests can play with a nickname.
+X_CLIENT_ID=
+X_CLIENT_SECRET=

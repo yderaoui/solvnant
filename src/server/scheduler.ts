@@ -1,7 +1,8 @@
 // The race scheduler. Runs on a cron (GitHub Actions) or by hand: `npm run schedule`.
 //  1. Works out which 5-minute slots in the next ~75 minutes don't have a race yet.
 //  2. Refreshes a few models' driver code via OpenRouter (cached ~24 h to stay inside free limits).
-//  3. Simulates each race (same deterministic engine the browser uses) and stores
+//  3. Smoke-tests player-submitted agents and rotates valid ones into a few seats per race.
+//  4. Simulates each race (same deterministic engine the browser uses) and stores
 //     seed + driver code + results in Supabase. Browsers re-simulate and verify.
 // Flags: --dry  (no database writes; just print what would happen)
 import 'dotenv/config';
@@ -13,7 +14,7 @@ import { generateTrack, lapsFor } from '../sim/track';
 import { CAR_COLORS, HOUSE_BOTS, fallbackDriverCode } from '../sim/fallbackDriver';
 import { MAX_RACE_SECONDS, raceStartAt, slotAt } from '../sim/schedule';
 import { generateDriverCode, listFreeModels, pickModels, RateLimitError, type ModelInfo } from './openrouter';
-import { validateDriver } from './validate';
+import { validateDriver } from '../sim/validate';
 
 const env = (k: string, d = '') => process.env[k]?.trim() || d;
 const DRY = process.argv.includes('--dry');
@@ -24,6 +25,7 @@ const CFG = {
   driverTtlHours: Number(env('DRIVER_TTL_HOURS', '24')),
   retryFailedHours: Number(env('RETRY_FAILED_HOURS', '6')),
   refreshPerRun: Number(env('DRIVER_REFRESH_PER_RUN', '2')),
+  agentSeats: Number(env('AGENT_SEATS', '3')), // seats per race for player agents (taken from models)
   preferredModels: env('OPENROUTER_MODELS')
     .split(',')
     .map((s) => s.trim())
@@ -131,16 +133,24 @@ async function main() {
     houseIds.set(b.name, (await saveDriver(db, { model: b.name, code, source: 'house', valid: true, error: null })).id);
   }
 
+  const agents = db ? await loadAgents(db, qjs) : [];
+  if (agents.length) log(`${agents.length} player agent(s): ${agents.map((a) => a.model).join(', ')}`);
+
   for (let k = 0; k < slots.length; k++) {
     const slot = slots[k];
     const seed = seeds[k];
+    // Player agents take turns (by slot) in a few reserved seats.
+    const seats = Math.min(CFG.agentSeats, agents.length);
+    const racing = Array.from({ length: seats }, (_, i) => agents[(slot * seats + i) % agents.length]);
     // Only models whose own code passed validation get a car. A model never races under
     // someone else's code, so a win on the board is always the model's own work.
     const entries: Entry[] = [];
     for (const m of roster) {
+      if (entries.length >= CFG.maxCars - seats) break;
       const valid = drivers.get(m.id)?.find((r) => r.valid);
       if (valid) entries.push({ name: m.name, model: m.id, color: CAR_COLORS[entries.length], code: valid.code, source: 'llm', driverId: valid.id });
     }
+    for (const a of racing) entries.push({ name: a.name, model: a.model, color: CAR_COLORS[entries.length], code: a.code, source: 'agent', driverId: a.driverId });
     // Top up with (clearly labelled) house bots so a race always has cars.
     for (let h = 0; entries.length < CFG.minCars && h < HOUSE_BOTS.length; h++) {
       const b = HOUSE_BOTS[h];
@@ -202,6 +212,53 @@ async function main() {
     );
     if (e2.error) throw new Error('insert results: ' + e2.error.message);
   }
+}
+
+interface AgentRow {
+  id: number;
+  owner: string;
+  name: string;
+  model: string;
+  code: string;
+  status: 'pending' | 'valid' | 'rejected';
+  driver_id: string | null;
+}
+
+/**
+ * Each player's newest agent. Pending ones are smoke-tested in the sandbox now (same check as the
+ * models' code); valid ones get a `drivers` row so race entries can point at their code.
+ */
+async function loadAgents(db: SupabaseClient, qjs: Awaited<ReturnType<typeof loadQuickJS>>) {
+  const { data, error } = await db
+    .from('agent_submissions')
+    .select('id, owner, name, model, code, status, driver_id')
+    .in('status', ['pending', 'valid'])
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) {
+    log('agent_submissions not readable (run supabase/schema.sql):', error.message);
+    return [];
+  }
+  const newest = new Map<string, AgentRow>();
+  for (const a of data as AgentRow[]) if (!newest.has(a.owner)) newest.set(a.owner, a);
+  const out: { name: string; model: string; code: string; driverId: string }[] = [];
+  for (const a of newest.values()) {
+    if (a.status === 'pending' || !a.driver_id) {
+      const v = validateDriver(qjs, a.code);
+      if (!v.ok) {
+        log(`  agent ${a.model}: rejected: ${v.error}`);
+        if (!DRY) await db.from('agent_submissions').update({ status: 'rejected', error: v.error }).eq('id', a.id);
+        continue;
+      }
+      const d = await saveDriver(DRY ? null : db, { model: a.model, code: a.code, source: 'agent', valid: true, error: null });
+      a.driver_id = d.id;
+      log(`  agent ${a.model}: OK ✓`);
+      if (!DRY) await db.from('agent_submissions').update({ status: 'valid', error: null, driver_id: d.id }).eq('id', a.id);
+    }
+    out.push({ name: a.name, model: a.model, code: a.code, driverId: a.driver_id! });
+  }
+  // Stable order so the slot rotation is fair.
+  return out.sort((x, y) => x.model.localeCompare(y.model));
 }
 
 /** Models that OpenRouter won't serve to plain API calls (e.g. "only available on agentic harnesses"). */

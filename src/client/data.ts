@@ -1,7 +1,8 @@
 // Data access. Uses Supabase when configured; otherwise "local mode": every viewer computes the
 // same house-bot race from the slot number, so the site is always alive (and still in sync).
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { Entry } from '../sim/race';
+import type { Entry, InputLogEntry } from '../sim/race';
+import { liveSimEntries, type LiveGridEntry } from '../game/liveEntries';
 import { CAR_COLORS, HOUSE_BOTS, fallbackDriverCode } from '../sim/fallbackDriver';
 import { raceStartAt } from '../sim/schedule';
 
@@ -28,6 +29,8 @@ export interface RaceInfo {
   entries: EntryInfo[];
   results: StoredResult[] | null;
   local: boolean;
+  /** Live (human) races: every input change, replayed by the simulation. */
+  live?: { inputLog: InputLogEntry[]; maxTime: number };
 }
 
 export interface LeaderRow {
@@ -149,4 +152,40 @@ export function localRace(slot: number): RaceInfo {
     results: null,
     local: true,
   };
+}
+
+// ---------------------------------------------------------------- live (human) races
+export interface LiveHistoryRow {
+  id: number;
+  started_at: string;
+  seed: string;
+  entries: (LiveGridEntry & { car: number })[];
+  results: StoredResult[];
+}
+
+export async function fetchLiveRace(id: number): Promise<RaceInfo | null> {
+  if (!db) return null;
+  const { data, error } = await db.from('live_races').select('*').eq('id', id).maybeSingle();
+  if (error) console.warn('fetchLiveRace', error.message);
+  if (!data) return null;
+  const grid = (data.entries as (LiveGridEntry & { car: number })[]).sort((a, b) => a.car - b.car);
+  return {
+    id: data.id,
+    slot: data.slot,
+    seed: data.seed,
+    laps: data.laps,
+    startAt: Date.parse(data.started_at),
+    simVersion: data.sim_version,
+    entries: liveSimEntries(grid),
+    results: data.results as StoredResult[],
+    local: false,
+    live: { inputLog: data.input_log as InputLogEntry[], maxTime: data.max_time },
+  };
+}
+
+export async function fetchLiveHistory(): Promise<LiveHistoryRow[]> {
+  if (!db) return [];
+  const { data, error } = await db.from('live_races').select('id, started_at, seed, entries, results').order('started_at', { ascending: false }).limit(30);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as LiveHistoryRow[];
 }

@@ -22,18 +22,19 @@
         <a href="#/live"><i data-icon="flag"></i><span>Race</span></a>
         <a href="#/league"><i data-icon="bot"></i><span>AI League</span></a>
         <a href="#/leaderboard"><i data-icon="chart"></i><span>Leaderboard</span></a>
+        <a href="#/agent"><i data-icon="code"></i><span>Your Agent</span></a>
         <a href="#/history"><i data-icon="history"></i><span>History</span></a>
         <a href="#/lab"><i data-icon="map"></i><span>Track Lab</span></a>
       </nav>
       <div class="topbar-right">
         <span id="mode-pill" class="pill pill-warn" hidden title="Supabase is not configured: showing house-bot races computed in your browser">Local mode</span>
         <a id="next-race" class="next-race" href="#/league" aria-live="off"></a>
-        <button class="x-btn" disabled title="X login arrives in Phase 2">
-          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.9 2H22l-6.8 7.8L23 22h-6.2l-4.9-6.4L6.3 22H3.2l7.3-8.3L1 2h6.3l4.4 5.9zm-1.1 18h1.7L6.3 3.9H4.5z"/></svg>
-          <span><b>Connect X</b><small>soon</small></span>
-        </button>
+        <div id="account" class="account"></div>
       </div>
     </header>
+
+    <div id="acct-menu" class="acct-menu" hidden role="dialog" aria-label="Your account"></div>
+    <div id="auth-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="auth-title"></div>
 
     <main id="main" tabindex="-1">
       <section id="view-stage" class="stage" aria-label="Race">
@@ -98,14 +99,11 @@
           <h3>DRIVERS</h3>
           <ul id="spec-drivers"></ul>
         </section>
-        <div class="bet-bar live-ui spec-only" role="group" aria-label="Bet on the winner">
-          <span class="bet-title">BET ON THE WINNER</span>
-          <div id="bet-odds" class="bet-odds"></div>
-          <button class="btn btn-lime" disabled title="Points betting arrives in Phase 2">PLACE BET <small>soon</small></button>
-        </div>
+        <div id="bet-bar" class="bet-bar bw live-ui spec-only" role="group" aria-label="Bet on the winner"></div>
         <button id="spectate-btn" class="spectate live-ui spec-only" aria-pressed="true"><i data-icon="overview"></i><span>MAP VIEW</span></button>
         <div id="ticker" class="ticker live-ui" aria-live="polite"></div>
 
+        <section id="league-bet" class="league-bet bw" aria-label="Bet on the next AI League race"></section>
         <div id="center" class="center"></div>
         <div class="buffering" role="status">Simulating ahead…</div>
 
@@ -205,9 +203,21 @@
       <section id="view-leaderboard" class="page" hidden aria-labelledby="lb-title">
         <header class="page-head">
           <h1 id="lb-title">Model leaderboard</h1>
-          <p class="muted">Every finished AI League race, by model. Only races a model drove with its own code count. House bots are a hand-written baseline.</p>
+          <p class="muted" id="lb-desc"></p>
+          <div class="tabs" role="tablist" aria-label="Leaderboard">
+            <button role="tab" class="chip active" data-lb-tab="models" aria-selected="true"><i data-icon="bot"></i>AI models</button>
+            <button role="tab" class="chip" data-lb-tab="players" aria-selected="false"><i data-icon="users"></i>Players</button>
+          </div>
         </header>
         <div id="leaderboard-body"></div>
+      </section>
+
+      <section id="view-agent" class="page" hidden aria-labelledby="agent-title">
+        <header class="page-head">
+          <h1 id="agent-title">Bring your own AI agent</h1>
+          <p class="muted">Write a <code>drive(state)</code> function in JavaScript. It runs in the same sandbox as the AI models' code and races them in the AI League. Check it and practise here first.</p>
+        </header>
+        <div id="agent-body"></div>
       </section>
 
       <section id="view-history" class="page" hidden aria-labelledby="hist-title">

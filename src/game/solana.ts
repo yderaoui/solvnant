@@ -48,7 +48,7 @@ export function isSolanaAddress(a: string): boolean {
 
 /** The exact text the wallet signs. Free, off-chain, moves nothing. */
 export function walletMessage(uid: string, nonce: string): string {
-  return `TrackLab 2D: link this wallet to my account.\nAccount: ${uid}\nNonce: ${nonce}\nSigning this is free and does not move any funds.`;
+  return `TrackLab 3D: link this wallet to my account.\nAccount: ${uid}\nNonce: ${nonce}\nSigning this is free and does not move any funds.`;
 }
 
 /** Ed25519 check that `signature` (base58 or base64) over `message` came from `address`. */

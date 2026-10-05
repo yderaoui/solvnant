@@ -6,10 +6,16 @@ import { audio, get3d } from './view3d';
 import { initFanUi } from './seatPicker';
 import { CodeViewer, escapeHtml } from './codeViewer';
 import { hydrateIcons, icon } from './icons';
+import { toast } from './toast';
+import { account, fmtPts, handleAuthHash, initAccountUi } from './account';
+import { BetWidget } from './bets';
+import { loadDraft, practiceEntries, renderAgentPage } from './agent';
 import {
   db,
   fetchHistory,
   fetchLeaderboard,
+  fetchLiveHistory,
+  fetchLiveRace,
   fetchRaceById,
   fetchRaceBySlot,
   fetchResults,
@@ -30,6 +36,8 @@ const broadcast = new Broadcast(renderer);
 const live = new LiveGame(renderer);
 initFanUi();
 const viewer = new CodeViewer();
+initAccountUi(toast);
+void account.load();
 
 broadcast.onSelectCar = (car) => {
   const race = broadcast.race;
@@ -111,24 +119,14 @@ function updateNextRace() {
 updateNextRace();
 setInterval(updateNextRace, 1000);
 
-export function toast(text: string) {
-  document.querySelector('.toast')?.remove();
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.setAttribute('role', 'status');
-  t.innerHTML = `${icon('check', 16)}${escapeHtml(text)}`;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2500);
-}
-
 if (isLocalMode) $('mode-pill').hidden = false;
 
 // ---------------------------------------------------------------- routing
 let session = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 
-function show(view: 'stage' | 'leaderboard' | 'history') {
-  for (const v of ['stage', 'leaderboard', 'history']) $(`view-${v}`).hidden = v !== view;
+function show(view: 'stage' | 'leaderboard' | 'history' | 'agent') {
+  for (const v of ['stage', 'leaderboard', 'history', 'agent']) $(`view-${v}`).hidden = v !== view;
   for (const a of document.querySelectorAll<HTMLAnchorElement>('nav a')) {
     const href = a.getAttribute('href')!;
     const on = location.hash.startsWith(href) || (href === '#/live' && location.hash === '') || (href === '#/league' && location.hash.startsWith('#/replay'));
@@ -139,6 +137,7 @@ function show(view: 'stage' | 'leaderboard' | 'history') {
 }
 
 async function route() {
+  if (handleAuthHash(toast)) return; // X login callback: rewrites the hash and routes again
   const my = ++session;
   viewer.close();
   const parts = location.hash.replace(/^#\/?/, '').split('/');
@@ -167,6 +166,9 @@ async function route() {
     case 'replay':
       show('stage');
       return openReplay(parts.slice(1));
+    case 'agent':
+      show('agent');
+      return renderAgentPage();
     default:
       show('stage');
       return runLeague(my);
@@ -213,7 +215,9 @@ async function runLeague(my: number) {
 // ---------------------------------------------------------------- replay
 async function openReplay(args: string[]) {
   let race: RaceInfo | null = null;
+  if (args[0] === 'practice') return openPractice();
   if (args[0] === 'local' && args[1]) race = localRace(Number(args[1]));
+  else if (args[0] === 'live' && args[1]) race = await fetchLiveRace(Number(args[1]));
   else if (args[0]) race = await fetchRaceById(Number(args[0]));
   if (!race) {
     broadcast.center(`<div class="card results"><div class="res-head">${icon('alert', 24)}Race not found</div>
@@ -223,6 +227,42 @@ async function openReplay(args: string[]) {
   }
   await broadcast.load(race, 'replay');
 }
+
+async function openPractice() {
+  const d = loadDraft();
+  const seed = randomSeed();
+  await broadcast.load(
+    { id: null, slot: null, seed, laps: null, startAt: 0, simVersion: null, entries: practiceEntries(d), results: null, local: true },
+    'replay',
+    'Practice race: your agent against the house bots. Nothing is saved.',
+  );
+  // Watch your own car (car 0), in whichever camera is on.
+  renderer.selected = 0;
+  broadcast.setCamera('car', 0);
+}
+
+// ---------------------------------------------------------------- AI League betting
+// Bets on a league race close when its slot opens (the seed is revealed then), so the panel always
+// offers the NEXT race while the current one plays.
+const leagueBets = new BetWidget($('league-bet'), 'BET ON THE NEXT RACE', toast);
+async function pollLeagueMarket() {
+  if (document.body.dataset.page !== 'league' || !account.cfg?.leagueBets) {
+    leagueBets.setMarket(null);
+    document.body.classList.remove('has-league-bet');
+    return;
+  }
+  try {
+    const rows = await account.api<{ id: string; status: string; closes_at: number | null }[]>('/api/markets?kind=league');
+    const next = rows.filter((r) => r.status === 'open' && (r.closes_at ?? 0) > Date.now()).sort((a, b) => (a.closes_at ?? 0) - (b.closes_at ?? 0))[0];
+    leagueBets.setMarket(next?.id ?? null);
+    document.body.classList.toggle('has-league-bet', !!next);
+  } catch {
+    /* game server offline */
+  }
+}
+setInterval(pollLeagueMarket, 10_000);
+account.onChange(() => void pollLeagueMarket());
+window.addEventListener('hashchange', () => void pollLeagueMarket());
 
 // ---------------------------------------------------------------- track lab
 function randomSeed(): string {
@@ -283,7 +323,27 @@ const skeleton = (rows: number) => `<div class="table-wrap" style="border:0;back
 const empty = (ic: Parameters<typeof icon>[0], text: string, action = `<a class="btn btn-primary" href="#/league">${icon('live')}Watch the AI league</a>`) =>
   `<div class="empty">${icon(ic, 32)}<p>${text}</p>${action}</div>`;
 
+let lbTab: 'models' | 'players' = 'models';
+let lbToken = 0; // a slow response for the other tab must not overwrite this one
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-lb-tab]'))
+  b.onclick = () => {
+    lbTab = b.dataset.lbTab as typeof lbTab;
+    void renderLeaderboard();
+  };
+
 async function renderLeaderboard() {
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-lb-tab]')) {
+    const on = b.dataset.lbTab === lbTab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  }
+  $('lb-title').textContent = lbTab === 'models' ? 'Model leaderboard' : 'Player leaderboard';
+  $('lb-desc').textContent =
+    lbTab === 'models'
+      ? 'Every finished AI League race, by model and player agent. Only races a model drove with its own code count. House bots are a hand-written baseline.'
+      : 'Points from live races (prize pots), bets and daily bonuses. Points are play money.';
+  const token = ++lbToken;
+  if (lbTab === 'players') return renderPlayers(token);
   const el = $('leaderboard-body');
   if (isLocalMode) {
     el.innerHTML = empty('chart', 'The model leaderboard needs the database. Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code> (see README).');
@@ -292,6 +352,7 @@ async function renderLeaderboard() {
   el.innerHTML = skeleton(6);
   try {
     const rows = await fetchLeaderboard();
+    if (token !== lbToken) return;
     if (!rows.length) {
       el.innerHTML = empty('trophy', 'No finished races yet. The first results land here a few minutes after the first race.');
       return;
@@ -303,9 +364,10 @@ async function renderLeaderboard() {
         .map((r, i) => {
           const rate = r.races ? r.wins / r.races : 0;
           const house = r.model.startsWith('House Bot');
-          const [vendor, id] = r.model.includes('/') ? r.model.split('/') : ['', r.model];
+          const agent = r.model.startsWith('agent:');
+          const [vendor, id] = agent ? [r.model.slice(6).split('/')[0], r.model.split('/').slice(1).join('/')] : r.model.includes('/') ? r.model.split('/') : ['', r.model];
           return `<tr><td><span class="rank ${i < 3 ? 'r' + (i + 1) : ''}">${i + 1}</span></td>
-            <td class="model">${escapeHtml(id.replace(/:free$/, ''))}${house ? '<span class="tag">BASELINE</span>' : ''}<small>${escapeHtml(vendor)}</small></td>
+            <td class="model">${escapeHtml(id.replace(/:free$/, ''))}${house ? '<span class="tag">BASELINE</span>' : agent ? '<span class="tag tag-agent">PLAYER AGENT</span>' : ''}<small>${escapeHtml(vendor)}</small></td>
             <td class="num hide-sm">${r.races}</td><td class="num"><b>${r.wins}</b></td>
             <td class="num"><div class="winbar">${Math.round(rate * 100)}%<span><i style="width:${rate * 100}%"></i></span></div></td>
             <td class="num hide-sm">${r.podiums}</td><td class="num">${Number(r.avg_position).toFixed(2)}</td>
@@ -314,6 +376,27 @@ async function renderLeaderboard() {
         .join('')}</tbody></table></div>`;
   } catch (e) {
     el.innerHTML = empty('alert', `Couldn't load the leaderboard: ${escapeHtml(String(e))}`, `<button class="btn" onclick="location.reload()">${icon('replay')}Try again</button>`);
+  }
+}
+
+async function renderPlayers(token: number) {
+  const el = $('leaderboard-body');
+  el.innerHTML = skeleton(6);
+  try {
+    const rows = await account.api<{ name: string; handle: string | null; avatar: string | null; kind: string; points: number }[]>('/api/leaderboard');
+    if (token !== lbToken) return;
+    el.innerHTML = rows.length
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Player</th><th class="num">Points</th></tr></thead><tbody>
+        ${rows
+          .map(
+            (r, i) => `<tr class="${account.me && (r.handle ? r.handle === account.me.handle : r.name === account.me.name) ? 'me' : ''}"><td><span class="rank ${i < 3 ? 'r' + (i + 1) : ''}">${i + 1}</span></td>
+              <td class="model">${escapeHtml(r.handle ? '@' + r.handle : r.name)}${r.kind === 'guest' ? '<span class="tag">GUEST</span>' : ''}</td>
+              <td class="num"><b>${fmtPts(r.points)}</b></td></tr>`,
+          )
+          .join('')}</tbody></table></div>`
+      : empty('trophy', 'No players yet. Sign in and race to get on the board.', `<a class="btn btn-primary" href="#/live">${icon('flag')}Race now</a>`);
+  } catch (e) {
+    el.innerHTML = empty('alert', `Couldn't load players: ${escapeHtml((e as Error).message)}`, `<button class="btn" onclick="location.reload()">${icon('replay')}Try again</button>`);
   }
 }
 
@@ -333,8 +416,19 @@ async function renderHistory() {
   }
   el.innerHTML = skeleton(8);
   try {
-    const rows = await fetchHistory();
-    el.innerHTML = rows.length
+    const [rows, live] = await Promise.all([fetchHistory(), fetchLiveHistory().catch(() => [])]);
+    const liveHtml = live.length
+      ? `<h2 class="hist-h">Live races</h2><div class="table-wrap"><table class="table"><thead><tr><th>Race</th><th>Started</th><th>Winner</th><th class="num hide-sm">Players</th><th></th></tr></thead><tbody>
+        ${live
+          .map((r) => {
+            const win = r.entries.find((e) => e.car === r.results.find((x) => x.position === 1)?.car);
+            return `<tr><td class="mono">#${r.id}</td><td>${new Date(r.started_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+              <td>${win ? `${icon('trophy', 14)} ${escapeHtml(win.name)}` : '–'}</td><td class="num hide-sm">${r.entries.filter((e) => e.kind === 'human').length}</td>
+              <td class="num">${replayBtn(`#/replay/live/${r.id}`)}</td></tr>`;
+          })
+          .join('')}</tbody></table></div><h2 class="hist-h">AI League</h2>`
+      : '';
+    el.innerHTML = liveHtml + (rows.length
       ? `<div class="table-wrap"><table class="table"><thead><tr><th>Race</th><th>Started</th><th class="hide-sm">Seed</th><th>Winner</th><th></th></tr></thead><tbody>
         ${rows
           .map(
@@ -343,7 +437,7 @@ async function renderHistory() {
               <td>${r.winner ? `${icon('trophy', 14)} ${escapeHtml(r.winner)}` : '–'}</td><td class="num">${replayBtn(`#/replay/${r.id}`)}</td></tr>`,
           )
           .join('')}</tbody></table></div>`
-      : empty('history', 'No finished races yet. Races run every 5 minutes.');
+      : empty('history', 'No finished races yet. Races run every 5 minutes.'));
   } catch (e) {
     el.innerHTML = empty('alert', `Couldn't load history: ${escapeHtml(String(e))}`, `<button class="btn" onclick="location.reload()">${icon('replay')}Try again</button>`);
   }

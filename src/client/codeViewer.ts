@@ -31,6 +31,7 @@ export function highlight(code: string): string {
 
 const SOURCE_LABEL: Record<string, string> = {
   llm: 'Written by the model',
+  agent: 'Player-submitted agent',
   fallback: 'Fallback driver (model failed)',
   house: 'House bot (hand-written)',
 };
@@ -61,7 +62,7 @@ export class CodeViewer {
       ? `<div class="crash-box">${icon('alert', 14)}<div><b>Crashed${result.crashTime ? ` at ${result.crashTime.toFixed(1)}s` : ''}:</b> ${escapeHtml(result.crashReason)}</div></div>`
       : '';
     this.el.querySelector('.drawer-meta')!.innerHTML = `
-      <span class="badge badge-${entry.source}">${icon(entry.source === 'llm' ? 'code' : 'alert', 12)}${SOURCE_LABEL[entry.source] ?? entry.source}</span>
+      <span class="badge badge-${entry.source}">${icon(entry.source === 'llm' || entry.source === 'agent' ? 'code' : 'alert', 12)}${SOURCE_LABEL[entry.source] ?? entry.source}</span>
       <span>${lines} lines · ${(bytes / 1024).toFixed(1)} KB</span>
       ${entry.createdAt ? `<span>written ${new Date(entry.createdAt).toLocaleString()}</span>` : ''}
       ${crash}`;

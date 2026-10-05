@@ -1,0 +1,93 @@
+# Builds and tests the TrackLab prize-pots Anchor program (onchain/) on a local test validator.
+# DEVNET / LOCALNET ONLY - nothing here deploys anywhere.
+# TODO: security audit + legal review required before any real money / mainnet use.
+name: onchain
+
+on:
+  push:
+    paths:
+      - "onchain/**"
+      - ".github/workflows/onchain.yml"
+  pull_request:
+    paths:
+      - "onchain/**"
+      - ".github/workflows/onchain.yml"
+  workflow_dispatch:
+
+env:
+  RUST_VERSION: "1.89.0"
+  SOLANA_VERSION: "v2.3.13"
+  ANCHOR_VERSION: "0.32.1"
+  NODE_VERSION: "22"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: onchain
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache cargo + Solana platform tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/solana
+            onchain/target
+          key: onchain-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SOLANA_VERSION }}-${{ env.ANCHOR_VERSION }}-${{ hashFiles('onchain/**/Cargo.toml') }}
+          restore-keys: |
+            onchain-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SOLANA_VERSION }}-${{ env.ANCHOR_VERSION }}-
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+          rustc --version
+
+      - name: Install Solana CLI (Anza)
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI (prebuilt release binary)
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL -o "$HOME/.local/bin/anchor" \
+            "https://github.com/solana-foundation/anchor/releases/download/v${ANCHOR_VERSION}/anchor-${ANCHOR_VERSION}-x86_64-unknown-linux-gnu"
+          chmod +x "$HOME/.local/bin/anchor"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Versions
+        run: |
+          rustc --version
+          cargo --version
+          solana --version
+          cargo-build-sbf --version
+          anchor --version
+          node --version
+
+      - name: Throwaway test wallet (generated per run, never committed)
+        run: solana-keygen new --no-bip39-passphrase --silent --force -o "$HOME/.config/solana/id.json"
+
+      - name: npm install
+        run: npm install --no-audit --no-fund
+
+      - name: anchor build
+        run: |
+          anchor build
+          # The program keypair is not committed; align declare_id!/Anchor.toml with this
+          # runner's target/deploy keypair, then rebuild.
+          anchor keys sync
+          anchor build
+          anchor keys list
+
+      - name: anchor test
+        run: anchor test --skip-build

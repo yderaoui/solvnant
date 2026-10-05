@@ -11,3 +11,6 @@ scratch
 
 # local agent worktrees
 .claude/
+
+.vercel
+.env*

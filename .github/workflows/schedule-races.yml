@@ -1,7 +1,7 @@
 name: Schedule races
 
-# Every 30 minutes the scheduler fills the next ~75 minutes of 5-minute slots, so a late or
-# skipped cron run (GitHub cron is best-effort) never leaves a gap. Free and unlimited on public repos.
+# Every 30 minutes the scheduler fills the next 4 hours of 5-minute slots. GitHub cron is
+# best-effort (runs can be late or skipped for hours), so the long lookahead keeps the league full. Free and unlimited on public repos.
 on:
   schedule:
     - cron: '*/30 * * * *'
@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -29,3 +29,4 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODELS: ${{ vars.OPENROUTER_MODELS }}
           SITE_URL: ${{ vars.SITE_URL }}
+          RACES_AHEAD_MINUTES: ${{ vars.RACES_AHEAD_MINUTES || '240' }}

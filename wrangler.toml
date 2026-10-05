@@ -24,7 +24,7 @@ new_sqlite_classes = ["Hub"]
 # Public settings (secrets go in `wrangler secret put NAME`, or .dev.vars locally):
 #   SESSION_SECRET, X_CLIENT_ID, X_CLIENT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 [vars]
-SITE_URL = "http://localhost:5173"
+SITE_URL = "https://solvnant.vercel.app" # local dev overrides this in .dev.vars
 # TOKEN_MINT = ""          # set to the game's SPL token mint to turn on the $MIN_HOLD_USD gate
 MIN_HOLD_USD = "20"
 X_MIN_ACCOUNT_DAYS = "30"

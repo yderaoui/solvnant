@@ -1,7 +1,7 @@
 name: Schedule races
 
-# Every 30 minutes the scheduler fills the next 4 hours of 5-minute slots. GitHub cron is
-# best-effort (runs can be late or skipped for hours), so the long lookahead keeps the league full. Free and unlimited on public repos.
+# Every 30 minutes the scheduler fills the next 12 hours of 5-minute slots. GitHub cron is
+# best-effort (in practice it fires every 5-7 hours), so the long lookahead keeps the league full. Free and unlimited on public repos.
 on:
   schedule:
     - cron: '*/30 * * * *'
@@ -29,4 +29,4 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODELS: ${{ vars.OPENROUTER_MODELS }}
           SITE_URL: ${{ vars.SITE_URL }}
-          RACES_AHEAD_MINUTES: ${{ vars.RACES_AHEAD_MINUTES || '240' }}
+          RACES_AHEAD_MINUTES: ${{ vars.RACES_AHEAD_MINUTES || '720' }}

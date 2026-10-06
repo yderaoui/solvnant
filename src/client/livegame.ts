@@ -59,7 +59,6 @@ export class LiveGame {
   private bets = new BetWidget($('bet-bar'), 'BET ON THE WINNER', toast);
   private priority = false;
   private backSelf = 0; // points to bet on yourself at lights out (0 = off)
-  private autoJoin = false; // join the next lobby as soon as it opens
   private car: number | null = null;
   private track: Track | null = null;
   private trackSeed = '';
@@ -150,7 +149,7 @@ export class LiveGame {
     $('mute-btn').addEventListener('click', () => {
       if (this.active) this.toggleMute();
     });
-    $('join-next').onclick = () => this.toggleAutoJoin();
+    $('join-next').onclick = () => this.toggleNext();
     try {
       this.backSelf = Math.max(0, Math.floor(Number(localStorage.getItem('tl-back') ?? 0)) || 0);
     } catch {
@@ -281,13 +280,6 @@ export class LiveGame {
       this.renderer.setCars(cars);
       this.c3d?.setCars(cars, this.car ?? -1);
     }
-    if (room.phase === 'lobby' && prevPhase && prevPhase !== 'lobby' && this.autoJoin) {
-      this.autoJoin = false;
-      if (account.me?.canRace) {
-        this.join();
-        toast('Joining the next race…');
-      }
-    }
     if (room.phase === 'race' && prevPhase === 'lobby' && this.car !== null && this.backSelf > 0) void this.placeBackSelf(room.slot);
     if (room.phase === 'race' && prevPhase === 'lobby') {
       this.goUntil = performance.now() + 1200;
@@ -307,21 +299,27 @@ export class LiveGame {
     this.paintJoinNext();
   }
 
-  /** "Join next race": remember it and join the moment the next lobby opens. */
-  private toggleAutoJoin() {
+  private get signedUpNext() {
+    return !!this.you && !!this.room?.next?.some((e) => e.id === this.you);
+  }
+
+  /** "Join next race" (any time outside the lobby): the server seats you when the next lobby opens. */
+  private toggleNext() {
     if (!account.me) return showAuthModal();
     if (!account.me.canRace) return this.ticker(account.me.raceBlock ?? 'You can’t race yet.', 4000);
-    this.autoJoin = !this.autoJoin;
-    this.paintJoinNext();
-    if (this.autoJoin) toast('You’ll join the next race automatically');
+    if (this.room?.phase === 'lobby') return;
+    if (this.signedUpNext) this.conn.send({ t: 'leave' });
+    else this.join();
   }
 
   private paintJoinNext() {
-    const label = !account.me ? 'SIGN IN TO RACE NEXT' : this.autoJoin ? '✓ JOINING NEXT RACE (CANCEL)' : 'JOIN NEXT RACE';
+    const on = this.signedUpNext;
+    const n = this.room?.next?.length ?? 0;
+    const label = !account.me ? 'SIGN IN TO RACE NEXT' : on ? '✓ SIGNED UP FOR NEXT RACE · LEAVE' : `JOIN NEXT RACE${n ? ` · ${n} signed up` : ''}`;
     for (const el of [document.getElementById('join-next'), document.getElementById('res-join')]) {
       if (!el) continue;
       el.textContent = label;
-      el.classList.toggle('on', this.autoJoin);
+      el.classList.toggle('on', on);
     }
   }
 
@@ -918,7 +916,7 @@ export class LiveGame {
               <li>${icon('follow', 16)}Max 10 players per race</li>
               <li>${icon('replay', 16)}Last round's racers give up their seat when the grid is full</li>
               <li>${icon('flag', 16)}One entry per account${cfg?.x ? ' (X login keeps bots out)' : ''}</li>
-              ${cfg?.gate ? `<li>${icon('zap', 16)}No X account? Hold $${cfg.gate.minUsd}+ of the token in a linked wallet</li>` : ''}
+              <li>${icon('zap', 16)}No X account? Hold $${cfg?.gate?.minUsd ?? 20}+ of $TRACK &nbsp;<a href="#/buy">Buy $TRACK</a></li>
               <li>${icon('trophy', 16)}Priority pass: a guaranteed seat that can't be bumped</li>
             </ul>
           </div>
@@ -1027,7 +1025,7 @@ export class LiveGame {
         ${room.prizes?.length ? `<div class="res-prizes">${icon('trophy', 16)}<span>Prize pot paid: ${room.prizes.map((p) => `<b>${escapeHtml(p.name)}</b> +${fmtPts(p.points)}`).join(' · ')} pts</span></div>` : ''}
         <div class="res-foot"><span>Next lobby opens in <b id="res-next"></b></span><button class="btn btn-lime small" id="res-join"></button>${room.replayId ? `<a class="btn small" href="#/replay/live/${room.replayId}">${icon('replay', 14)}Watch replay</a>` : ''}</div>
       </div>`);
-    $('res-join').onclick = () => this.toggleAutoJoin();
+    $('res-join').onclick = () => this.toggleNext();
     this.paintJoinNext();
   }
 }

@@ -43,6 +43,7 @@ export interface RoomInfo {
   viewers: number;
   recent: RecentWinner[]; // last few live-race winners, newest first
   waitlist: LobbyEntry[]; // signed up while the grid was full (first gets the next free seat)
+  next: LobbyEntry[]; // signed up during a race for the NEXT one: seated (and charged) when its lobby opens
   entryFee: number; // points, into the prize pot
   priorityFee: number; // points for a guaranteed seat
   priorityLeft: number; // priority passes still available this race

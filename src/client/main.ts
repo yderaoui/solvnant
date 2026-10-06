@@ -10,6 +10,8 @@ import { toast } from './toast';
 import { account, fmtPts, handleAuthHash, initAccountUi } from './account';
 import { BetWidget } from './bets';
 import { loadDraft, practiceEntries, renderAgentPage } from './agent';
+import { LeagueLobby } from './leagueLobby';
+import { renderBuyPage } from './buy';
 import {
   db,
   fetchHistory,
@@ -37,6 +39,7 @@ const live = new LiveGame(renderer);
 initFanUi();
 const viewer = new CodeViewer();
 initAccountUi(toast);
+const leagueLobby = new LeagueLobby((html) => broadcast.center(html));
 void account.load();
 
 broadcast.onSelectCar = (car) => {
@@ -125,8 +128,8 @@ if (isLocalMode) $('mode-pill').hidden = false;
 let session = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 
-function show(view: 'stage' | 'leaderboard' | 'history' | 'agent') {
-  for (const v of ['stage', 'leaderboard', 'history', 'agent']) $(`view-${v}`).hidden = v !== view;
+function show(view: 'stage' | 'leaderboard' | 'history' | 'agent' | 'buy') {
+  for (const v of ['stage', 'leaderboard', 'history', 'agent', 'buy']) $(`view-${v}`).hidden = v !== view;
   for (const a of document.querySelectorAll<HTMLAnchorElement>('nav a')) {
     const href = a.getAttribute('href')!;
     const on = location.hash.startsWith(href) || (href === '#/live' && location.hash === '') || (href === '#/league' && location.hash.startsWith('#/replay'));
@@ -139,6 +142,7 @@ function show(view: 'stage' | 'leaderboard' | 'history' | 'agent') {
 async function route() {
   if (handleAuthHash(toast)) return; // X login callback: rewrites the hash and routes again
   const my = ++session;
+  leagueLobby.hide();
   viewer.close();
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const page = parts[0] || 'live';
@@ -166,6 +170,9 @@ async function route() {
     case 'replay':
       show('stage');
       return openReplay(parts.slice(1));
+    case 'buy':
+      show('buy');
+      return renderBuyPage();
     case 'agent':
       show('agent');
       return renderAgentPage();
@@ -193,6 +200,7 @@ async function runLeague(my: number) {
       if (db) note = 'No scheduled race for this slot. Showing a house race.';
     }
     if (my !== session) return;
+    leagueLobby.hide();
     await broadcast.load(race, 'live', note);
     // Live races: fetch the stored result once the race is over and verify our replay against it.
     if (race.id !== null) {
@@ -204,7 +212,11 @@ async function runLeague(my: number) {
         if (stored) broadcast.verify(stored);
       }, endIn);
     }
+    const replay = race.id !== null ? `#/replay/${race.id}` : `#/replay/local/${slot}`;
     while (my === session && Date.now() < slotStart(slot + 1)) {
+      // Once the results have had their moment, the lobby for the next race takes over.
+      const rec = broadcast.record;
+      if (rec?.complete && Date.now() > race.startAt + rec.duration * 1000 + 12_000) leagueLobby.show(slot + 1, replay);
       const next = document.getElementById('next-in');
       if (next) next.textContent = fmtTime(Math.max(0, (raceStartAt(slot + 1) - Date.now()) / 1000)).slice(0, -2);
       await sleep(250);

@@ -29,6 +29,7 @@
       <div class="topbar-right">
         <span id="mode-pill" class="pill pill-warn" hidden title="Supabase is not configured: showing house-bot races computed in your browser">Local mode</span>
         <a id="next-race" class="next-race" href="#/league" aria-live="off"></a>
+        <a class="btn btn-lime small buy-btn" href="#/buy"><i data-icon="zap" data-size="14"></i>BUY $TRACK</a>
         <div id="account" class="account"></div>
       </div>
     </header>
@@ -220,6 +221,14 @@
           <p class="muted">Write a <code>drive(state)</code> function in JavaScript. It runs in the same sandbox as the AI models' code and races them in the AI League. Check it and practise here first.</p>
         </header>
         <div id="agent-body"></div>
+      </section>
+
+      <section id="view-buy" class="page" hidden aria-labelledby="buy-title">
+        <header class="page-head">
+          <h1 id="buy-title">Buy $TRACK</h1>
+          <p class="muted">The game's token. Hold it to race without an X account; token prize pots are coming.</p>
+        </header>
+        <div id="buy-body"></div>
       </section>
 
       <section id="view-history" class="page" hidden aria-labelledby="hist-title">

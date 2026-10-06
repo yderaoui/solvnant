@@ -58,6 +58,8 @@ export class GameRoom {
   private startAt = 0;
   private players: LobbyEntry[] = []; // seated humans for this slot
   private waitlist: LobbyEntry[] = [];
+  /** Signed up for the next race while this one runs; seated when the next lobby opens. */
+  private nextUp: LobbyEntry[] = [];
   private pending = new Set<string>(); // joins/leaves waiting on the Hub
   private raceEntries: LobbyEntry[] = [];
   private sim: RaceSim | null = null;
@@ -179,7 +181,7 @@ export class GameRoom {
   private async join(conn: Conn, rawColor: unknown, priority: boolean) {
     const uid = conn.uid;
     if (!uid) return this.err(conn, 'Sign in to race (top right).');
-    if (this.phase !== 'lobby') return this.err(conn, 'The race has started. Join the next lobby!');
+    if (this.phase !== 'lobby') return this.signUpNext(conn, rawColor, priority);
     if (this.players.some((p) => p.id === uid) || this.waitlist.some((p) => p.id === uid) || this.pending.has(uid)) return;
     const slot = this.slot;
     this.pending.add(uid);
@@ -230,6 +232,31 @@ export class GameRoom {
     }
   }
 
+  /** Between lobbies: put the player on the list for the next race (nothing is charged yet). */
+  private async signUpNext(conn: Conn, rawColor: unknown, priority: boolean) {
+    const uid = conn.uid!;
+    if (this.nextUp.some((p) => p.id === uid)) return;
+    try {
+      const el = await this.hub<{ ok: boolean; reason: string | null }>('/internal/eligibility', { uid });
+      if (!el.ok) return this.err(conn, el.reason ?? 'You can’t race yet.');
+    } catch {
+      return this.err(conn, 'The points server is not reachable. Try again in a moment.');
+    }
+    if (this.nextUp.some((p) => p.id === uid)) return;
+    const color = PLAYER_COLORS.includes(String(rawColor)) ? String(rawColor) : PLAYER_COLORS[0];
+    this.nextUp.push({ id: uid, name: conn.name, color, kind: 'human', connected: true, priority });
+    this.err(conn, 'You’re signed up for the next race: your seat is taken when its lobby opens.');
+    this.broadcastRoom();
+  }
+
+  /** The next lobby opened: seat everyone who signed up for it (if they're still here). */
+  private async seatNextUp(list: LobbyEntry[]) {
+    for (const p of list) {
+      const conn = [...this.conns].find((c) => c.uid === p.id);
+      if (conn) await this.join(conn, p.color, !!p.priority);
+    }
+  }
+
   /** Move a seated player to the front of the waitlist (fees refunded; they pay again if seated). */
   private async toWaitlist(p: LobbyEntry, why: string) {
     this.players = this.players.filter((x) => x.id !== p.id);
@@ -245,6 +272,10 @@ export class GameRoom {
 
   private async leave(conn: Conn) {
     const uid = conn.uid;
+    if (uid && this.nextUp.some((p) => p.id === uid)) {
+      this.nextUp = this.nextUp.filter((p) => p.id !== uid);
+      return this.broadcastRoom();
+    }
     if (!uid || this.phase !== 'lobby' || this.pending.has(uid)) return;
     if (this.waitlist.some((p) => p.id === uid)) {
       this.waitlist = this.waitlist.filter((p) => p.id !== uid);
@@ -366,6 +397,9 @@ export class GameRoom {
     this.laps = lapsFor(generateTrack(this.seed));
     this.startAt = this.slotStart(slot) + this.lobbyMs;
     this.broadcastRoom();
+    const queued = this.nextUp;
+    this.nextUp = [];
+    if (queued.length) void this.seatNextUp(queued);
   }
 
   private startRace() {
@@ -481,6 +515,7 @@ export class GameRoom {
       viewers: this.conns.size,
       recent: this.recent,
       waitlist: this.waitlist,
+      next: this.nextUp,
       entryFee: P.entryFee,
       priorityFee: P.priorityFee,
       priorityLeft: Math.max(0, P.maxPriority - this.players.filter((p) => p.priority).length),

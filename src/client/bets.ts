@@ -5,7 +5,7 @@ import { account, fmtPts, showAuthModal } from './account';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
 
-interface MarketView {
+export interface MarketView {
   market: { id: string; kind: string; title: string; status: 'open' | 'closed' | 'settled' | 'void'; closesAt: number | null; picks: { id: string; name: string; color: string }[]; winner: string | null } | null;
   pools: Record<string, number>;
   odds: Record<string, number | null>;
@@ -25,6 +25,8 @@ export class BetWidget {
   private msg = '';
   /** Live races close bets on the server's signal, not a clock time. */
   open = true;
+  /** Called with each fresh market view (the AI League lobby shows the lineup from it). */
+  onView: (v: MarketView) => void = () => {};
 
   constructor(
     private el: HTMLElement,
@@ -63,6 +65,7 @@ export class BetWidget {
       if (id !== this.id) return;
       this.view = v;
       if (v.yourPick !== null) this.pick = v.yourPick; // drivers: always your own car
+      this.onView(v);
     } catch {
       /* keep the last view */
     }

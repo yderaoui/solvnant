@@ -849,3 +849,80 @@ body.has-league-bet[data-page='league'] .league-bet { display: flex; }
   body.is-live.is-racing.has-market .bet-bar { width: calc(100% - 16px); bottom: 140px; }
 }
 .bw > * { min-width: 0; }
+
+/* AI League lobby */
+body.league-lobby .league-bet, body.league-lobby .tower-wrap, body.league-lobby .feed { display: none !important; }
+.league-lobby-card .queue li { grid-template-columns: 26px 26px 1fr auto; }
+.league-lobby-card .queue .sw { width: 10px; height: 10px; border-radius: 50%; }
+.league-lobby-card #ll-bet .bw { display: flex; }
+.league-lobby-card .winners .a { margin-left: auto; color: var(--lime); font-size: 12px; }
+
+/* Buy $TRACK (demo) */
+.buy-btn { min-height: 36px; }
+.demo-banner { display: flex; gap: var(--s2); align-items: flex-start; margin: var(--s3) 0 var(--s4); padding: var(--s3) var(--s4); border-radius: var(--r); border: 1px solid #ffb02066; background: #ffb02012; color: var(--warn); font-size: 14px; }
+.demo-banner span { color: var(--text); }
+.buy-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); gap: var(--s4); align-items: start; }
+.buy-token, .buy-swap { display: flex; flex-direction: column; gap: var(--s3); }
+.tok-head { display: flex; align-items: center; gap: var(--s3); }
+.tok-head h2 { margin: 0; font-size: 26px; }
+.tok-head small { color: var(--muted); }
+.tok-logo { position: relative; width: 44px; height: 44px; border-radius: 12px; background: #06080b; border: 1px solid var(--line-strong); flex: none; }
+.tok-logo i { position: absolute; top: 11px; width: 8px; height: 22px; background: var(--lime); transform: skewX(-24deg); }
+.tok-logo i:first-child { left: 13px; }
+.tok-logo i:last-child { left: 24px; background: #fff; }
+.tok-price { margin-left: auto; text-align: right; display: flex; flex-direction: column; }
+.tok-price b { font-family: var(--mono); font-size: 22px; }
+.tok-price span { font-size: 13px; font-weight: 700; }
+#tok-chart { width: 100%; height: auto; aspect-ratio: 760 / 260; border-radius: var(--r); background: rgba(0, 0, 0, 0.25); }
+.tok-range { display: flex; justify-content: space-between; color: var(--dim); font-size: 12px; margin-top: -6px; }
+.tok-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); margin: 0; }
+.tok-stats div { padding: var(--s2) var(--s3); border-radius: var(--r-sm); background: var(--surface-2); }
+.tok-stats dt { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.tok-stats dd { margin: 2px 0 0; font-family: var(--mono); font-weight: 600; }
+.tok-perks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); font-size: 14px; }
+.tok-perks li { display: flex; gap: var(--s2); align-items: flex-start; }
+.tok-perks .i { color: var(--lime); flex: none; margin-top: 2px; }
+.wallet-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r-sm); background: var(--surface-2); font-size: 14px; }
+.wallet-row .wbal { margin-left: auto; font-family: var(--mono); }
+.wdot { width: 8px; height: 8px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 8px var(--lime); }
+.wdot.off { background: var(--dim); box-shadow: none; }
+.swap-box { display: flex; flex-direction: column; gap: 4px; padding: var(--s3); border-radius: var(--r); background: #070a0d; border: 1px solid var(--line-strong); }
+.swap-box .lbl { font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.swap-in { display: flex; align-items: center; gap: var(--s2); }
+.swap-in input, .swap-in output { flex: 1; min-width: 0; background: none; border: 0; color: var(--text); font-family: var(--mono); font-size: 26px; padding: 0; }
+.swap-in input:focus { outline: none; }
+.swap-box:focus-within { border-color: var(--lime); }
+.swap-box small { color: var(--muted); }
+.swap-arrow { display: grid; place-items: center; margin: -8px auto; width: 32px; height: 32px; border-radius: 50%; background: var(--surface-3); border: 1px solid var(--line-strong); z-index: 1; }
+.quick { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.swap-meta { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.swap-meta div { display: flex; justify-content: space-between; color: var(--muted); }
+.swap-meta dd { margin: 0; color: var(--text); }
+.holding div { display: flex; align-items: baseline; gap: var(--s2); }
+.holding b { font-family: var(--mono); font-size: 20px; color: var(--lime); }
+.holding small { color: var(--muted); }
+.holding p { display: flex; gap: 6px; align-items: center; margin: 4px 0 0; font-size: 13px; }
+.holding .ok { color: var(--lime); }
+.holding .warn { color: var(--warn); }
+.wallet-pick { justify-content: flex-start; width: 100%; }
+.wallet-pick small { margin-left: auto; color: var(--muted); font-weight: 500; }
+.buy-steps ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+.buy-steps li { display: flex; gap: var(--s2); align-items: center; color: var(--muted); }
+.buy-steps li.done { color: var(--lime); }
+.buy-steps li.now { color: var(--text); font-weight: 700; }
+.buy-steps .dotx { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); }
+.buy-steps h2 { display: flex; gap: 8px; align-items: center; }
+.rules a { color: var(--lime); }
+@media (max-width: 900px) {
+  .buy-grid { grid-template-columns: 1fr; }
+  .tok-stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 760px) {
+  .buy-btn { display: none; }
+}
+
+.league-lobby-card .bw-picks { flex-direction: column; max-height: 230px; overflow-y: auto; }
+.league-lobby-card .bw-pick { flex: none; max-width: none; min-height: 34px; }
+.league-lobby-card .bw-head { gap: 6px var(--s2); }
+.wallet-row { flex-wrap: wrap; }
+.wallet-row span, .wallet-row code { white-space: nowrap; }

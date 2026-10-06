@@ -252,7 +252,8 @@ function renderMenu(toast: (t: string) => void) {
       cfg.tickets
         ? `<section><h4>Race tickets</h4>
             <div class="acct-wallet"><span>You have <b>${me.tickets ?? 0}</b> ticket${me.tickets === 1 ? '' : 's'}</span><span>${cfg.tickets.price} ${escapeHtml(cfg.tickets.symbol)} each</span></div>
-            <button class="btn small btn-lime" id="am-buyticket">${icon('zap', 14)}Buy a ticket</button>
+            <div class="acct-row"><button class="btn small btn-lime" id="am-buyticket">${icon('zap', 14)}Buy a ticket</button>
+            ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost" id="am-faucet">Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}</div>
             <p class="muted small" id="am-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>`
         : ''
     }
@@ -274,6 +275,15 @@ function renderMenu(toast: (t: string) => void) {
     }
   };
   document.getElementById('am-wlink')?.addEventListener('click', () => void linkWallet(toast));
+  document.getElementById('am-faucet')?.addEventListener('click', async () => {
+    const step = document.getElementById('am-buystep')!;
+    try {
+      const { getTestCoins } = await import('./tickets');
+      step.textContent = await getTestCoins((t) => (step.textContent = t));
+    } catch (e) {
+      step.textContent = (e as Error).message;
+    }
+  });
   document.getElementById('am-buyticket')?.addEventListener('click', async () => {
     const step = document.getElementById('am-buystep')!;
     try {

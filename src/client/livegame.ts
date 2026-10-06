@@ -14,7 +14,7 @@ import { icon } from './icons';
 import { account, fmtPts, showAuthModal } from './account';
 import { BetWidget } from './bets';
 import { toast } from './toast';
-import { buyTicket, claimPendingTicket } from './tickets';
+import { buyTicket, claimPendingTicket, getTestCoins } from './tickets';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -876,7 +876,8 @@ export class LiveGame {
              cfg?.tickets
                ? `<div class="lb-ticket"><span><b>Race ticket</b><small>${cfg.tickets.price} ${escapeHtml(cfg.tickets.symbol)} · you have <b id="lb-tix">${me.tickets ?? 0}</b></small></span>
                     <button class="btn small" id="lb-buy">${icon('zap', 14)}Buy ticket</button></div>
-                  <p class="muted small" id="lb-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network: tickets use devnet test coins (no real value).' : ''}</p>`
+                  ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost lb-faucet" id="lb-faucet">${icon('zap', 14)}Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}
+                  <p class="muted small" id="lb-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network: tickets use devnet test coins (no real value). Phantom: Settings → Developer settings → Testnet mode → Solana Devnet.' : ''}</p>`
                : ''
            }
            <p id="lb-err" class="err" role="alert"></p>
@@ -938,6 +939,18 @@ export class LiveGame {
     document.getElementById('lb-go')?.addEventListener('click', () => {
       this.audio.start();
       this.join();
+    });
+    document.getElementById('lb-faucet')?.addEventListener('click', async () => {
+      const step = $('lb-buystep');
+      const btn = $<HTMLButtonElement>('lb-faucet');
+      btn.disabled = true;
+      try {
+        step.textContent = await getTestCoins((t) => (step.textContent = t));
+      } catch (e) {
+        step.textContent = (e as Error).message;
+      } finally {
+        btn.disabled = false;
+      }
     });
     document.getElementById('lb-buy')?.addEventListener('click', async () => {
       const step = $('lb-buystep');

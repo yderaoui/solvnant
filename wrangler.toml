@@ -35,3 +35,15 @@ POINTS_ENTRY_FEE = "50"
 POINTS_PRIORITY_FEE = "200"
 MAX_PRIORITY_PER_RACE = "3"
 BET_RAKE_PCT = "5"
+
+# Race tickets paid in the game coin. DEVNET TEST COIN for now (no value). For the real coin: set
+# TICKET_CLUSTER = "mainnet-beta", TICKET_MINT = <mint>, TICKET_TREASURY = <your wallet>, and point
+# TICKET_VERIFY_URL at a Solana RPC provider (e.g. Helius). Remove TICKET_MINT to switch tickets off.
+# Secret: TICKET_VERIFY_KEY (wrangler secret put) = the site's RPC_PROXY_KEY.
+TICKET_CLUSTER = "devnet"
+TICKET_MINT = "BQ2rBfDdVNXVkBqmg94PdgSrsMAaoDydedwoRYZZmyXM"
+TICKET_DECIMALS = "6"
+TICKET_TREASURY = "GQyJ7beMv25V7VXa9QoAvLSTGKM13sieabHvFHfYLBfx"
+TICKET_PRICE = "100"
+TICKET_SYMBOL = "$TRACK"
+TICKET_VERIFY_URL = "https://solvnant.vercel.app/api/solana-rpc"

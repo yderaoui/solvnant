@@ -116,3 +116,18 @@ export async function claimPendingTicket(): Promise<boolean> {
   }
   return false;
 }
+
+/** Devnet only: ask the site's faucet for free test coins (and a little test SOL for fees). */
+export async function getTestCoins(step: (text: string) => void): Promise<string> {
+  const provider = walletProvider();
+  if (!provider) throw new Error('No Solana wallet found. Install Phantom (phantom.app), then reload this page.');
+  step('Connecting your wallet…');
+  const { publicKey } = await provider.connect();
+  step('Sending you test coins (about 10 s)…');
+  const base = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'https://solvnant.vercel.app' : '';
+  const r = await fetch(`${base}/api/faucet`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: publicKey.toString() }) });
+  const j = (await r.json().catch(() => ({}))) as { ok?: boolean; coins?: number; sol?: number; error?: string };
+  if (!r.ok || !j.ok) throw new Error(j.error ?? `Faucet error ${r.status}`);
+  const sym = account.cfg?.tickets?.symbol ?? '$TRACK';
+  return `Received ${j.coins} test ${sym}${j.sol ? ` and ${j.sol} test SOL for fees` : ''}. Switch Phantom to the test network (Settings → Developer settings → Testnet mode → Solana Devnet) to see them.`;
+}

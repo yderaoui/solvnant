@@ -965,3 +965,4 @@ nav a, .x-btn b, .x-btn small { white-space: nowrap; }
 .lb-ticket small { color: var(--muted); font-size: 12px; }
 .lb-ticket small b { color: var(--text); }
 #lb-buystep { margin: 0 0 var(--s2); min-height: 16px; }
+.lb-faucet { width: 100%; margin-bottom: 4px; }

@@ -58,6 +58,8 @@ export class LiveGame {
   private you: string | null = null; // our id in the room (account uid when signed in)
   private bets = new BetWidget($('bet-bar'), 'BET ON THE WINNER', toast);
   private priority = false;
+  private backSelf = 0; // points to bet on yourself at lights out (0 = off)
+  private autoJoin = false; // join the next lobby as soon as it opens
   private car: number | null = null;
   private track: Track | null = null;
   private trackSeed = '';
@@ -108,6 +110,7 @@ export class LiveGame {
         this.conn.hello();
       }
       if (this.active && this.room?.phase === 'lobby') this.overlayFor = 'stale';
+      this.paintJoinNext();
     });
     window.addEventListener('keydown', (e) => this.onKey(e, true));
     window.addEventListener('keyup', (e) => this.onKey(e, false));
@@ -147,6 +150,12 @@ export class LiveGame {
     $('mute-btn').addEventListener('click', () => {
       if (this.active) this.toggleMute();
     });
+    $('join-next').onclick = () => this.toggleAutoJoin();
+    try {
+      this.backSelf = Math.max(0, Math.floor(Number(localStorage.getItem('tl-back') ?? 0)) || 0);
+    } catch {
+      /* ignore */
+    }
     this.paintMute();
     // Browsers only allow sound after a gesture: start it on the first click/key while live.
     const unlock = () => {
@@ -185,7 +194,8 @@ export class LiveGame {
 
   stop() {
     this.active = false;
-    document.body.classList.remove('is-live', 'is-racing', 'in-lobby', 'is-spec', 'view-3d', 'view-fan');
+    document.body.classList.remove('is-live', 'is-racing', 'in-lobby', 'is-spec', 'view-3d', 'view-fan', 'has-market');
+    $('load3d').hidden = true;
     get3d()?.setVisible(false);
     this.renderer.app.stage.visible = true;
     this.audio.update(0, 0, 0, 0, 1);
@@ -271,6 +281,14 @@ export class LiveGame {
       this.renderer.setCars(cars);
       this.c3d?.setCars(cars, this.car ?? -1);
     }
+    if (room.phase === 'lobby' && prevPhase && prevPhase !== 'lobby' && this.autoJoin) {
+      this.autoJoin = false;
+      if (account.me?.canRace) {
+        this.join();
+        toast('Joining the next race…');
+      }
+    }
+    if (room.phase === 'race' && prevPhase === 'lobby' && this.car !== null && this.backSelf > 0) void this.placeBackSelf(room.slot);
     if (room.phase === 'race' && prevPhase === 'lobby') {
       this.goUntil = performance.now() + 1200;
       if (this.car !== null) this.setView('3d');
@@ -286,13 +304,62 @@ export class LiveGame {
     document.body.classList.toggle('is-racing', driving);
     document.body.classList.toggle('is-spec', room.phase !== 'lobby' && !driving);
     $('rs-phase').textContent = room.phase === 'lobby' ? 'LOBBY' : room.phase === 'race' ? 'LIVE RACE' : 'FINISHED';
+    this.paintJoinNext();
+  }
+
+  /** "Join next race": remember it and join the moment the next lobby opens. */
+  private toggleAutoJoin() {
+    if (!account.me) return showAuthModal();
+    if (!account.me.canRace) return this.ticker(account.me.raceBlock ?? 'You can’t race yet.', 4000);
+    this.autoJoin = !this.autoJoin;
+    this.paintJoinNext();
+    if (this.autoJoin) toast('You’ll join the next race automatically');
+  }
+
+  private paintJoinNext() {
+    const label = !account.me ? 'SIGN IN TO RACE NEXT' : this.autoJoin ? '✓ JOINING NEXT RACE (CANCEL)' : 'JOIN NEXT RACE';
+    for (const el of [document.getElementById('join-next'), document.getElementById('res-join')]) {
+      if (!el) continue;
+      el.textContent = label;
+      el.classList.toggle('on', this.autoJoin);
+    }
+  }
+
+  /** Lights out: place the "back yourself" bet chosen in the lobby (the market opens a moment later). */
+  private async placeBackSelf(slot: number) {
+    const amount = this.backSelf;
+    for (let tries = 0; tries < 6; tries++) {
+      await new Promise((r) => setTimeout(r, 700));
+      const room = this.room;
+      if (!room || room.slot !== slot || room.phase !== 'race' || this.car === null) return;
+      if (!room.market) continue;
+      try {
+        const r = await account.api<{ points: number }>('/api/bet', { market: room.market, pick: String(this.car), amount });
+        account.setPoints(r.points);
+        this.ticker(`You backed yourself: ${fmtPts(amount)} pts`, 3000);
+        return;
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (/No such market/.test(msg)) continue;
+        this.ticker(`Back-yourself bet failed: ${msg}`, 4000);
+        return;
+      }
+    }
   }
 
   private join() {
     const me = account.me;
     if (!me) return showAuthModal();
-    const color = document.querySelector<HTMLInputElement>('input[name="lb-color"]:checked')?.value ?? PLAYER_COLORS[0];
-    $('lb-err').textContent = '';
+    // (auto-join runs before the lobby card is drawn: fall back to the saved colour)
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem('agp-color');
+    } catch {
+      /* ignore */
+    }
+    const color = document.querySelector<HTMLInputElement>('input[name="lb-color"]:checked')?.value ?? saved ?? PLAYER_COLORS[0];
+    const err = document.getElementById('lb-err');
+    if (err) err.textContent = '';
     try {
       localStorage.setItem('agp-color', color);
     } catch {
@@ -468,6 +535,7 @@ export class LiveGame {
     // In the lobby (no cars yet) the 3D view flies over the circuit behind the join card.
     const use3d = (this.view === '3d' || this.view === 'fan') && !!this.c3d && this.pushed3d !== '';
     this.c3d?.setVisible(use3d);
+    $('load3d').hidden = !((this.view === '3d' || this.view === 'fan') && !use3d);
     this.renderer.app.stage.visible = !use3d;
     if (use3d) this.c3d!.render(cars, this.focusCar(order), dt);
     else this.renderer.render(cars, order, dt, room.phase === 'race');
@@ -788,6 +856,10 @@ export class LiveGame {
     const signin = !me
       ? `<div class="lb-signin">
            <p>${icon('flag', 16)}<span>Sign in to take a seat${cfg?.x ? ' (X account)' : ''}. New accounts get <b>${fmtPts(cfg?.points.signup ?? 1000)} points</b>.</span></p>
+           <ul class="lb-boosts">
+             <li>${icon('zap', 14)}<b>Priority pass</b> +${fmtPts(room.priorityFee)} pts: skip the queue, guaranteed seat</li>
+             <li>${icon('trophy', 14)}<b>Back yourself</b>: bet points on your own win</li>
+           </ul>
            <button class="btn btn-lime btn-big" id="lb-signin">SIGN IN TO RACE ${icon('play', 16)}</button>
          </div>`
       : !me.canRace
@@ -796,7 +868,9 @@ export class LiveGame {
            <div class="lb-colors" role="radiogroup" aria-label="Car colour">
              ${PLAYER_COLORS.map((c) => `<label class="swatch-pick" style="--c:${c}"><input type="radio" name="lb-color" value="${c}" ${c === savedColor ? 'checked' : ''} aria-label="Colour ${c}"/><span></span></label>`).join('')}
            </div>
-           <label class="lb-prio"><input type="checkbox" id="lb-prio" ${this.priority ? 'checked' : ''}/><span><b>Priority pass</b> +${fmtPts(room.priorityFee)} pts<small id="lb-prio-left">Guaranteed seat, can’t be bumped</small></span></label>
+           <label class="lb-prio"><input type="checkbox" id="lb-prio" ${this.priority ? 'checked' : ''}/><span><b>Priority pass: skip the queue</b> +${fmtPts(room.priorityFee)} pts<small id="lb-prio-left">Guaranteed seat, can’t be bumped</small></span></label>
+           <label class="lb-back"><span><b>Back yourself</b><small>Bet on your own win at lights out</small></span>
+             <select id="lb-back" aria-label="Points to bet on yourself">${[0, 50, 100, 250, 500].map((v) => `<option value="${v}" ${v === this.backSelf ? 'selected' : ''}>${v ? `${v} pts` : 'Off'}</option>`).join('')}</select></label>
            <p id="lb-err" class="err" role="alert"></p>
            <button class="btn btn-lime btn-big" id="lb-go">JOIN RACE <small id="lb-cost">${fmtPts(fee + (this.priority ? room.priorityFee : 0))} PTS</small></button>`;
     setCenter(`
@@ -856,6 +930,16 @@ export class LiveGame {
       this.audio.start();
       this.join();
     });
+    const back = document.getElementById('lb-back') as HTMLSelectElement | null;
+    if (back)
+      back.onchange = () => {
+        this.backSelf = Number(back.value) || 0;
+        try {
+          localStorage.setItem('tl-back', String(this.backSelf));
+        } catch {
+          /* ignore */
+        }
+      };
     const prio = document.getElementById('lb-prio') as HTMLInputElement | null;
     if (prio)
       prio.onchange = () => {
@@ -941,8 +1025,10 @@ export class LiveGame {
         <div class="res-head">${icon('trophy', 26)}${head}</div>
         <table><thead><tr><th>P</th><th>Driver</th><th>Time</th><th>Best lap</th></tr></thead><tbody>${rows}</tbody></table>
         ${room.prizes?.length ? `<div class="res-prizes">${icon('trophy', 16)}<span>Prize pot paid: ${room.prizes.map((p) => `<b>${escapeHtml(p.name)}</b> +${fmtPts(p.points)}`).join(' · ')} pts</span></div>` : ''}
-        <div class="res-foot"><span>Next lobby opens in <b id="res-next"></b></span>${room.replayId ? `<a class="btn small" href="#/replay/live/${room.replayId}">${icon('replay', 14)}Watch replay</a>` : ''}</div>
+        <div class="res-foot"><span>Next lobby opens in <b id="res-next"></b></span><button class="btn btn-lime small" id="res-join"></button>${room.replayId ? `<a class="btn small" href="#/replay/live/${room.replayId}">${icon('replay', 14)}Watch replay</a>` : ''}</div>
       </div>`);
+    $('res-join').onclick = () => this.toggleAutoJoin();
+    this.paintJoinNext();
   }
 }
 

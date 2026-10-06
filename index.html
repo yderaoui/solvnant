@@ -90,6 +90,7 @@
           <span id="rs-clock" class="rs-clock">0:00.0</span>
         </div>
         <section class="spec-board live-ui spec-only" aria-label="Leaderboard">
+          <button id="join-next" class="btn btn-lime small join-next"></button>
           <h3>LEADERBOARD</h3>
           <ol id="spec-rows"></ol>
           <h3>WIN PROBABILITY <small>live estimate</small></h3>
@@ -106,6 +107,7 @@
         <section id="league-bet" class="league-bet bw" aria-label="Bet on the next AI League race"></section>
         <div id="center" class="center"></div>
         <div class="buffering" role="status">Simulating ahead…</div>
+        <div id="load3d" class="load3d" hidden role="status"><span class="spinner" aria-hidden="true"></span><span>Loading 3D… <small>showing the map meanwhile</small></span></div>
 
         <div class="cam" role="group" aria-label="Camera">
           <button id="cam-chase" class="chip cam3d active" aria-pressed="true" title="3D chase camera (C)"><i data-icon="pov"></i><span>3D</span></button>

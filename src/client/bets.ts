@@ -12,6 +12,7 @@ interface MarketView {
   total: number;
   mine: { pick: string; amount: number; payout: number | null }[];
   youDrive: boolean;
+  yourPick: string | null; // live races: a driver may only back their own car
 }
 
 export class BetWidget {
@@ -61,6 +62,7 @@ export class BetWidget {
       const v = await account.api<MarketView>(`/api/market?id=${encodeURIComponent(id)}`);
       if (id !== this.id) return;
       this.view = v;
+      if (v.yourPick !== null) this.pick = v.yourPick; // drivers: always your own car
     } catch {
       /* keep the last view */
     }
@@ -87,10 +89,12 @@ export class BetWidget {
             ? `<span class="dot"></span>OPEN${closesIn !== null ? ` · closes in ${fmtLeft(closesIn)}` : ''}`
             : 'Bets closed';
     const picks = m.picks
+      .filter((p) => v.yourPick === null || p.id === v.yourPick) // drivers only ever see their own car
       .map((p) => {
         const odds = v.odds[p.id];
         const on = this.pick === p.id;
-        return `<button class="bw-pick ${on ? 'on' : ''}" data-pick="${escapeHtml(p.id)}" aria-pressed="${on}" ${open ? '' : 'disabled'}>
+        const allowed = open && (v.yourPick === null || v.yourPick === p.id);
+        return `<button class="bw-pick ${on ? 'on' : ''} ${v.yourPick === p.id ? 'you' : ''}" data-pick="${escapeHtml(p.id)}" aria-pressed="${on}" ${allowed ? '' : 'disabled'}>
           <span class="sw" style="background:${escapeHtml(p.color)}"></span><span class="n">${escapeHtml(p.name)}</span><b>${odds ? `${odds.toFixed(1)}x` : '–'}</b></button>`;
       })
       .join('');
@@ -106,12 +110,12 @@ export class BetWidget {
     const me = account.me;
     const cfg = account.cfg;
     let action: string;
-    if (v.youDrive) action = `<span class="bw-note">You're driving in this race, so no bets.</span>`;
-    else if (!open) action = '';
+    if (!open) action = '';
     else if (!me) action = `<button class="btn btn-lime" id="bw-signin">Sign in to bet</button>`;
     else
       action = `<label class="bw-amt"><span class="sr-only">Points to bet</span><input id="bw-amount" type="number" inputmode="numeric" min="${cfg?.points.betMin ?? 10}" max="${cfg?.points.betMax ?? 5000}" step="10" value="${this.amount}" /><small>PTS</small></label>
-        <button class="btn btn-lime" id="bw-go" ${this.pick === null || this.busy ? 'disabled' : ''}>PLACE BET</button>`;
+        <button class="btn btn-lime" id="bw-go" ${this.pick === null || this.busy ? 'disabled' : ''}>${v.yourPick !== null ? 'BACK YOURSELF' : 'PLACE BET'}</button>
+        ${v.yourPick !== null ? '<span class="bw-note">You’re driving: you can only bet on yourself.</span>' : ''}`;
     this.el.innerHTML = `
       <div class="bw-head"><span class="bw-title">${this.title}</span><span class="bw-status ${open ? 'is-open' : ''}">${status}</span><span class="bw-pool">Pool <b>${fmtPts(v.total)}</b> pts</span></div>
       <div class="bw-picks" role="group" aria-label="Pick a winner">${picks}</div>

@@ -296,6 +296,8 @@ export class Hub {
       total: Object.values(pools).reduce((a, b) => a + b, 0),
       mine,
       youDrive: !!s && m.drivers.includes(s.uid),
+      // Live races list the drivers in car order, so a driver's pick id is their index.
+      yourPick: s && m.drivers.includes(s.uid) ? String(m.drivers.indexOf(s.uid)) : null,
     };
   }
 
@@ -312,7 +314,8 @@ export class Hub {
     if (m.status !== 'open') return fail('Betting has closed for this race.');
     const pick = String(b.pick ?? '');
     if (!m.picks.some((p) => p.id === pick)) return fail('Pick a driver from this race.');
-    if (m.drivers.includes(u.id)) return fail("You're driving in this race, so you can't bet on it.");
+    // Drivers may back themselves (never a rival: that would pay them to lose).
+    if (m.drivers.includes(u.id) && pick !== String(m.drivers.indexOf(u.id))) return fail("You're driving in this race: you can only bet on yourself.");
     const amount = Math.floor(Number(b.amount));
     const P = this.cfg.points;
     if (!(amount >= P.betMin)) return fail(`Minimum bet is ${P.betMin} points.`);

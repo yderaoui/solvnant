@@ -149,6 +149,7 @@ export class Broadcast {
     this.view3d = 'none';
     get3d()?.setVisible(false);
     this.renderer.app.stage.visible = true;
+    $('load3d').hidden = true;
     document.body.classList.remove('view-fan');
     this.center('');
     document.body.classList.remove('no-race', 'is-buffering', 'is-replay');
@@ -315,6 +316,7 @@ export class Broadcast {
     this.lastWall = now;
     const rec = this.record;
     const c3 = this.view3d !== 'none' ? get3d() : null;
+    $('load3d').hidden = !(this.view3d !== 'none' && !(c3 && this.pushed3d));
     if (!rec || !this.race) {
       // Track Lab (or still loading): the 3D view flies over the empty circuit
       if (c3 && this.pushed3d && this.track) {

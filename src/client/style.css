@@ -265,6 +265,8 @@ body.is-live.is-racing .mini-wrap { display: block !important; }
 body.is-live.is-spec .spec-only { display: block !important; }
 body.is-live.is-spec .bet-bar, body.is-live.is-spec .spectate { display: flex !important; }
 body.is-live.is-spec:not(.has-market) .bet-bar { display: none !important; }
+/* drivers can back themselves during the race */
+body.is-live.is-racing.has-market .bet-bar { display: flex !important; left: 50%; right: auto; transform: translateX(-50%); width: min(560px, calc(100% - 520px)); bottom: var(--s4); }
 body.is-live .cam .live-only { display: inline-flex !important; }
 .cam .cam3d { display: none; }
 body[data-page='live'] .cam .cam3d, body[data-page='league'] .cam .cam3d, body[data-page='replay'] .cam .cam3d { display: inline-flex; }
@@ -827,3 +829,23 @@ body.has-league-bet[data-page='league'] .league-bet { display: flex; }
   .league-bet .bw-pick { flex: 1 0 120px; }
   .bw-pick { flex-basis: 110px; }
 }
+
+/* 3D loading indicator, join-next, boosts */
+.load3d { position: absolute; z-index: var(--z-hud); left: 50%; top: 168px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line-strong); font-weight: 700; font-size: 14px; }
+.load3d[hidden] { display: none; }
+.load3d small { color: var(--muted); font-weight: 500; margin-left: 4px; }
+.join-next { width: 100%; margin-bottom: var(--s3); }
+.join-next.on, #res-join.on { background: transparent; color: var(--lime); }
+.lb-boosts { list-style: none; margin: 0 0 var(--s3); padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.lb-boosts li { display: flex; gap: 8px; align-items: center; }
+.lb-boosts b { color: var(--gold); }
+.lb-back { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); margin-bottom: var(--s2); border-radius: var(--r); background: rgba(140, 255, 46, 0.05); border: 1px solid rgba(140, 255, 46, 0.25); font-size: 14px; }
+.lb-back span { display: flex; flex-direction: column; }
+.lb-back b { color: var(--lime); }
+.lb-back small { color: var(--muted); font-size: 12px; }
+.lb-back select { background: var(--surface-2); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 6px 8px; font-weight: 700; }
+.bw-pick.you { border-color: var(--gold); }
+@media (max-width: 760px) {
+  body.is-live.is-racing.has-market .bet-bar { width: calc(100% - 16px); bottom: 140px; }
+}
+.bw > * { min-width: 0; }

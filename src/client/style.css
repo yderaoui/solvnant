@@ -957,3 +957,11 @@ nav a, .x-btn b, .x-btn small { white-space: nowrap; }
 @media (max-width: 1200px) {
   nav a span { display: none; }
 }
+
+/* race tickets (coin) */
+.lb-ticket { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); margin-bottom: 4px; border-radius: var(--r); background: rgba(34, 211, 238, 0.06); border: 1px solid rgba(34, 211, 238, 0.3); font-size: 14px; }
+.lb-ticket span { display: flex; flex-direction: column; }
+.lb-ticket b { color: var(--info); }
+.lb-ticket small { color: var(--muted); font-size: 12px; }
+.lb-ticket small b { color: var(--text); }
+#lb-buystep { margin: 0 0 var(--s2); min-height: 16px; }

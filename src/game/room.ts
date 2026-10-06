@@ -214,8 +214,8 @@ export class GameRoom {
         return this.broadcastRoom();
       }
       // Pay: entry fee into the pot, plus the priority pass (the Hub records both against this race).
-      const paid = await this.hub<{ ok: boolean; points: number }>('/internal/live/enter', { ref: this.ref, uid, fee: P.entryFee, priorityFee: priority ? P.priorityFee : 0 });
-      if (!paid.ok) return this.err(conn, 'Not enough points.');
+      const paid = await this.hub<{ ok: boolean; needTicket?: boolean; points: number }>('/internal/live/enter', { ref: this.ref, uid, fee: P.entryFee, priorityFee: priority ? P.priorityFee : 0 });
+      if (!paid.ok) return this.err(conn, paid.needTicket ? `You need a race ticket: buy one with ${this.cfg.tickets?.symbol ?? 'the coin'} (Buy ticket).` : 'Not enough points.');
       if (this.slot !== slot || this.phase !== 'lobby') {
         // the lobby closed while we were paying: give it back
         await this.refund(entry);

@@ -28,6 +28,17 @@ export interface PointsConfig {
   rakePct: number; // taken from betting pools (burned)
 }
 
+/** Race tickets bought with the game coin: an SPL token transfer to the treasury wallet. */
+export interface TicketConfig {
+  cluster: 'devnet' | 'mainnet-beta';
+  rpcUrl: string;
+  mint: string; // the coin (SPL token mint)
+  decimals: number;
+  treasury: string; // wallet that receives ticket payments
+  price: number; // coins per ticket
+  symbol: string; // shown in the UI, e.g. $TRACK
+}
+
 export interface GameConfig {
   sessionSecret: string;
   devSecret: boolean; // true when no SESSION_SECRET was set (fine locally, never in production)
@@ -35,6 +46,7 @@ export interface GameConfig {
   allowGuests: boolean;
   siteUrl: string; // where to send people back after X login
   gate: GateConfig | null;
+  tickets: TicketConfig | null;
   points: PointsConfig;
   supabase: { url: string; key: string } | null;
   betsCloseAt: number; // live races: bets close when the leader has done this fraction of the distance
@@ -64,6 +76,18 @@ export function readConfig(env: Env): GameConfig {
     gate: mint
       ? { mint, minUsd: num(env.MIN_HOLD_USD, 20), rpcUrl: env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com' }
       : null,
+    tickets:
+      env.TICKET_MINT && env.TICKET_TREASURY
+        ? {
+            cluster: env.TICKET_CLUSTER === 'mainnet-beta' ? 'mainnet-beta' : 'devnet',
+            rpcUrl: env.TICKET_RPC_URL || (env.TICKET_CLUSTER === 'mainnet-beta' ? 'https://api.mainnet-beta.solana.com' : 'https://api.devnet.solana.com'),
+            mint: env.TICKET_MINT.trim(),
+            decimals: num(env.TICKET_DECIMALS, 6),
+            treasury: env.TICKET_TREASURY.trim(),
+            price: num(env.TICKET_PRICE, 100),
+            symbol: env.TICKET_SYMBOL || '$TRACK',
+          }
+        : null,
     points: {
       signup: num(env.POINTS_SIGNUP, 1000),
       daily: num(env.POINTS_DAILY, 100),
@@ -85,6 +109,7 @@ export function publicConfig(c: GameConfig) {
     x: !!c.x,
     guests: c.allowGuests,
     gate: c.gate ? { mint: c.gate.mint, minUsd: c.gate.minUsd } : null,
+    tickets: c.tickets,
     points: c.points,
     betsCloseAt: c.betsCloseAt,
     leagueBets: !!c.supabase,

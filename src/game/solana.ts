@@ -99,3 +99,54 @@ export async function tokenHolding(owner: string, gate: GateConfig, fetchFn: typ
   }
   return { amount, priceUsd, usd: priceUsd === null ? null : amount * priceUsd };
 }
+
+// ---------------------------------------------------------------- race tickets
+import type { TicketConfig } from './config';
+
+export interface TicketPayment {
+  wallet: string; // who paid (the fee payer / signer)
+  amount: number; // coins received by the treasury
+}
+
+interface TokenBalance {
+  owner?: string;
+  mint: string;
+  uiTokenAmount: { uiAmount: number | null };
+}
+
+interface ParsedTx {
+  meta: { err: unknown; preTokenBalances?: TokenBalance[]; postTokenBalances?: TokenBalance[] } | null;
+  transaction: {
+    message: {
+      accountKeys: { pubkey: string; signer: boolean }[];
+      instructions: { program?: string; programId?: string; parsed?: unknown }[];
+    };
+  };
+}
+
+/**
+ * Check a ticket payment on-chain: the transaction succeeded, carries our one-time memo, and moved at
+ * least `price` of the coin into the treasury wallet. Returns null if it isn't visible yet (retry).
+ */
+export async function verifyTicketPayment(cfg: TicketConfig, signature: string, memo: string, fetchFn: typeof fetch = fetch): Promise<TicketPayment | null> {
+  if (!/^[1-9A-HJ-NP-Za-km-z]{60,100}$/.test(signature)) throw new Error('That is not a transaction signature.');
+  const r = await fetchFn(cfg.rpcUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTransaction', params: [signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }] }),
+  });
+  if (!r.ok) throw new Error(`Solana RPC error ${r.status}`);
+  const j = (await r.json()) as { result: ParsedTx | null; error?: { message: string } };
+  if (j.error) throw new Error(j.error.message);
+  const tx = j.result;
+  if (!tx || !tx.meta) return null; // not confirmed yet
+  if (tx.meta.err) throw new Error('The payment transaction failed on-chain.');
+  const memos = tx.transaction.message.instructions.filter((i) => i.program === 'spl-memo').map((i) => String(i.parsed));
+  if (!memos.includes(memo)) throw new Error('This payment is not for this ticket (memo mismatch).');
+  const bal = (list: TokenBalance[] | undefined) =>
+    (list ?? []).filter((b) => b.owner === cfg.treasury && b.mint === cfg.mint).reduce((s, b) => s + (b.uiTokenAmount.uiAmount ?? 0), 0);
+  const received = bal(tx.meta.postTokenBalances) - bal(tx.meta.preTokenBalances);
+  if (received + 1e-9 < cfg.price) throw new Error(`The treasury received ${received} coins, a ticket costs ${cfg.price}.`);
+  const wallet = tx.transaction.message.accountKeys.find((k) => k.signer)?.pubkey ?? '';
+  return { wallet, amount: received };
+}

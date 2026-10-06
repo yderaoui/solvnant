@@ -4,7 +4,7 @@
 // are only reachable from the live race room (the Worker never forwards /internal from outside).
 import { publicConfig, readConfig, type GameConfig } from './config';
 import { bearer, randomToken, signSession, verifySession, type Session } from './auth';
-import { isSolanaAddress, tokenHolding, verifyWalletSignature, walletMessage } from './solana';
+import { isSolanaAddress, tokenHolding, verifyTicketPayment, verifyWalletSignature, walletMessage } from './solana';
 import { poolOdds, prizeSplit, settlePool } from './economy';
 import { cleanName } from './protocol';
 
@@ -89,6 +89,12 @@ export class Hub {
       ref TEXT PRIMARY KEY, status TEXT NOT NULL, fee INTEGER NOT NULL, entries TEXT NOT NULL,
       pot INTEGER NOT NULL, created INTEGER NOT NULL)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS nonces (uid TEXT PRIMARY KEY, nonce TEXT NOT NULL, ts INTEGER NOT NULL)`);
+    // Race tickets paid in the game coin: one row per on-chain payment (the signature can't be reused).
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS tickets (
+      sig TEXT PRIMARY KEY, uid TEXT NOT NULL, wallet TEXT NOT NULL, amount REAL NOT NULL,
+      ts INTEGER NOT NULL, used_ref TEXT)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS tickets_uid ON tickets(uid, used_ref)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS ticket_memos (uid TEXT PRIMARY KEY, memo TEXT NOT NULL, ts INTEGER NOT NULL)`);
   }
 
   // ================================================================== routing
@@ -128,6 +134,10 @@ export class Hub {
           return json(await this.me(this.user(u.id)!));
         case '/api/bet':
           return await this.bet(u, (await req.json()) as { market?: string; pick?: string; amount?: number });
+        case '/api/ticket/intent':
+          return this.ticketIntent(u);
+        case '/api/ticket/claim':
+          return await this.ticketClaim(u, (await req.json()) as { signature?: string });
         case '/api/agents':
           return req.method === 'POST' ? await this.submitAgent(u, (await req.json()) as { name?: string; code?: string }) : json(await this.myAgents(u));
       }
@@ -240,6 +250,7 @@ export class Hub {
       canRace: el.ok,
       raceBlock: el.reason,
       dailyAt: u.daily_at + 20 * 3600_000,
+      tickets: this.ticketsLeft(u.id),
     };
   }
 
@@ -255,6 +266,43 @@ export class Hub {
     this.sql.exec('DELETE FROM nonces WHERE uid = ?', u.id);
     this.sql.exec('UPDATE users SET wallet = ?, hold_usd = NULL, hold_at = NULL WHERE id = ?', address, u.id);
     return json(await this.me(this.user(u.id)!, true));
+  }
+
+  // ================================================================== race tickets (game coin)
+  private ticketsLeft(uid: string): number {
+    return Number(this.sql.exec('SELECT COUNT(*) AS n FROM tickets WHERE uid = ? AND used_ref IS NULL', uid).one().n);
+  }
+
+  /** Start a purchase: the memo the payment must carry (ties the on-chain transfer to this account). */
+  private ticketIntent(u: UserRow): Response {
+    const t = this.cfg.tickets;
+    if (!t) return fail('Coin tickets are not set up on this server.');
+    const memo = `TrackLab ticket ${randomToken(9)}`;
+    this.sql.exec('INSERT OR REPLACE INTO ticket_memos (uid, memo, ts) VALUES (?, ?, ?)', u.id, memo, Date.now());
+    return json({ memo, ...t });
+  }
+
+  /** The player paid: check the transaction on-chain and credit one ticket (once per signature). */
+  private async ticketClaim(u: UserRow, b: { signature?: string }): Promise<Response> {
+    const t = this.cfg.tickets;
+    if (!t) return fail('Coin tickets are not set up on this server.');
+    const sig = String(b.signature ?? '');
+    const seen = this.sql.exec('SELECT uid FROM tickets WHERE sig = ?', sig).toArray()[0] as { uid: string } | undefined;
+    if (seen) return seen.uid === u.id ? json({ ok: true, tickets: this.ticketsLeft(u.id) }) : fail('That payment was already used.');
+    const row = this.sql.exec('SELECT memo, ts FROM ticket_memos WHERE uid = ?', u.id).toArray()[0] as { memo: string; ts: number } | undefined;
+    if (!row || Date.now() - row.ts > 30 * 60_000) return fail('The ticket purchase expired. Start again.');
+    const paid = await verifyTicketPayment(t, sig, row.memo);
+    if (!paid) return json({ ok: false, pending: true }); // not confirmed yet: the client retries
+    this.state.storage.transactionSync(() => {
+      this.sql.exec('INSERT OR IGNORE INTO tickets (sig, uid, wallet, amount, ts) VALUES (?, ?, ?, ?, ?)', sig, u.id, paid.wallet, paid.amount, Date.now());
+      this.sql.exec('DELETE FROM ticket_memos WHERE uid = ?', u.id);
+    });
+    return json({ ok: true, tickets: this.ticketsLeft(u.id) });
+  }
+
+  /** Give back tickets held for a race that this player didn't end up driving in. */
+  private returnTicket(uid: string, ref: string) {
+    this.sql.exec('UPDATE tickets SET used_ref = NULL WHERE uid = ? AND used_ref = ?', uid, ref);
   }
 
   private leaderboard() {
@@ -378,15 +426,25 @@ export class Hub {
           uid = String(b.uid);
         const fee = Math.max(0, Math.floor(Number(b.fee))),
           prio = Math.max(0, Math.floor(Number(b.priorityFee ?? 0)));
+        let needTicket = false;
         const ok = this.state.storage.transactionSync(() => {
           const pot = this.livePot(ref) ?? { status: 'lobby', entries: {} as Record<string, LiveEntry> };
           if (pot.status !== 'lobby' || pot.entries[uid]) return false;
-          if (!this.charge(uid, fee + prio, prio ? 'race entry + priority pass' : 'race entry', ref)) return false;
+          // With coin tickets on, a seat also takes one of your tickets (given back if you don't race).
+          if (this.cfg.tickets) {
+            const t = this.sql.exec('SELECT sig FROM tickets WHERE uid = ? AND used_ref IS NULL ORDER BY ts LIMIT 1', uid).toArray()[0] as { sig: string } | undefined;
+            if (!t) {
+              needTicket = true;
+              return false;
+            }
+            if (!this.charge(uid, fee + prio, prio ? 'race entry + priority pass' : 'race entry', ref)) return false;
+            this.sql.exec('UPDATE tickets SET used_ref = ? WHERE sig = ?', ref, t.sig);
+          } else if (!this.charge(uid, fee + prio, prio ? 'race entry + priority pass' : 'race entry', ref)) return false;
           pot.entries[uid] = { fee, prio };
           this.saveLivePot(ref, pot.status, pot.entries, now);
           return true;
         });
-        return json({ ok, points: this.user(uid)?.points ?? 0 });
+        return json({ ok, needTicket, points: this.user(uid)?.points ?? 0, tickets: this.ticketsLeft(uid) });
       }
       case '/internal/live/leave': {
         const ref = String(b.ref),
@@ -396,6 +454,7 @@ export class Hub {
           const e = pot?.entries[uid];
           if (!pot || pot.status !== 'lobby' || !e) return false;
           this.credit(uid, e.fee + e.prio, 'race entry refund', ref);
+          this.returnTicket(uid, ref);
           delete pot.entries[uid];
           this.saveLivePot(ref, pot.status, pot.entries, now);
           return true;
@@ -412,6 +471,7 @@ export class Hub {
           for (const [uid, e] of Object.entries(p.entries))
             if (!racing.has(uid)) {
               this.credit(uid, e.fee + e.prio, 'race entry refund', ref);
+              this.returnTicket(uid, ref);
               delete p.entries[uid];
             }
           this.saveLivePot(ref, 'open', p.entries, now);
@@ -480,7 +540,10 @@ export class Hub {
     const p = this.livePot(ref);
     if (!p || (p.status !== 'lobby' && p.status !== 'open')) return { ok: false };
     this.state.storage.transactionSync(() => {
-      for (const [uid, e] of Object.entries(p.entries)) this.credit(uid, e.fee + e.prio, 'race entry refund', ref);
+      for (const [uid, e] of Object.entries(p.entries)) {
+        this.credit(uid, e.fee + e.prio, 'race entry refund', ref);
+        this.returnTicket(uid, ref);
+      }
       this.sql.exec("UPDATE live_pots SET status = 'refunded' WHERE ref = ?", ref);
     });
     return { ok: true };

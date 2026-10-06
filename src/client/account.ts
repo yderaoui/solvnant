@@ -23,6 +23,7 @@ export interface Me {
   canRace: boolean;
   raceBlock: string | null;
   dailyAt: number;
+  tickets?: number; // race tickets bought with the game coin, not used yet
 }
 
 const store = {
@@ -247,6 +248,14 @@ function renderMenu(toast: (t: string) => void) {
     <p class="muted small">Points are play money: no cash value, nothing to withdraw.</p>
     <button class="btn btn-lime small" id="am-daily" ${dailyIn > 0 ? 'disabled' : ''}>${icon('zap', 14)}${dailyIn > 0 ? `Daily bonus in ${Math.ceil(dailyIn / 3600_000)} h` : `Claim daily +${cfg.points.daily}`}</button>
     ${race}
+    ${
+      cfg.tickets
+        ? `<section><h4>Race tickets</h4>
+            <div class="acct-wallet"><span>You have <b>${me.tickets ?? 0}</b> ticket${me.tickets === 1 ? '' : 's'}</span><span>${cfg.tickets.price} ${escapeHtml(cfg.tickets.symbol)} each</span></div>
+            <button class="btn small btn-lime" id="am-buyticket">${icon('zap', 14)}Buy a ticket</button>
+            <p class="muted small" id="am-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>`
+        : ''
+    }
     ${wallet}
     <section><h4>Recent activity</h4><ol class="acct-ledger" id="am-ledger"><li class="muted">Loading…</li></ol></section>
     <div class="acct-row"><a class="btn small btn-ghost" href="#/agent">${icon('code', 14)}My agent</a><button class="btn small btn-ghost" id="am-out">Sign out</button></div>`;
@@ -265,6 +274,16 @@ function renderMenu(toast: (t: string) => void) {
     }
   };
   document.getElementById('am-wlink')?.addEventListener('click', () => void linkWallet(toast));
+  document.getElementById('am-buyticket')?.addEventListener('click', async () => {
+    const step = document.getElementById('am-buystep')!;
+    try {
+      const { buyTicket } = await import('./tickets');
+      const n = await buyTicket((t) => (step.textContent = t));
+      toast(`Ticket bought: you have ${n}`);
+    } catch (e) {
+      step.textContent = (e as Error).message;
+    }
+  });
   document.getElementById('am-wrefresh')?.addEventListener('click', async () => {
     try {
       account.setMe(await account.api<Me>('/api/wallet/refresh', {}));

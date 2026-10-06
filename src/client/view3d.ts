@@ -16,6 +16,7 @@ export function load3d(host: HTMLElement): Promise<Chase3D> {
   // The view is handed out only once its assets and shaders are ready; until then callers keep the map.
   loading ??= import('./chase3d').then(async ({ Chase3D }) => {
     const v = new Chase3D(host);
+    if (v.software) window.dispatchEvent(new CustomEvent('tl-slow', { detail: { gpu: v.gpuName, software: true } }));
     await v.ready;
     return (view = v);
   });

@@ -939,3 +939,21 @@ body.league-lobby .league-bet, body.league-lobby .tower-wrap, body.league-lobby 
 .swap-fade { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: radial-gradient(ellipse at center, #0b1410 0%, #05070a 70%); opacity: 0; pointer-events: none; transition: opacity 320ms var(--ease-out); }
 .swap-fade.on { opacity: 1; transition: opacity 150ms ease-in; }
 .swap-fade span { font-family: var(--font-display); font-style: italic; font-weight: 900; font-size: 28px; letter-spacing: 0.08em; color: var(--lime); text-shadow: 0 0 24px var(--lime-glow); opacity: 0.85; }
+
+/* performance help */
+.perf-tip { position: fixed; z-index: var(--z-top); right: var(--s4); bottom: var(--s4); width: min(400px, calc(100% - 32px)); padding: var(--s4) var(--s4) var(--s3); border-radius: var(--r-lg); background: #0d1217; border: 1px solid #ffb02066; box-shadow: var(--shadow); font-size: 14px; }
+.perf-tip > b { display: flex; gap: 8px; align-items: center; color: var(--warn); font-size: 15px; padding-right: 32px; }
+.perf-tip p { margin: 6px 0; color: var(--muted); }
+.perf-tip ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.perf-tip .icon-btn { position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; }
+
+/* crowded header on laptop widths: keep labels on one line, drop the least important bits */
+nav a, .x-btn b, .x-btn small { white-space: nowrap; }
+@media (max-width: 1400px) {
+  .topbar { gap: var(--s3); }
+  .next-race { display: none !important; }
+  .logo-tag { display: none; }
+}
+@media (max-width: 1200px) {
+  nav a span { display: none; }
+}

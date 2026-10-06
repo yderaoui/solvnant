@@ -303,18 +303,35 @@ export class Chase3D {
     this.applyQuality(mode === 'high' ? 3 : mode === 'low' ? 1 : this.startQuality());
   }
 
+  /** Which chip the browser draws with, e.g. "Intel(R) Iris(R) Xe Graphics" ('' if it won't say). */
+  get gpuName(): string {
+    if (this.gpu === undefined) {
+      try {
+        const ctx = this.gl.getContext();
+        const info = ctx.getExtension('WEBGL_debug_renderer_info');
+        const raw = info ? String(ctx.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+        this.gpu = raw.replace(/^ANGLE \([^,]*, /, '').replace(/ \(0x[0-9a-f]+\)| Direct3D.*$| vs_.*$/gi, '').replace(/\)$/, '').trim();
+      } catch {
+        this.gpu = '';
+      }
+    }
+    return this.gpu;
+  }
+  private gpu: string | undefined;
+
+  /** True when there is no hardware acceleration: the browser draws 3D on the CPU (very slow). */
+  get software(): boolean {
+    return /swiftshader|llvmpipe|softpipe|basic render|software/i.test(this.gpuName);
+  }
+
   private startQuality(): number {
+    if (this.software) return 0;
     if (this.graphics === 'high') return 3;
     if (this.graphics === 'low') return 1;
-    let weak = (navigator.hardwareConcurrency || 8) <= 4 || matchMedia('(pointer: coarse)').matches;
-    try {
-      const ctx = this.gl.getContext();
-      const info = ctx.getExtension('WEBGL_debug_renderer_info');
-      const gpu = info ? String(ctx.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
-      if (/intel|uhd|iris|hd graphics|mali|adreno|powervr|swiftshader|llvmpipe|basic render|vega [0-9] |radeon\(tm\) graphics/i.test(gpu)) weak = true;
-    } catch {
-      /* unknown GPU: assume it's fine */
-    }
+    const weak =
+      (navigator.hardwareConcurrency || 8) <= 4 ||
+      matchMedia('(pointer: coarse)').matches ||
+      /intel|uhd|iris|hd graphics|mali|adreno|powervr|vega [0-9] |radeon\(tm\) graphics/i.test(this.gpuName);
     return weak ? 2 : 3;
   }
 
@@ -348,6 +365,7 @@ export class Chase3D {
   private shadowEvery = 1;
   private calmUntil = 0; // adaptive quality ignores frames until then (just after a swap)
   private slowRun = 0;
+  private slowNotified = false;
   private frameNo = 0;
   private heldDt = 0;
 
@@ -376,7 +394,15 @@ export class Chase3D {
     if (this.frameAcc < 2000) return;
     const avg = this.frameAcc / this.frameN;
     this.frameAcc = this.frameN = 0;
-    if (avg < 20 || this.quality === 0) return;
+    if (avg < 20) return;
+    if (this.quality === 0) {
+      // Already as light as it gets and still under ~30 fps: tell the player what helps (once).
+      if (avg > 33 && !this.slowNotified) {
+        this.slowNotified = true;
+        window.dispatchEvent(new CustomEvent('tl-slow', { detail: { gpu: this.gpuName, software: this.software } }));
+      }
+      return;
+    }
     this.applyQuality(this.quality - 1);
   }
 

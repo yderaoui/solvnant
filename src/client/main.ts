@@ -117,6 +117,48 @@ $('gfx-btn').addEventListener('click', () => {
   toast(next === 'auto' ? 'Graphics: automatic' : next === 'high' ? 'Graphics: high quality' : 'Graphics: low (smoothest)');
 });
 
+// Performance help: shown once when 3D runs on the CPU (no hardware acceleration), or when the
+// game is still slow on the lightest graphics setting.
+window.addEventListener('tl-slow', (e) => {
+  const { gpu, software } = (e as CustomEvent<{ gpu: string; software: boolean }>).detail;
+  const key = software ? 'tl-tip-sw' : 'tl-tip-slow';
+  try {
+    if (localStorage.getItem(key)) return;
+  } catch {
+    /* show it */
+  }
+  document.querySelector('.perf-tip')?.remove();
+  const el = document.createElement('div');
+  el.className = 'perf-tip';
+  el.setAttribute('role', 'status');
+  el.innerHTML = software
+    ? `<b>${icon('alert', 16)}3D is running on your CPU</b>
+       <p>Your browser has graphics acceleration turned off, so the race is drawn without the graphics chip and will be slow.</p>
+       <ol><li><b>Chrome / Edge:</b> Settings → System → turn on <i>Use graphics acceleration when available</i>, then restart the browser.</li>
+       <li>Still slow? Update your graphics driver.</li></ol>`
+    : `<b>${icon('zap', 16)}Running slowly on this computer</b>
+       <p>Graphics are already on the lightest setting${gpu ? ` (your browser is using <i>${escapeHtml(gpu)}</i>)` : ''}. These help most:</p>
+       <ol><li><b>Plug in the charger</b>: on battery, Windows slows the graphics chip down.</li>
+       <li>Close other tabs and apps (video calls, games, editors).</li>
+       <li>Use Chrome or Edge and keep the browser up to date.</li>
+       <li>Laptop with two graphics chips? Windows Settings → System → Display → Graphics → your browser → <i>High performance</i>.</li>
+       <li>Or watch on the <b>Map</b> view (2D), which is very light.</li></ol>`;
+  const close = document.createElement('button');
+  close.className = 'icon-btn';
+  close.setAttribute('aria-label', 'Close');
+  close.innerHTML = icon('x', 16);
+  close.onclick = () => {
+    el.remove();
+    try {
+      localStorage.setItem(key, '1');
+    } catch {
+      /* ignore */
+    }
+  };
+  el.prepend(close);
+  document.body.appendChild(el);
+});
+
 // Mobile: the standings panel starts collapsed (it would cover the track) and expands on tap.
 if (matchMedia('(max-width: 760px)').matches) {
   $('tower-toggle').parentElement!.classList.add('collapsed');

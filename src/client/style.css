@@ -926,3 +926,11 @@ body.league-lobby .league-bet, body.league-lobby .tower-wrap, body.league-lobby 
 .league-lobby-card .bw-head { gap: 6px var(--s2); }
 .wallet-row { flex-wrap: wrap; }
 .wallet-row span, .wallet-row code { white-space: nowrap; }
+
+.buy-grid > *, .buy-token > * { min-width: 0; }
+@media (max-width: 760px) {
+  body.has-overlay .spec-board, body.has-overlay .spec-list, body.has-overlay .bet-bar, body.has-overlay .race-strip { display: none !important; }
+  .next-race { display: none !important; }
+  .tok-head { flex-wrap: wrap; }
+  .tok-price { margin-left: 0; text-align: left; width: 100%; flex-direction: row; gap: var(--s2); align-items: baseline; }
+}

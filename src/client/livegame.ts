@@ -1034,6 +1034,7 @@ function setCenter(html: string) {
   const el = $('center');
   if (el.innerHTML !== html) el.innerHTML = html;
   el.classList.toggle('show', html !== '');
+  document.body.classList.toggle('has-overlay', html !== ''); // phones hide side panels under it
 }
 
 function nearestIndex(track: Track, x: number, y: number): number {

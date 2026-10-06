@@ -33,6 +33,9 @@ export async function buyTicket(step: (text: string) => void): Promise<number> {
   const { publicKey } = await provider.connect();
   const intent = await account.api<TicketConfig & { memo: string }>('/api/ticket/intent', {});
   step('Preparing the payment…');
+  // The Solana libraries expect Node's Buffer: give the browser one before loading them.
+  const { Buffer } = await import('buffer');
+  (globalThis as unknown as { Buffer: typeof Buffer }).Buffer ??= Buffer;
   const [{ Connection, PublicKey, Transaction, TransactionInstruction }, spl] = await Promise.all([import('@solana/web3.js'), import('@solana/spl-token')]);
   const conn = new Connection(intent.rpcUrl, 'confirmed');
   const owner = new PublicKey(publicKey.toString());
@@ -52,7 +55,7 @@ export async function buyTicket(step: (text: string) => void): Promise<number> {
   const tx = new Transaction();
   tx.add(spl.createAssociatedTokenAccountIdempotentInstruction(owner, to, treasury, mint)); // treasury's coin account, if new
   tx.add(spl.createTransferCheckedInstruction(from, mint, to, owner, units, intent.decimals));
-  tx.add(new TransactionInstruction({ programId: new PublicKey(MEMO_PROGRAM), keys: [], data: new TextEncoder().encode(intent.memo) as unknown as Buffer }));
+  tx.add(new TransactionInstruction({ programId: new PublicKey(MEMO_PROGRAM), keys: [], data: Buffer.from(intent.memo, 'utf8') }));
   tx.feePayer = owner;
   tx.recentBlockhash = (await conn.getLatestBlockhash('confirmed')).blockhash;
   step(`Approve ${intent.price} ${intent.symbol} in your wallet…`);
@@ -65,7 +68,14 @@ export async function buyTicket(step: (text: string) => void): Promise<number> {
   step('Waiting for the network to confirm…');
   remember(signature);
   for (let i = 0; i < 30; i++) {
-    const r = await account.api<{ ok: boolean; pending?: boolean; tickets?: number }>('/api/ticket/claim', { signature });
+    let r: { ok: boolean; pending?: boolean; tickets?: number };
+    try {
+      r = await account.api<{ ok: boolean; pending?: boolean; tickets?: number }>('/api/ticket/claim', { signature });
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (/already used|memo|costs|failed on-chain|expired/i.test(msg)) throw e; // a real problem with this payment
+      r = { ok: false, pending: true }; // network hiccup: keep trying
+    }
     if (r.ok) {
       remember(null);
       await account.refresh();

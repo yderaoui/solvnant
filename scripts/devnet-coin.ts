@@ -3,7 +3,7 @@
 //   npx tsx scripts/devnet-coin.ts mint <wallet> [amount]   send test coins to a wallet (e.g. your Phantom)
 // Keys are saved in .devnet/ (git-ignored). Never use these keys on mainnet.
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, clusterApiUrl } from '@solana/web3.js';
+import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction, clusterApiUrl, sendAndConfirmTransaction } from '@solana/web3.js';
 import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from '@solana/spl-token';
 
 const DIR = '.devnet';
@@ -18,9 +18,16 @@ function keypair(name: string): Keypair {
   return k;
 }
 
-async function fund(k: Keypair, min = 0.5) {
+async function fund(k: Keypair, min = 0.5, from?: Keypair) {
   const bal = (await conn.getBalance(k.publicKey)) / LAMPORTS_PER_SOL;
   if (bal >= min) return;
+  if (from) {
+    // top up from a funded wallet instead of the (often rate-limited) faucet
+    const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: from.publicKey, toPubkey: k.publicKey, lamports: Math.round(min * LAMPORTS_PER_SOL) }));
+    await sendAndConfirmTransaction(conn, tx, [from]);
+    console.log(`  sent ${min} devnet SOL to ${k.publicKey.toBase58()}`);
+    return;
+  }
   console.log(`  airdropping devnet SOL to ${k.publicKey.toBase58()}…`);
   let sig = "";
   for (let t = 0; t < 4 && !sig; t++) {
@@ -56,7 +63,7 @@ async function main() {
   }
   const treasury = keypair('treasury');
   const player = keypair('test-player');
-  await fund(player);
+  await fund(player, 0.05, authority);
   const pAta = await getOrCreateAssociatedTokenAccount(conn, authority, mint, player.publicKey);
   if (Number(pAta.amount) < 1000 * 10 ** DECIMALS) await mintTo(conn, authority, mint, pAta.address, authority, BigInt(10000 * 10 ** DECIMALS));
   console.log(JSON.stringify({ cluster: 'devnet', mint: mint.toBase58(), decimals: DECIMALS, treasury: treasury.publicKey.toBase58(), testPlayer: player.publicKey.toBase58() }, null, 2));

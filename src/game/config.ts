@@ -37,6 +37,10 @@ export interface TicketConfig {
   treasury: string; // wallet that receives ticket payments
   price: number; // coins per ticket
   symbol: string; // shown in the UI, e.g. $TRACK
+  // Server-side payment check. Solana's public RPC refuses Cloudflare Workers (403), so this points at
+  // a provider (e.g. Helius) or the site's /api/solana-rpc proxy. Never sent to browsers.
+  verifyUrl?: string;
+  verifyKey?: string;
 }
 
 export interface GameConfig {
@@ -86,6 +90,8 @@ export function readConfig(env: Env): GameConfig {
             treasury: env.TICKET_TREASURY.trim(),
             price: num(env.TICKET_PRICE, 100),
             symbol: env.TICKET_SYMBOL || '$TRACK',
+            verifyUrl: env.TICKET_VERIFY_URL || undefined,
+            verifyKey: env.TICKET_VERIFY_KEY || undefined,
           }
         : null,
     points: {
@@ -109,7 +115,7 @@ export function publicConfig(c: GameConfig) {
     x: !!c.x,
     guests: c.allowGuests,
     gate: c.gate ? { mint: c.gate.mint, minUsd: c.gate.minUsd } : null,
-    tickets: c.tickets,
+    tickets: c.tickets ? { ...c.tickets, verifyUrl: undefined, verifyKey: undefined } : null,
     points: c.points,
     betsCloseAt: c.betsCloseAt,
     leagueBets: !!c.supabase,

@@ -130,14 +130,23 @@ interface ParsedTx {
  */
 export async function verifyTicketPayment(cfg: TicketConfig, signature: string, memo: string, fetchFn: typeof fetch = fetch): Promise<TicketPayment | null> {
   if (!/^[1-9A-HJ-NP-Za-km-z]{60,100}$/.test(signature)) throw new Error('That is not a transaction signature.');
-  const r = await fetchFn(cfg.rpcUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTransaction', params: [signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }] }),
-  });
+  // Public RPCs often refuse or rate-limit (403/429/5xx, timeouts): treat that as "not visible yet" so
+  // the client keeps retrying instead of the player losing a paid ticket.
+  let r: Response;
+  try {
+    const url = cfg.verifyUrl ? `${cfg.verifyUrl}${cfg.verifyUrl.includes('?') ? '&' : '?'}cluster=${cfg.cluster}` : cfg.rpcUrl;
+    r = await fetchFn(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(cfg.verifyKey ? { 'x-rpc-key': cfg.verifyKey } : {}) },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTransaction', params: [signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }] }),
+    });
+  } catch {
+    return null;
+  }
+  if (r.status === 403 || r.status === 429 || r.status >= 500) return null;
   if (!r.ok) throw new Error(`Solana RPC error ${r.status}`);
   const j = (await r.json()) as { result: ParsedTx | null; error?: { message: string } };
-  if (j.error) throw new Error(j.error.message);
+  if (j.error) return null; // node lagging / transient
   const tx = j.result;
   if (!tx || !tx.meta) return null; // not confirmed yet
   if (tx.meta.err) throw new Error('The payment transaction failed on-chain.');

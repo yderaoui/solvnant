@@ -55,6 +55,16 @@ describe('coin ticket payments', () => {
   it('rejects a failed transaction', async () => {
     await expect(verifyTicketPayment(cfg, SIG, MEMO, rpc(tx({ err: { InstructionError: [0, 'Custom'] } })))).rejects.toThrow(/failed/);
   });
+  it('treats a refusing / rate-limited RPC as "try again" (null), not a failure', async () => {
+    for (const status of [403, 429, 503]) {
+      const f = (async () => new Response('nope', { status })) as unknown as typeof fetch;
+      expect(await verifyTicketPayment(cfg, SIG, MEMO, f)).toBeNull();
+    }
+    const down = (async () => {
+      throw new Error('network down');
+    }) as unknown as typeof fetch;
+    expect(await verifyTicketPayment(cfg, SIG, MEMO, down)).toBeNull();
+  });
   it('rejects something that is not a signature', async () => {
     await expect(verifyTicketPayment(cfg, 'not-a-sig', MEMO, rpc(tx()))).rejects.toThrow(/signature/);
   });

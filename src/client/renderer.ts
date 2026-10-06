@@ -107,8 +107,20 @@ export class RaceRenderer {
     return r;
   }
 
+  // The map is only built when it is actually drawn: in the 3D view nobody sees it, and building it
+  // (~100 ms) on every new track made switching tracks/rounds stutter.
+  private pending: { track: Track; ob: Obstacles | null } | null = null;
+
   /** Draw the solid obstacles of a live race (or clear them with null). */
   setObstacles(ob: Obstacles | null) {
+    if (this.pending) {
+      this.pending.ob = ob;
+      return;
+    }
+    this.buildObstacles(ob);
+  }
+
+  private buildObstacles(ob: Obstacles | null) {
     this.obsLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.treeG = [];
     if (!ob) return;
@@ -147,6 +159,7 @@ export class RaceRenderer {
 
   /** A tree got knocked flat: draw it as a fallen log. */
   treeDown(i: number) {
+    if (this.pending) return; // drawn from ob.down when the map is built
     const g = this.treeG[i];
     if (!g || g.destroyed) return;
     g.clear();
@@ -157,7 +170,11 @@ export class RaceRenderer {
 
   setTrack(track: Track) {
     this.track = track;
-    this.setObstacles(null);
+    this.pending = { track, ob: null };
+  }
+
+  private buildTrack(track: Track) {
+    this.buildObstacles(null);
     this.trackLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.scaleFixed = this.scaleFixed.filter((c) => !c.destroyed);
     this.liveParticles = 0;
@@ -298,6 +315,12 @@ export class RaceRenderer {
   /** Draw one frame. `order` is race order (leader first); `dt` is wall-clock seconds. */
   render(cars: CarVisual[], order: number[], dt: number, animateFx: boolean) {
     if (!this.track) return;
+    if (this.pending) {
+      const { track, ob } = this.pending;
+      this.pending = null;
+      this.buildTrack(track);
+      this.buildObstacles(ob);
+    }
     const W = this.app.screen.width,
       H = this.app.screen.height;
     const b = this.track.bounds;

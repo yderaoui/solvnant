@@ -109,6 +109,14 @@ export class GameAudio {
   update(speedMs: number, throttle: number, slip: number, near: number, dt: number, engineGain = 1) {
     const ctx = this.ctx;
     if (!ctx) return;
+    // No car to follow (lobby, fan view between races) can hand us NaN: Web Audio throws on that.
+    const ok = (v: number, d = 0) => (Number.isFinite(v) ? v : d);
+    speedMs = ok(speedMs);
+    throttle = ok(throttle);
+    slip = ok(slip);
+    near = ok(near);
+    dt = ok(dt, 0.016);
+    engineGain = ok(engineGain, 1);
     const now = ctx.currentTime;
     const kmh = Math.max(0, speedMs * 3.6);
     let g = 0;

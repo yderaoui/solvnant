@@ -160,8 +160,8 @@ export class Chase3D {
   private eye = new THREE.Vector3();
   private walkKeys = new Set<string>();
   private dragging: { x: number; y: number } | null = null;
-  // adaptive quality: 2 = full, 1 = lower resolution + smaller shadows, 0 = no bloom / no shadows
-  private quality = 2;
+  // quality: 3 = full, 2 = lower resolution, 1 = no bloom + slower shadow refresh, 0 = minimum
+  private quality = 3;
   private frameAcc = 0;
   private frameN = 0;
   private lastFrame = 0;
@@ -179,6 +179,9 @@ export class Chase3D {
     this.canvas.className = 'chase3d';
     this.canvas.style.display = 'none';
     host.appendChild(this.canvas);
+    this.fade.className = 'swap-fade';
+    this.fade.innerHTML = '<span>NEXT TRACK</span>';
+    host.appendChild(this.fade);
 
     this.scene.background = new THREE.Color(0x070b14);
     this.scene.fog = new THREE.Fog(0x0b1220, 140, 900);
@@ -256,7 +259,7 @@ export class Chase3D {
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     new ResizeObserver(() => this.resize()).observe(host);
-    this.resize();
+    this.applyQuality(this.startQuality());
     const timeout = new Promise<void>((done) => setTimeout(done, 20_000)); // slow network: don't wait forever
     this.ready = Promise.race([Promise.all([sky, car]), timeout]).then(() => this.warmUp());
   }
@@ -268,6 +271,11 @@ export class Chase3D {
   setVisible(v: boolean) {
     if (v === this.visible) return;
     this.canvas.style.display = v ? 'block' : 'none';
+    this.calmUntil = performance.now() + 2000;
+    if (!v && !this.covering) {
+      this.fade.classList.remove('on');
+      this.swapFrames = 0;
+    }
     this.snap = true;
     if (v) this.resize();
   }
@@ -277,30 +285,99 @@ export class Chase3D {
    * don't recompile shaders are changed (toggling lights or shadow casting would freeze the game
    * for seconds while every material recompiles): resolution, shadow map size/refresh, bloom.
    */
+  /**
+   * Graphics: 'auto' starts high (or medium on laptop/phone GPUs) and steps down whenever the
+   * last ~2 s averaged under ~50 fps; 'high' and 'low' are fixed. Only settings that don't recompile
+   * shaders change (toggling lights or shadow casting would freeze for seconds while everything
+   * recompiles): resolution, shadow map size and refresh rate, bloom.
+   */
+  graphics: GfxMode = readGfx();
+
+  setGraphics(mode: GfxMode) {
+    this.graphics = mode;
+    try {
+      localStorage.setItem('tl-gfx', mode);
+    } catch {
+      /* ignore */
+    }
+    this.applyQuality(mode === 'high' ? 3 : mode === 'low' ? 1 : this.startQuality());
+  }
+
+  private startQuality(): number {
+    if (this.graphics === 'high') return 3;
+    if (this.graphics === 'low') return 1;
+    let weak = (navigator.hardwareConcurrency || 8) <= 4 || matchMedia('(pointer: coarse)').matches;
+    try {
+      const ctx = this.gl.getContext();
+      const info = ctx.getExtension('WEBGL_debug_renderer_info');
+      const gpu = info ? String(ctx.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+      if (/intel|uhd|iris|hd graphics|mali|adreno|powervr|swiftshader|llvmpipe|basic render|vega [0-9] |radeon\(tm\) graphics/i.test(gpu)) weak = true;
+    } catch {
+      /* unknown GPU: assume it's fine */
+    }
+    return weak ? 2 : 3;
+  }
+
+  private applyQuality(q: number) {
+    this.quality = q;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const L = [
+      { ratio: 0.5, shadow: 512, bloom: false, every: 6 },
+      { ratio: 0.65, shadow: 1024, bloom: false, every: 3 },
+      { ratio: 0.8, shadow: 1024, bloom: true, every: 1 },
+      { ratio: 1, shadow: 1536, bloom: true, every: 1 },
+    ][Math.max(0, Math.min(3, q))];
+    this.gl.setPixelRatio(Math.max(0.5, dpr * L.ratio));
+    if (this.moon.shadow.mapSize.x !== L.shadow) {
+      this.moon.shadow.mapSize.set(L.shadow, L.shadow);
+      this.moon.shadow.map?.dispose();
+      this.moon.shadow.map = null;
+    }
+    this.bloom.enabled = L.bloom;
+    this.shadowEvery = L.every;
+    this.gl.shadowMap.autoUpdate = L.every === 1;
+    this.gl.shadowMap.needsUpdate = true;
+    // Trees are drawn twice when they cast shadows (all of them, every frame): only on the top setting.
+    // castShadow doesn't change any shader, so this is free to toggle.
+    this.scene.traverse((o) => {
+      if (o.name === 'treepart') o.castShadow = q >= 3;
+    });
+    this.splitAt = 0; // re-pick which fans are full 3D for the new radius
+    this.resize();
+  }
+  private shadowEvery = 1;
+  private calmUntil = 0; // adaptive quality ignores frames until then (just after a swap)
+  private slowRun = 0;
+  private frameNo = 0;
+  private heldDt = 0;
+
   private adaptQuality() {
     const now = performance.now();
     const ft = this.lastFrame ? now - this.lastFrame : 16;
     this.lastFrame = now;
-    if (ft > 250 || !this.carProto || this.time < 4) return; // still loading / tab was hidden
+    if (!this.carProto || this.time < 3 || this.graphics !== 'auto') return; // loading / fixed setting
+    // Only judge ordinary frames: not track swaps / page switches (and the 2 s after), not one-off spikes.
+    if (this.swap || this.covering || this.swapFrames > 0 || now < this.calmUntil) {
+      this.frameAcc = this.frameN = 0;
+      return;
+    }
+    if (ft > 100) {
+      // a one-off spike is ignored, but a run of them means this machine is really struggling
+      if (++this.slowRun >= 10 && this.quality > 0) {
+        this.slowRun = 0;
+        this.applyQuality(this.quality - 1);
+        this.calmUntil = now + 1000;
+      }
+      return;
+    }
+    this.slowRun = 0;
     this.frameAcc += ft;
     this.frameN++;
-    if (this.frameAcc < 3000) return;
+    if (this.frameAcc < 2000) return;
     const avg = this.frameAcc / this.frameN;
     this.frameAcc = this.frameN = 0;
-    if (avg < 22 || this.quality === 0) return;
-    this.quality--;
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    if (this.quality === 1) {
-      this.gl.setPixelRatio(Math.max(0.75, dpr * 0.75));
-      this.moon.shadow.mapSize.set(1024, 1024);
-      this.moon.shadow.map?.dispose();
-      this.moon.shadow.map = null;
-    } else {
-      this.bloom.enabled = false;
-      this.gl.setPixelRatio(Math.max(0.6, dpr * 0.6));
-      this.gl.shadowMap.autoUpdate = false; // refresh shadows every few frames instead
-    }
-    this.resize();
+    if (avg < 20 || this.quality === 0) return;
+    this.applyQuality(this.quality - 1);
   }
 
   private resize() {
@@ -314,7 +391,53 @@ export class Chase3D {
   }
 
   // ==================================================================== track + scenery
+  // Track changes while the 3D view is on screen: dip to dark, build the new world (and upload it
+  // to the GPU) behind it, then fade back in, so the unavoidable work reads as a cut, not a freeze.
+  private fade = document.createElement('div');
+  private swap: { track: Track; ob: Obstacles | null | undefined } | null = null;
+  private swapFrames = 0;
+
+  private covering = false; // a page switch is under way: track changes go behind the dark layer too
+  private coverTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Page switch (AI League <-> Race <-> Lab): dip to dark now, fade in once the new view is drawn. */
+  cover(label: string) {
+    (this.fade.firstElementChild as HTMLElement).textContent = label;
+    this.fade.classList.add('on');
+    this.covering = true;
+    clearTimeout(this.coverTimer);
+    // Fallback: the new page may not use 3D (map view) or may not change track at all.
+    this.coverTimer = setTimeout(() => {
+      this.covering = false;
+      if (!this.swap && (this.swapFrames === 0 || !this.visible)) {
+        this.swapFrames = 0;
+        this.fade.classList.remove('on');
+      }
+    }, 900);
+  }
+
   setTrack(track: Track) {
+    if (!this.visible && !this.covering) {
+      this.swap = null;
+      this.buildWorld(track);
+      return;
+    }
+    const first = !this.swap;
+    this.swap = { track, ob: undefined };
+    if (!first) return; // already fading: the newest track wins
+    if (!this.covering) (this.fade.firstElementChild as HTMLElement).textContent = 'NEXT TRACK';
+    this.fade.classList.add('on');
+    setTimeout(() => {
+      const sw = this.swap;
+      if (!sw) return;
+      this.swap = null;
+      this.buildWorld(sw.track);
+      if (sw.ob !== undefined) this.applyObstacles(sw.ob);
+      this.swapFrames = 3; // first frames upload the new world; keep them under the dark layer
+    }, 170);
+  }
+
+  private buildWorld(track: Track) {
     this.track = track;
     disposeTree(this.world);
     this.world.clear();
@@ -477,6 +600,14 @@ export class Chase3D {
 
   /** Solid obstacles of a live race: trees that can be hit, crowd fences with spectators behind. */
   setObstacles(ob: Obstacles | null) {
+    if (this.swap) {
+      this.swap.ob = ob;
+      return;
+    }
+    this.applyObstacles(ob);
+  }
+
+  private applyObstacles(ob: Obstacles | null) {
     disposeTree(this.obsGroup);
     this.obsGroup.clear();
     this.treeParts = [];
@@ -491,7 +622,7 @@ export class Chase3D {
     }
     const T = this.T;
     // Trees you can hit
-    const parts = treeParts(T, ob.trees.length);
+    const parts = treeParts(T, ob.trees.length, this.quality >= 3 ? 2 : 1); // simpler crowns below the top setting
     ob.trees.forEach((t, i) => {
       const list: TreePart[] = [];
       for (const [part, local] of treeLayout(t.kind, t.size)) {
@@ -505,6 +636,7 @@ export class Chase3D {
     for (const p of Object.values(parts)) {
       p.mesh.count = p.used;
       p.mesh.instanceMatrix.needsUpdate = true;
+      p.mesh.castShadow = this.quality >= 3;
       this.obsGroup.add(p.mesh);
     }
     // Catch fences: ad-board base, chain-link above, posts; concrete terrace with fans behind
@@ -621,7 +753,8 @@ export class Chase3D {
     const nShirt = get(ng, 'aShirt'), nPants = get(ng, 'aPants'), nSkin = get(ng, 'aSkin'), nHair = get(ng, 'aHair');
     const fOff = get(fg, 'aOffset'), fDir = get(fg, 'aDir'), fVar = get(fg, 'aVar'), fPh = get(fg, 'aPhase'), fSeat = get(fg, 'aSeat');
     const cap = nVar.length;
-    const r2 = NEAR_RADIUS * NEAR_RADIUS;
+    const radius = [25, 35, 50, NEAR_RADIUS][this.quality] ?? NEAR_RADIUS; // fewer full 3D fans on lower settings
+    const r2 = radius * radius;
     let ni = 0,
       fi = 0;
     this.fans.forEach((p, i) => {
@@ -713,6 +846,7 @@ export class Chase3D {
 
   // ==================================================================== race events -> reactions
   onEvent(ev: RaceEvent, cars: CarVisual[]) {
+    if (this.swap) return; // the old world is going away
     const c = cars[ev.car];
     const strength = Math.min(1, (ev.v ?? 8) / 20);
     const mine = ev.car === this.focusIdx || ev.other === this.focusIdx;
@@ -927,6 +1061,11 @@ export class Chase3D {
 
   /** Replays/seeking: make the fallen-tree state match `down` instantly. */
   syncDown(down: boolean[]) {
+    if (this.swap) {
+      const ob = this.swap.ob;
+      if (ob) down.forEach((d, i) => (ob.down[i] = d));
+      return;
+    }
     if (!this.ob) return;
     down.forEach((d, i) => {
       if (d === this.ob!.down[i]) return;
@@ -1003,7 +1142,20 @@ export class Chase3D {
 
   // ==================================================================== frame
   render(cars: CarVisual[], focus: number, dt: number) {
-    if (!this.visible) return;
+    if (!this.visible || this.swap) return; // mid-swap: the dark layer covers the last frame
+    // Behind the full-screen lobby cards nobody sees the difference: draw every other frame.
+    const bc = document.body.classList;
+    if ((bc.contains('in-lobby') || bc.contains('league-lobby')) && this.swapFrames === 0) {
+      this.heldDt += dt;
+      if ((this.frameNo++ & 1) === 0) return;
+      dt = this.heldDt; // the skipped frames' time, so animations keep pace
+      this.heldDt = 0;
+    }
+    if (this.swapFrames > 0 && --this.swapFrames === 0) {
+      this.covering = false;
+      this.calmUntil = performance.now() + 2000;
+      this.fade.classList.remove('on');
+    }
     this.time += dt;
     this.adaptQuality();
     this.focusIdx = focus;
@@ -1133,7 +1285,7 @@ export class Chase3D {
 
     this.fx.update(dt);
     this.sparks.update(dt);
-    if (!this.gl.shadowMap.autoUpdate && Math.floor(this.time * 60) % 4 === 0) this.gl.shadowMap.needsUpdate = true;
+    if (!this.gl.shadowMap.autoUpdate && Math.floor(this.time * 60) % this.shadowEvery === 0) this.gl.shadowMap.needsUpdate = true;
     this.composer.render(dt);
   }
 
@@ -1522,6 +1674,7 @@ function treeParts(T: Mats, n: number, detail = 2) {
   const trunk = new THREE.CylinderGeometry(0.62, 1, 1, 8).translate(0, 0.5, 0);
   const mk = (geo: THREE.BufferGeometry, mat: THREE.Material, count: number) => {
     const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, count));
+    mesh.name = 'treepart'; // its shadow is switched off on lower graphics settings
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
@@ -2066,4 +2219,15 @@ function disposeTree(root: THREE.Object3D) {
       mat.dispose();
     }
   });
+}
+
+export type GfxMode = 'auto' | 'high' | 'low';
+function readGfx(): GfxMode {
+  try {
+    const v = localStorage.getItem('tl-gfx');
+    if (v === 'high' || v === 'low') return v;
+  } catch {
+    /* ignore */
+  }
+  return 'auto';
 }

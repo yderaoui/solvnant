@@ -93,6 +93,30 @@ $('mute-btn').addEventListener('click', () => {
 });
 paintMute();
 
+// Graphics quality (shared 3D view): Auto -> High -> Low
+const gfxLabel = (m: string) => `GFX ${m.toUpperCase()}`;
+const gfxSaved = (() => {
+  try {
+    return localStorage.getItem('tl-gfx') || 'auto';
+  } catch {
+    return 'auto';
+  }
+})();
+$('gfx-btn').textContent = gfxLabel(gfxSaved);
+$('gfx-btn').addEventListener('click', () => {
+  const order = ['auto', 'high', 'low'] as const;
+  const cur = (get3d()?.graphics ?? gfxSaved) as (typeof order)[number];
+  const next = order[(order.indexOf(cur) + 1) % order.length];
+  get3d()?.setGraphics(next);
+  try {
+    localStorage.setItem('tl-gfx', next);
+  } catch {
+    /* ignore */
+  }
+  $('gfx-btn').textContent = gfxLabel(next);
+  toast(next === 'auto' ? 'Graphics: automatic' : next === 'high' ? 'Graphics: high quality' : 'Graphics: low (smoothest)');
+});
+
 // Mobile: the standings panel starts collapsed (it would cover the track) and expands on tap.
 if (matchMedia('(max-width: 760px)').matches) {
   $('tower-toggle').parentElement!.classList.add('collapsed');
@@ -146,6 +170,11 @@ async function route() {
   viewer.close();
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const page = parts[0] || 'live';
+  // Switching between pages that share the 3D stage: cover it so the new track builds out of sight.
+  const stagePages = ['live', 'league', 'lab', 'replay', ''];
+  const prevPage = document.body.dataset.page ?? '';
+  if (prevPage !== page && stagePages.includes(prevPage) && stagePages.includes(page))
+    get3d()?.cover(page === 'live' ? 'LIVE RACE' : page === 'lab' ? 'TRACK LAB' : page === 'replay' ? 'REPLAY' : 'AI LEAGUE');
   document.body.dataset.page = page;
   document.body.classList.remove('is-replay');
   if (my > 1) $('main').focus({ preventScroll: true }); // screen readers: announce the new view

@@ -183,7 +183,7 @@ export class LiveGame {
     this.bindCamButtons();
     this.renderer.onCarClick = (i) => this.spectateCar(i);
     this.conn.token = account.token;
-    if (!this.conn.connected) this.conn.connect();
+    this.conn.connect(); // fresh socket: the server answers with the current lobby/race straight away
     if (this.room) this.applyRoom(this.room, true);
     // Warm up the 3D view (three.js, car model, textures) while people sit in the lobby.
     setTimeout(() => {
@@ -193,7 +193,8 @@ export class LiveGame {
 
   stop() {
     this.active = false;
-    document.body.classList.remove('is-live', 'is-racing', 'in-lobby', 'is-spec', 'view-3d', 'view-fan', 'has-market');
+    document.body.classList.remove('is-live', 'is-racing', 'in-lobby', 'is-spec', 'view-3d', 'view-fan', 'has-market', 'has-overlay');
+    setCenter('');
     $('load3d').hidden = true;
     get3d()?.setVisible(false);
     this.renderer.app.stage.visible = true;

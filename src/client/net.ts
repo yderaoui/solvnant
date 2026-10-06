@@ -31,6 +31,7 @@ export class GameConnection {
   onStatus: (connected: boolean) => void = () => {};
 
   connect() {
+    this.drop(); // never two sockets: a stale one would keep feeding us an old room
     this.closedByUs = false;
     const ws = new WebSocket(GAME_URL);
     this.ws = ws;
@@ -57,6 +58,7 @@ export class GameConnection {
       this.onMessage(m);
     };
     ws.onclose = () => {
+      if (this.ws !== ws) return; // an old socket finishing its close
       this.connected = false;
       this.onStatus(false);
       if (this.pingTimer) clearInterval(this.pingTimer);
@@ -69,9 +71,25 @@ export class GameConnection {
     this.send({ t: 'hello', id: this.id, token: this.token });
   }
 
+  /** Leave for good (another page): cut the socket loose right away, don't wait for the close handshake. */
   close() {
     this.closedByUs = true;
-    this.ws?.close();
+    this.drop();
+  }
+
+  private drop() {
+    const ws = this.ws;
+    this.ws = null;
+    this.connected = false;
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
+    if (!ws) return;
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    try {
+      ws.close();
+    } catch {
+      /* already closed */
+    }
   }
 
   send(m: ClientMsg) {

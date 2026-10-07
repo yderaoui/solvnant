@@ -13,7 +13,7 @@ export const API_URL = ((import.meta.env.VITE_API_URL as string | undefined) || 
 
 export interface Me {
   id: string;
-  kind: 'x' | 'guest';
+  kind: 'x' | 'guest' | 'privy';
   handle: string | null;
   name: string;
   avatar: string | null;
@@ -168,7 +168,7 @@ export function initAccountUi(toast: (t: string) => void) {
       return;
     }
     if (!me) {
-      host.innerHTML = `<button class="x-btn" id="acct-signin">${xLogo()}<span><b>Sign in</b><small>${account.cfg.x ? 'with X' : 'guest'}</small></span></button>`;
+      host.innerHTML = `<button class="x-btn" id="acct-signin">${xLogo()}<span><b>Sign in</b><small>${account.cfg.privy ? 'X · email · wallet' : account.cfg.x ? 'with X' : 'guest'}</small></span></button>`;
       $('acct-signin').onclick = () => showAuthModal();
       return;
     }
@@ -263,6 +263,7 @@ function renderMenu(toast: (t: string) => void) {
   $('am-out').onclick = () => {
     closeMenu();
     account.signOut();
+    void import('./privy/client').then((p) => p.privyLogout());
     toast('Signed out');
   };
   $('am-daily').onclick = async () => {
@@ -352,6 +353,11 @@ let modalOpener: HTMLElement | null = null;
 
 export function showAuthModal(error?: string) {
   const cfg = account.cfg;
+  // Privy has its own sign-in window (X, email, Google, wallet).
+  if (cfg?.privy && !error) {
+    void import('./privy/client').then((p) => p.privyLogin()).catch((e) => showAuthModal((e as Error).message || 'Sign-in failed.'));
+    return;
+  }
   const m = $('auth-modal');
   modalOpener = document.activeElement as HTMLElement | null;
   const x = cfg?.x

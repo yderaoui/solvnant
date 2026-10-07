@@ -25,12 +25,28 @@ export const ticketsOn = () => !!account.cfg?.tickets;
  * Buy one ticket. `step` reports progress for the UI. Resolves with the new ticket count.
  * Throws with a readable message (wallet missing, rejected, not enough coins, …).
  */
-export async function buyTicket(step: (text: string) => void): Promise<number> {
+/** The wallet that pays: the Privy wallet when Privy is on, else Phantom (or another injected wallet). */
+async function payer(): Promise<{ address: string; send: (tx: import('@solana/web3.js').Transaction) => Promise<string> }> {
+  const { privyOn, privyWallet } = await import('./privy/client');
+  if (privyOn()) {
+    const w = await privyWallet();
+    const { base58Encode } = await import('../game/solana');
+    return {
+      address: w.address,
+      send: async (tx) => base58Encode(await w.signAndSend(new Uint8Array(tx.serialize({ requireAllSignatures: false, verifySignatures: false })))),
+    };
+  }
   const provider = walletProvider();
   if (!provider) throw new Error('No Solana wallet found. Install Phantom (phantom.app), then reload this page.');
+  const { publicKey } = await provider.connect();
+  return { address: publicKey.toString(), send: async (tx) => (await provider.signAndSendTransaction(tx)).signature };
+}
+
+export async function buyTicket(step: (text: string) => void): Promise<number> {
   if (!account.me) throw new Error('Sign in first.');
   step('Connecting your wallet…');
-  const { publicKey } = await provider.connect();
+  const wallet = await payer();
+  const publicKey = { toString: () => wallet.address };
   const intent = await account.api<TicketConfig & { memo: string }>('/api/ticket/intent', {});
   step('Preparing the payment…');
   // The Solana libraries expect Node's Buffer: give the browser one before loading them.
@@ -61,7 +77,7 @@ export async function buyTicket(step: (text: string) => void): Promise<number> {
   step(`Approve ${intent.price} ${intent.symbol} in your wallet…`);
   let signature: string;
   try {
-    ({ signature } = await provider.signAndSendTransaction(tx));
+    signature = await wallet.send(tx);
   } catch (e) {
     throw new Error(/reject|cancel|denied/i.test(String((e as Error).message)) ? 'You cancelled the payment.' : `Wallet error: ${(e as Error).message}`);
   }
@@ -119,15 +135,15 @@ export async function claimPendingTicket(): Promise<boolean> {
 
 /** Devnet only: ask the site's faucet for free test coins (and a little test SOL for fees). */
 export async function getTestCoins(step: (text: string) => void): Promise<string> {
-  const provider = walletProvider();
-  if (!provider) throw new Error('No Solana wallet found. Install Phantom (phantom.app), then reload this page.');
   step('Connecting your wallet…');
-  const { publicKey } = await provider.connect();
+  const wallet = await payer();
+  const publicKey = { toString: () => wallet.address };
   step('Sending you test coins (about 10 s)…');
   const base = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'https://solvnant.vercel.app' : '';
   const r = await fetch(`${base}/api/faucet`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: publicKey.toString() }) });
   const j = (await r.json().catch(() => ({}))) as { ok?: boolean; coins?: number; sol?: number; error?: string };
   if (!r.ok || !j.ok) throw new Error(j.error ?? `Faucet error ${r.status}`);
   const sym = account.cfg?.tickets?.symbol ?? '$TRACK';
-  return `Received ${j.coins} test ${sym}${j.sol ? ` and ${j.sol} test SOL for fees` : ''}. Switch Phantom to the test network (Settings → Developer settings → Testnet mode → Solana Devnet) to see them.`;
+  const privy = (await import('./privy/client')).privyOn();
+  return `Received ${j.coins} test ${sym}${j.sol ? ` and ${j.sol} test SOL for fees` : ''}.${privy ? ' You can buy a ticket now.' : ' Switch Phantom to the test network (Settings → Developer settings → Testnet mode → Solana Devnet) to see them.'}`;
 }

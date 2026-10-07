@@ -48,6 +48,7 @@ export interface GameConfig {
   devSecret: boolean; // true when no SESSION_SECRET was set (fine locally, never in production)
   x: XConfig | null;
   allowGuests: boolean;
+  privyAppId: string | null; // Privy sign-in + embedded wallets (public app id)
   siteUrl: string; // where to send people back after X login
   gate: GateConfig | null;
   tickets: TicketConfig | null;
@@ -75,7 +76,8 @@ export function readConfig(env: Env): GameConfig {
     devSecret: !env.SESSION_SECRET,
     x,
     // Guest login exists for local testing and until X is configured.
-    allowGuests: env.ALLOW_GUESTS ? env.ALLOW_GUESTS === 'true' : !x,
+    allowGuests: env.ALLOW_GUESTS ? env.ALLOW_GUESTS === 'true' : !x && !env.PRIVY_APP_ID,
+    privyAppId: env.PRIVY_APP_ID?.trim() || null,
     siteUrl: (env.SITE_URL || 'http://localhost:5173').replace(/\/+$/, ''),
     gate: mint
       ? { mint, minUsd: num(env.MIN_HOLD_USD, 20), rpcUrl: env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com' }
@@ -113,6 +115,7 @@ export function readConfig(env: Env): GameConfig {
 export function publicConfig(c: GameConfig) {
   return {
     x: !!c.x,
+    privy: c.privyAppId,
     guests: c.allowGuests,
     gate: c.gate ? { mint: c.gate.mint, minUsd: c.gate.minUsd } : null,
     tickets: c.tickets ? { ...c.tickets, verifyUrl: undefined, verifyKey: undefined } : null,

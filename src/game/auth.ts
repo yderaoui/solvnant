@@ -6,7 +6,7 @@ import type { XConfig } from './config';
 export interface Session {
   uid: string; // "x:<id>" or "g:<random>"
   name: string;
-  kind: 'x' | 'guest';
+  kind: 'x' | 'guest' | 'privy';
   avatar?: string;
   exp: number; // epoch ms
 }

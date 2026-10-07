@@ -47,3 +47,7 @@ TICKET_TREASURY = "GQyJ7beMv25V7VXa9QoAvLSTGKM13sieabHvFHfYLBfx"
 TICKET_PRICE = "100"
 TICKET_SYMBOL = "$TRACK"
 TICKET_VERIFY_URL = "https://solvnant.vercel.app/api/solana-rpc"
+
+# Privy: sign-in (X, email, Google, wallet) + an embedded Solana wallet for every player.
+# Public app id (dashboard.privy.io). Remove to go back to the built-in X / guest sign-in.
+PRIVY_APP_ID = "cmuxzi8fk01ja0bjtygjpghge"

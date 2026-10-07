@@ -7,6 +7,7 @@ import { bearer, randomToken, signSession, verifySession, type Session } from '.
 import { isSolanaAddress, tokenHolding, verifyTicketPayment, verifyWalletSignature, walletMessage } from './solana';
 import { poolOdds, prizeSplit, settlePool } from './economy';
 import { cleanName } from './protocol';
+import { verifyPrivyToken } from './privy';
 
 interface SqlCursor {
   toArray(): Record<string, unknown>[];
@@ -23,7 +24,7 @@ interface DOState {
 
 export interface UserRow {
   id: string;
-  kind: 'x' | 'guest';
+  kind: 'x' | 'guest' | 'privy';
   handle: string | null;
   name: string;
   avatar: string | null;
@@ -107,6 +108,7 @@ export class Hub {
       if (p.startsWith('/internal/')) return await this.internal(p, req);
       if (p === '/api/config') return json(publicConfig(this.cfg));
       if (p === '/api/guest' && req.method === 'POST') return await this.guest(req);
+      if (p === '/api/privy' && req.method === 'POST') return await this.privyLogin(req);
       if (p === '/api/leaderboard') return json(this.leaderboard());
       if (p === '/api/market' && req.method === 'GET') return json(await this.marketView(url.searchParams.get('id') ?? '', await this.session(req)));
       if (p === '/api/markets' && req.method === 'GET') return json(this.openMarkets(url.searchParams.get('kind')));
@@ -181,6 +183,30 @@ export class Hub {
     return this.user(uid)!;
   }
 
+  /**
+   * Privy sign-in: the browser sends its Privy access token (checked against Privy's public keys) and
+   * what Privy shows about the person (X handle / email / picture), and gets a game session back.
+   * The account id comes from the verified token; the display info is cosmetic.
+   */
+  private async privyLogin(req: Request): Promise<Response> {
+    const appId = this.cfg.privyAppId;
+    if (!appId) return fail('Privy sign-in is not set up on this server.', 403);
+    const b = (await req.json().catch(() => ({}))) as { token?: string; handle?: string; name?: string; avatar?: string };
+    const did = await verifyPrivyToken(String(b.token ?? ''), appId);
+    if (!did) return fail('Sign-in could not be verified. Please try again.', 401);
+    const uid = `privy:${did.replace(/^did:privy:/, '')}`;
+    const handle = b.handle ? cleanName(b.handle) || null : null;
+    const name = cleanName(b.name) || handle || 'Racer';
+    const avatar = b.avatar && /^https:\/\//.test(b.avatar) ? String(b.avatar).slice(0, 400) : null;
+    if (this.user(uid)) this.sql.exec('UPDATE users SET handle = ?, name = ?, avatar = ? WHERE id = ?', handle, name, avatar, uid);
+    else
+      this.state.storage.transactionSync(() => {
+        this.sql.exec('INSERT INTO users (id, kind, handle, name, avatar, points, created) VALUES (?, ?, ?, ?, ?, 0, ?)', uid, 'privy', handle, name, avatar, Date.now());
+        this.credit(uid, this.cfg.points.signup, 'signup bonus', null);
+      });
+    return json({ token: await signSession({ uid, name: handle ?? name, kind: 'privy', avatar: avatar ?? undefined }, this.cfg.sessionSecret) });
+  }
+
   private async guest(req: Request): Promise<Response> {
     if (!this.cfg.allowGuests) return fail('Guest play is off. Sign in with X.', 403);
     const body = (await req.json().catch(() => ({}))) as { name?: string };
@@ -230,7 +256,7 @@ export class Hub {
       }
     }
     const holds = !!g && (holdUsd ?? 0) >= g.minUsd;
-    if (u.kind === 'x' || holds) return { ok: true, reason: null, holdUsd };
+    if (u.kind === 'x' || u.kind === 'privy' || holds) return { ok: true, reason: null, holdUsd };
     if (!g) return this.cfg.allowGuests ? { ok: true, reason: null, holdUsd } : { ok: false, reason: 'Sign in with X to race.', holdUsd };
     return { ok: false, reason: `Sign in with X, or link a wallet holding at least $${g.minUsd} of the token, to race.`, holdUsd };
   }

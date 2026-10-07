@@ -6,8 +6,6 @@
 //   - Poly Haven CC0: asphalt_02, aerial_grass_rock, pine_bark textures; rogland_clear_night HDRI
 // Everything else (trees, crowd, stands, fences, kerbs, ad boards) is generated here.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -19,6 +17,7 @@ import { FLAG, type RaceEvent } from '../sim/race';
 import { Rng } from '../sim/rng';
 import type { Obstacles } from '../sim/obstacles';
 import type { CarVisual } from './renderer';
+import { buildKart } from './kart';
 import { CARD_H, CARD_W, MAX_IMPACTS, MAX_CARS_UNIFORM, VARIANTS, bakeAtlas, cardMaterial, crowdUniforms, humanGeometry, humanMaterial, lookAttributes, type CrowdUniforms } from './crowd3d';
 
 const ASSET = (p: string) => `${import.meta.env.BASE_URL}assets/${p}`;
@@ -42,6 +41,8 @@ interface CarModel {
   pitch: number;
   roll: number;
   skid: [Pt | null, Pt | null];
+  wheelR: number; // m, for wheel spin
+  animate?: (t: number, speed: number) => void; // per-frame extras (rocket flame, bounce)
 }
 
 interface TreePart {
@@ -104,8 +105,6 @@ export class Chase3D {
   private obsGroup = new THREE.Group();
   private carGroup = new THREE.Group();
   private cars: CarModel[] = [];
-  private carEntries: { name: string; color: string }[] = [];
-  private you = -1;
   private camPos = new THREE.Vector3();
   private camLook = new THREE.Vector3();
   private snap = true;
@@ -120,10 +119,8 @@ export class Chase3D {
   private towers: { pos: THREE.Vector3; aim: THREE.Vector3 }[] = [];
   private headlight: THREE.SpotLight;
   // assets
-  private carProto: THREE.Object3D | null = null;
   /** Resolves once the sky, the car model and every shader the game draws with are ready. */
   readonly ready: Promise<void>;
-  private aoTex: THREE.Texture;
   private T: Mats;
   // trees
   private treeParts: TreePart[][] = [];
@@ -208,7 +205,6 @@ export class Chase3D {
     this.scene.add(this.world, this.obsGroup, this.carGroup);
 
     this.T = loadTextures(this.gl);
-    this.aoTex = new THREE.TextureLoader().load(ASSET('models/ferrari_ao.png'));
     // The sky and the car change which shader every material needs, so 3D waits for both (and then
     // compiles everything up front) instead of compiling mid-race, which froze the page for seconds.
     const sky = new Promise<void>((done) =>
@@ -226,22 +222,7 @@ export class Chase3D {
         () => done(),
       ),
     );
-    const draco = new DRACOLoader();
-    draco.setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
-    const gltf = new GLTFLoader();
-    gltf.setDRACOLoader(draco);
-    const car = new Promise<void>((done) =>
-      gltf.load(
-        ASSET('models/ferrari.glb'),
-        (g) => {
-          this.carProto = g.scene.children[0];
-          if (this.carEntries.length) this.setCars(this.carEntries, this.you);
-          done();
-        },
-        undefined,
-        () => done(), // box cars instead
-      ),
-    );
+    const car = Promise.resolve(); // the racers are built in code (kart.ts): nothing to download
 
     this.cu = crowdUniforms();
     this.humanMat = humanMaterial(this.cu);
@@ -373,7 +354,7 @@ export class Chase3D {
     const now = performance.now();
     const ft = this.lastFrame ? now - this.lastFrame : 16;
     this.lastFrame = now;
-    if (!this.carProto || this.time < 3 || this.graphics !== 'auto') return; // loading / fixed setting
+    if (this.time < 3 || this.graphics !== 'auto') return; // loading / fixed setting
     // Only judge ordinary frames: not track swaps / page switches (and the 2 s after), not one-off spikes.
     if (this.swap || this.covering || this.swapFrames > 0 || now < this.calmUntil) {
       this.frameAcc = this.frameN = 0;
@@ -850,18 +831,16 @@ export class Chase3D {
 
   // ==================================================================== cars
   setCars(entries: { name: string; color: string }[], you: number) {
-    this.carEntries = entries;
-    this.you = you;
     for (const c of this.cars) {
       c.label?.material.map?.dispose();
       c.label?.material.dispose();
       this.carGroup.remove(c.root);
     }
     this.cars = entries.map((e, i) => {
-      const m = this.carProto ? ferrari(this.carProto, e.color, this.aoTex) : boxCar(e.color);
+      const m = orangeKart(e.color);
       if (i !== you) {
         m.label = labelSprite(e.name, e.color);
-        m.label.position.set(0, 2.6, 0);
+        m.label.position.set(0, 3.5, 0);
         m.root.add(m.label);
       }
       this.carGroup.add(m.root);
@@ -1116,7 +1095,7 @@ export class Chase3D {
         o.visible = true;
       }
     });
-    const extra = this.carProto ? ferrari(this.carProto, '#ffffff', this.aoTex).root : null;
+    const extra = orangeKart('#ffffff').root;
     if (extra) this.scene.add(extra);
     const prev = gl.getRenderTarget();
     gl.setRenderTarget(this.composer.renderTarget1);
@@ -1203,7 +1182,8 @@ export class Chase3D {
       m.pitch += (THREE.MathUtils.clamp(-accel * 0.004, -0.05, 0.05) - m.pitch) * Math.min(1, dt * 6);
       m.roll += (THREE.MathUtils.clamp(yawRate * c.speed * 0.0025, -0.06, 0.06) - m.roll) * Math.min(1, dt * 6);
       m.body.rotation.set(m.roll, 0, m.pitch, 'YXZ');
-      m.spin += (c.speed * dt) / 0.34;
+      m.spin += (c.speed * dt) / m.wheelR;
+      m.animate?.(this.time, c.speed);
       const steer = THREE.MathUtils.clamp(yawRate * 0.35, -0.45, 0.45);
       for (const w of m.wheels) w.rotation.x = m.spin;
       for (const w of m.front) w.rotation.y = steer;
@@ -1788,98 +1768,19 @@ function jitter(geo: THREE.BufferGeometry, amt: number, seed: number) {
 // ====================================================================== cars
 
 /** Cabin/brake detail that can't be seen from a chase camera (~100k of the model's 360k triangles). */
-const HIDDEN_PARTS = ['interior_light', 'steering_wheel', 'brakes', 'brake', 'carpet', 'nuts'];
-
-/** Lightweight stand-in used beyond ~45 m: extruded side profile + cabin + wheels (~700 triangles). */
-function proxyCar(paint: THREE.Material): THREE.Group {
-  const g = new THREE.Group();
-  const s = new THREE.Shape();
-  // side profile, x along the car (+x = front), y up
-  s.moveTo(-2.3, 0.3);
-  s.lineTo(-2.3, 0.85);
-  s.quadraticCurveTo(-1.6, 1.0, -0.9, 1.0);
-  s.lineTo(1.2, 0.85);
-  s.quadraticCurveTo(2.2, 0.7, 2.35, 0.45);
-  s.lineTo(2.35, 0.3);
-  s.lineTo(-2.3, 0.3);
-  const body = new THREE.Mesh(new THREE.ExtrudeGeometry(s, { depth: 1.9, bevelEnabled: true, bevelSize: 0.08, bevelThickness: 0.08, bevelSegments: 2, curveSegments: 4 }).translate(0, 0, -0.95), paint);
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.38, 1.4).translate(-0.4, 1.17, 0), new THREE.MeshStandardMaterial({ color: 0x0b0f16, metalness: 0.3, roughness: 0.15 }));
-  body.castShadow = cabin.castShadow = true;
-  g.add(body, cabin);
-  const wheel = new THREE.CylinderGeometry(0.34, 0.34, 0.3, 12).rotateX(Math.PI / 2);
-  const tyre = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-  for (const x of [1.45, -1.35]) for (const z of [0.9, -0.9]) {
-    const w = new THREE.Mesh(wheel, tyre);
-    w.position.set(x, 0.34, z);
-    g.add(w);
-  }
-  return g;
-}
-
-function ferrari(proto: THREE.Object3D, color: string, ao: THREE.Texture): CarModel {
-  const model = proto.clone(true);
-  for (const name of HIDDEN_PARTS) {
-    const kill: THREE.Object3D[] = [];
-    model.traverse((o) => {
-      if (o.name === name || o.name.startsWith(name + '_')) kill.push(o);
-    });
-    for (const o of kill) o.removeFromParent();
-  }
-  const paint = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(color), metalness: 0.75, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.03 });
-  const details = new THREE.MeshStandardMaterial({ color: 0xd8dde3, metalness: 1, roughness: 0.25 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0x0b0f16, metalness: 0.2, roughness: 0, opacity: 0.85, transparent: true });
-  const set = (name: string, mat: THREE.Material) => {
-    const o = model.getObjectByName(name) as THREE.Mesh | undefined;
-    if (o) o.material = mat;
-  };
-  set('body', paint);
-  for (const r of ['rim_fl', 'rim_fr', 'rim_rr', 'rim_rl', 'trim']) set(r, details);
-  set('glass', glass);
-  let tail: THREE.MeshStandardMaterial | null = null;
-  const lr = model.getObjectByName('lights_red') as THREE.Mesh | undefined;
-  if (lr) {
-    tail = new THREE.MeshStandardMaterial({ color: 0x400008, emissive: 0xff1a2e, emissiveIntensity: 0.8 });
-    lr.material = tail;
-  }
-  const lights = model.getObjectByName('lights') as THREE.Mesh | undefined;
-  if (lights) lights.material = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xf4f8ff, emissiveIntensity: 2 });
-  // Only the big parts cast shadows (the model has ~50 meshes; shadows for all of them double the draw calls).
-  model.traverse((o) => {
-    if ((o as THREE.Mesh).isMesh) o.castShadow = o.name === 'body' || o.name === 'tire';
-  });
-  const wheels = ['wheel_fl', 'wheel_fr', 'wheel_rl', 'wheel_rr'].map((n) => model.getObjectByName(n)).filter((o): o is THREE.Object3D => !!o);
-  for (const w of wheels) w.rotation.order = 'YXZ';
-  const shadow = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.655 * 4, 1.3 * 4).rotateX(-Math.PI / 2),
-    new THREE.MeshBasicMaterial({ map: ao, blending: THREE.MultiplyBlending, toneMapped: false, transparent: true, premultipliedAlpha: true }),
-  );
-  shadow.renderOrder = 2;
-  shadow.position.y = 0.01;
-  model.add(shadow);
-  // the model faces -Z; our cars face +X
-  model.rotation.y = -Math.PI / 2;
-  const near = new THREE.Group();
-  near.add(model);
+/** A racer: the orange in a rocket office chair (kart.ts), turned to face +X, with a cheap far LOD. */
+function orangeKart(color: string): CarModel {
+  const k = buildKart(color);
+  k.model.rotation.y = -Math.PI / 2; // built facing -Z; our cars face +X
+  k.far.rotation.y = -Math.PI / 2;
   const lod = new THREE.LOD();
-  lod.addLevel(near, 0);
-  lod.addLevel(proxyCar(paint), 45);
+  lod.addLevel(k.model, 0);
+  lod.addLevel(k.far, 55);
   const body = new THREE.Group();
   body.add(lod);
   const root = new THREE.Group();
   root.add(body);
-  return { root, body, wheels, front: wheels.slice(0, 2), tail, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null] };
-}
-
-/** Placeholder until the car model has loaded. */
-function boxCar(color: string): CarModel {
-  const root = new THREE.Group();
-  const body = new THREE.Group();
-  const m = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.9, 1.9), new THREE.MeshStandardMaterial({ color, metalness: 0.5, roughness: 0.4 }));
-  m.position.y = 0.55;
-  m.castShadow = true;
-  body.add(m);
-  root.add(body);
-  return { root, body, wheels: [], front: [], tail: null, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null] };
+  return { root, body, wheels: k.wheels, front: k.front, tail: k.tail, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null], wheelR: 0.075 * 1.8, animate: k.animate };
 }
 
 // ====================================================================== particles

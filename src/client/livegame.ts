@@ -27,7 +27,7 @@ interface Snap {
 
 type View = '3d' | 'fan' | 'follow' | 'map';
 
-const fmt = (s: number, dp = 1) => {
+export const fmt = (s: number, dp = 1) => {
   const m = Math.floor(s / 60);
   return `${m}:${(s - m * 60).toFixed(dp).padStart(dp + 3, '0')}`;
 };
@@ -862,6 +862,7 @@ export class LiveGame {
              <li>${icon('trophy', 14)}<b>Back yourself</b>: bet points on your own win</li>
            </ul>
            <button class="btn btn-lime btn-big" id="lb-signin">SIGN IN TO RACE ${icon('play', 16)}</button>
+           <a class="btn btn-ghost lb-testdrive" href="#/drive">${icon('pad', 16)}Test drive first: no sign-in needed</a>
          </div>`
       : !me.canRace
         ? `<p class="lb-block">${icon('alert', 16)}<span>${escapeHtml(me.raceBlock ?? 'You can’t race yet.')}</span></p>`
@@ -880,6 +881,7 @@ export class LiveGame {
                   <p class="muted small" id="lb-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network: tickets use devnet test coins (no real value). Phantom: Settings → Developer settings → Testnet mode → Solana Devnet.' : ''}</p>`
                : ''
            }
+           <a class="lb-warmup" href="#/drive">${icon('pad', 14)}Warm up with a test drive</a>
            <p id="lb-err" class="err" role="alert"></p>
            <button class="btn btn-lime btn-big" id="lb-go">JOIN RACE <small id="lb-cost">${cfg?.tickets ? '1 ticket + ' : ''}${fmtPts(fee + (this.priority ? room.priorityFee : 0))} PTS</small></button>`;
     setCenter(`
@@ -1088,7 +1090,7 @@ function nearestIndex(track: Track, x: number, y: number): number {
 }
 
 /** Minimap: track outline + car dots in their colours; the followed car is bigger with a white ring. */
-function drawMinimap(cv: HTMLCanvasElement, track: Track, cars: CarVisual[], entries: LobbyEntry[], focus: number) {
+export function drawMinimap(cv: HTMLCanvasElement, track: Track, cars: CarVisual[], entries: LobbyEntry[], focus: number) {
   const ctx = cv.getContext('2d');
   if (!ctx) return;
   const W = cv.width,

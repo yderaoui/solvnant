@@ -269,7 +269,8 @@ body.is-live.is-spec:not(.has-market) .bet-bar { display: none !important; }
 body.is-live.is-racing.has-market .bet-bar { display: flex !important; left: 50%; right: auto; transform: translateX(-50%); width: min(560px, calc(100% - 520px)); bottom: var(--s4); }
 body.is-live .cam .live-only { display: inline-flex !important; }
 .cam .cam3d { display: none; }
-body[data-page='live'] .cam .cam3d, body[data-page='league'] .cam .cam3d, body[data-page='replay'] .cam .cam3d { display: inline-flex; }
+body[data-page='live'] .cam .cam3d, body[data-page='league'] .cam .cam3d, body[data-page='replay'] .cam .cam3d, body[data-page='drive'] .cam .cam3d { display: inline-flex; }
+body[data-page='drive'] #cam-fan, body[data-page='drive'] #cam-leader, body[data-page='drive'] #cam-overview { display: none !important; }
 body.is-racing .cam .cam-fan { display: none; }
 .is-replay .cam .chip span { display: none; }
 .is-replay .cam .chip { width: 40px; justify-content: center; padding: 0; } /* drivers drive; the crowd view is for spectators */
@@ -966,3 +967,10 @@ nav a, .x-btn b, .x-btn small { white-space: nowrap; }
 .lb-ticket small b { color: var(--text); }
 #lb-buystep { margin: 0 0 var(--s2); min-height: 16px; }
 .lb-faucet { width: 100%; margin-bottom: 4px; }
+
+/* test drive entry points */
+.lb-testdrive { width: 100%; margin-top: var(--s2); }
+.lb-warmup { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 var(--s2); font-size: 13px; color: var(--lime); }
+@media (max-width: 1560px) {
+  nav a[href="#/history"] span, nav a[href="#/lab"] span { display: none; }
+}

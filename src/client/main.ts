@@ -12,6 +12,7 @@ import { BetWidget } from './bets';
 import { loadDraft, practiceEntries, renderAgentPage } from './agent';
 import { LeagueLobby } from './leagueLobby';
 import { renderBuyPage } from './buy';
+import { PracticeDrive } from './practice';
 import {
   db,
   fetchHistory,
@@ -40,6 +41,8 @@ initFanUi();
 const viewer = new CodeViewer();
 initAccountUi(toast);
 const leagueLobby = new LeagueLobby((html) => broadcast.center(html));
+const practice = new PracticeDrive();
+if (import.meta.env.DEV) (window as unknown as { __practice: PracticeDrive }).__practice = practice; // browser tests
 void account.load();
 
 broadcast.onSelectCar = (car) => {
@@ -213,14 +216,21 @@ async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const page = parts[0] || 'live';
   // Switching between pages that share the 3D stage: cover it so the new track builds out of sight.
-  const stagePages = ['live', 'league', 'lab', 'replay', ''];
+  const stagePages = ['live', 'league', 'lab', 'replay', 'drive', ''];
   const prevPage = document.body.dataset.page ?? '';
   if (prevPage !== page && stagePages.includes(prevPage) && stagePages.includes(page))
-    get3d()?.cover(page === 'live' ? 'LIVE RACE' : page === 'lab' ? 'TRACK LAB' : page === 'replay' ? 'REPLAY' : 'AI LEAGUE');
+    get3d()?.cover(page === 'live' ? 'LIVE RACE' : page === 'lab' ? 'TRACK LAB' : page === 'replay' ? 'REPLAY' : page === 'drive' ? 'TEST DRIVE' : 'AI LEAGUE');
   document.body.dataset.page = page;
   document.body.classList.remove('is-replay');
   if (my > 1) $('main').focus({ preventScroll: true }); // screen readers: announce the new view
   // The live multiplayer game and the AI-league broadcast share one stage; only one drives it.
+  if (practice.active && page !== 'drive') practice.stop();
+  if (page === 'drive') {
+    broadcast.deactivate();
+    if (live.active) live.stop();
+    show('stage');
+    return practice.start();
+  }
   if (page === 'live') {
     broadcast.deactivate();
     show('stage');

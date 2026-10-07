@@ -173,7 +173,7 @@ export function initAccountUi(toast: (t: string) => void) {
       return;
     }
     host.innerHTML = `<button class="acct-chip" id="acct-chip" aria-haspopup="dialog" aria-expanded="false">
-        ${avatarHtml(me)}<span class="acct-who"><b>${escapeHtml(me.handle ? '@' + me.handle : me.name)}</b><small>${me.kind === 'guest' ? 'guest' : 'X account'}</small></span>
+        ${avatarHtml(me)}<span class="acct-who"><b>${escapeHtml(me.handle ? '@' + me.handle : me.name)}</b><small>${me.kind === 'guest' ? 'guest' : me.kind === 'privy' ? 'signed in' : 'X account'}</small></span>
         <span class="acct-pts"><b id="acct-points">${fmtPts(me.points)}</b><small>PTS</small></span></button>`;
     $('acct-chip').onclick = () => toggleMenu(toast);
   };
@@ -243,7 +243,7 @@ function renderMenu(toast: (t: string) => void) {
         }</section>`
     : '';
   el.innerHTML = `
-    <div class="acct-head">${avatarHtml(me)}<div><b>${escapeHtml(me.name)}</b><small>${me.handle ? '@' + escapeHtml(me.handle) : 'Guest account'}</small></div></div>
+    <div class="acct-head">${avatarHtml(me)}<div><b>${escapeHtml(me.name)}</b><small>${me.handle ? '@' + escapeHtml(me.handle) : me.kind === 'privy' ? 'Signed in with Privy' : 'Guest account'}</small></div></div>
     <div class="acct-balance"><span>Balance</span><b>${fmtPts(me.points)} <small>PTS</small></b></div>
     <p class="muted small">Points are play money: no cash value, nothing to withdraw.</p>
     <button class="btn btn-lime small" id="am-daily" ${dailyIn > 0 ? 'disabled' : ''}>${icon('zap', 14)}${dailyIn > 0 ? `Daily bonus in ${Math.ceil(dailyIn / 3600_000)} h` : `Claim daily +${cfg.points.daily}`}</button>

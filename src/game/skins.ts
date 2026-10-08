@@ -94,6 +94,19 @@ export const SKINS: Skin[] = [
       [-0.49, 0.25, 0.15],
     ],
   },
+  {
+    id: 'brez',
+    name: 'Brezscales',
+    tagline: 'Rides on the hood, steers with chains',
+    price: 500,
+    file: 'brez',
+    yaw: Math.PI / 2,
+    length: 3.8,
+    exhaust: [
+      [-0.49, 0.12, -0.15],
+      [-0.49, 0.12, 0.15],
+    ],
+  },
 ];
 
 export const DEFAULT_SKIN = SKINS[0].id;

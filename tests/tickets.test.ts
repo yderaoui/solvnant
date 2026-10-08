@@ -13,7 +13,7 @@ const cfg: TicketConfig = {
   symbol: '$TRACK',
 };
 const SIG = '5'.repeat(88);
-const MEMO = 'TrackLab ticket abc123';
+const MEMO = 'RaceTrench ticket abc123';
 const PLAYER = 'PlayerCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
 
 function tx(o: { memo?: string; received?: number; mint?: string; owner?: string; err?: unknown } = {}) {
@@ -41,7 +41,7 @@ describe('coin ticket payments', () => {
     expect(await verifyTicketPayment(cfg, SIG, MEMO, rpc(null))).toBeNull();
   });
   it('rejects a payment made for another purchase (memo)', async () => {
-    await expect(verifyTicketPayment(cfg, SIG, MEMO, rpc(tx({ memo: 'TrackLab ticket other' })))).rejects.toThrow(/memo/);
+    await expect(verifyTicketPayment(cfg, SIG, MEMO, rpc(tx({ memo: 'RaceTrench ticket other' })))).rejects.toThrow(/memo/);
   });
   it('rejects too little', async () => {
     await expect(verifyTicketPayment(cfg, SIG, MEMO, rpc(tx({ received: 99 })))).rejects.toThrow(/costs 100/);

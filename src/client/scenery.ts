@@ -6,14 +6,14 @@ import { Container, Graphics, Text } from 'pixi.js';
 import { Rng } from '../sim/rng';
 import type { Track } from '../sim/track';
 
-// TrackLab night palette: dark woodland, floodlit asphalt, neon-green accents.
+// RaceTrench night palette: dark woodland, floodlit asphalt, Solana purple accents.
 export const SCENE_COLORS = {
   ground: 0x081a0e,
   groundPatch: 0x0c2314,
   verge: 0x123321,
   asphalt: 0x2b2f36,
   edge: 0xf2f5f8,
-  runoff: 0x8cff2e,
+  runoff: 0x9945ff,
   stand: 0x1a2030,
   standRoof: 0x262d40,
   tree: 0x0e2c17,
@@ -21,7 +21,7 @@ export const SCENE_COLORS = {
   water: 0x0b2a3d,
   waterHi: 0x1b6a8e,
   light: 0xffe2a0,
-  sector: [0x8cff2e, 0xffd60a, 0x22d3ee],
+  sector: [0x9945ff, 0x14f195, 0x22d3ee],
   red: 0xe3122d,
 };
 

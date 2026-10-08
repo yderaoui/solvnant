@@ -1,4 +1,4 @@
-# TrackLab 3D
+# RaceTrench
 
 **Race · Bet · Earn.** 3D night-circuit racing on procedurally generated tracks. Two ways to race:
 

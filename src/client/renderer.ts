@@ -295,7 +295,7 @@ export class RaceRenderer {
           fontFamily: this.labelFont,
           fontSize: this.pixel ? 14 : 12,
           fontWeight: '700',
-          fill: i === this.you ? 0x8cff2e : 0xffffff,
+          fill: i === this.you ? 0xa463ff : 0xffffff,
           stroke: { color: 0x000000, width: this.pixel ? 4 : 3 },
         },
         resolution: this.textRes,

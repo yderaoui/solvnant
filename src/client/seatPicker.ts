@@ -7,7 +7,7 @@ import type { SeatArea } from './chase3d';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 type Pt = [number, number];
 
-const KIND_COLOR: Record<SeatArea['kind'], string> = { stand: '#22d3ee', terrace: '#8cff2e', platform: '#ffd60a' };
+const KIND_COLOR: Record<SeatArea['kind'], string> = { stand: '#22d3ee', terrace: '#a463ff', platform: '#ffd60a' };
 const KIND_LABEL: Record<SeatArea['kind'], string> = { stand: 'Seated · covered grandstand', terrace: 'Standing · right at the fence', platform: 'Standing · raised, over the crowd' };
 
 export function initFanUi() {

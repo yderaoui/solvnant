@@ -8,7 +8,7 @@ import { toast } from './toast';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /** Shown everywhere on the page; change when the real token has a name. */
-export const TOKEN = { symbol: '$TRACK', name: 'TrackLab Token' };
+export const TOKEN = { symbol: '$TRACK', name: 'RaceTrench Token' };
 const SOL_USD = 182.4; // demo SOL price
 const HOLD_USD = 20; // race requirement shown on the page
 
@@ -236,8 +236,8 @@ function drawChart() {
     ctx.stroke();
   }
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, 'rgba(140,255,46,0.35)');
-  g.addColorStop(1, 'rgba(140,255,46,0)');
+  g.addColorStop(0, 'rgba(153,69,255,0.4)');
+  g.addColorStop(1, 'rgba(153,69,255,0)');
   ctx.beginPath();
   prices.forEach((p, i) => (i ? ctx.lineTo(X(i), Y(p)) : ctx.moveTo(X(i), Y(p))));
   ctx.lineTo(X(prices.length - 1), H);
@@ -247,13 +247,13 @@ function drawChart() {
   ctx.fill();
   ctx.beginPath();
   prices.forEach((p, i) => (i ? ctx.lineTo(X(i), Y(p)) : ctx.moveTo(X(i), Y(p))));
-  ctx.strokeStyle = '#8cff2e';
+  ctx.strokeStyle = '#a463ff';
   ctx.lineWidth = 2.5;
   ctx.lineJoin = 'round';
   ctx.stroke();
   const lx = X(prices.length - 1),
     ly = Y(price());
-  ctx.fillStyle = '#8cff2e';
+  ctx.fillStyle = '#a463ff';
   ctx.beginPath();
   ctx.arc(lx, ly, 5, 0, Math.PI * 2);
   ctx.fill();

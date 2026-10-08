@@ -318,7 +318,7 @@ export class Hub {
   private ticketIntent(u: UserRow): Response {
     const t = this.cfg.tickets;
     if (!t) return fail('Coin tickets are not set up on this server.');
-    const memo = `TrackLab ticket ${randomToken(9)}`;
+    const memo = `RaceTrench ticket ${randomToken(9)}`;
     this.sql.exec('INSERT OR REPLACE INTO ticket_memos (uid, memo, ts) VALUES (?, ?, ?)', u.id, memo, Date.now());
     return json({ memo, ...publicTickets(t) });
   }

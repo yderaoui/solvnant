@@ -318,8 +318,8 @@ export class Broadcast {
     const rec = this.record;
     const c3 = this.view3d !== 'none' ? get3d() : null;
     $('load3d').hidden = !(this.view3d !== 'none' && !(c3 && this.pushed3d));
-    if (!rec || !this.race) {
-      // Track Lab (or still loading): the 3D view flies over the empty circuit
+    if (!rec || !this.race || rec.frameCount === 0) {
+      // Track Lab, or still loading (a race that has no frames yet): the 3D view flies over the empty circuit
       if (c3 && this.pushed3d && this.track) {
         c3.setVisible(true);
         this.renderer.app.stage.visible = false;

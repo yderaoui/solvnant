@@ -1107,7 +1107,7 @@ export function drawMinimap(cv: HTMLCanvasElement, track: Track, cars: CarVisual
     ctx.closePath();
   };
   path();
-  ctx.strokeStyle = 'rgba(140,255,46,0.25)';
+  ctx.strokeStyle = 'rgba(164,99,255,0.3)';
   ctx.lineWidth = 9;
   ctx.stroke();
   path();
@@ -1115,7 +1115,7 @@ export function drawMinimap(cv: HTMLCanvasElement, track: Track, cars: CarVisual
   ctx.lineWidth = 3.5;
   ctx.stroke();
   const p0 = track.points[0];
-  ctx.fillStyle = '#8cff2e';
+  ctx.fillStyle = '#a463ff';
   ctx.fillRect(p0[0] * s + ox - 2, p0[1] * s + oy - 6, 4, 12);
   cars.forEach((c, i) => {
     if (!c || i === focus) return;
@@ -1126,7 +1126,7 @@ export function drawMinimap(cv: HTMLCanvasElement, track: Track, cars: CarVisual
   });
   const f = cars[focus];
   if (f) {
-    ctx.fillStyle = entries[focus]?.color ?? '#8cff2e';
+    ctx.fillStyle = entries[focus]?.color ?? '#a463ff';
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2.5;
     ctx.beginPath();

@@ -1179,9 +1179,11 @@ export class Chase3D {
     this.excite = Math.max(0, this.excite - dt * 0.18);
     const cam = this.camera.position;
 
+    // A car with no position yet (data still loading) is skipped, so it can't poison the camera.
+    const ok = (c: CarVisual | undefined): c is CarVisual => !!c && Number.isFinite(c.x) && Number.isFinite(c.y) && Number.isFinite(c.h) && Number.isFinite(c.speed);
     cars.forEach((c, i) => {
       const m = this.cars[i];
-      if (!m || !c) return;
+      if (!m || !ok(c)) return;
       m.root.position.set(c.x, 0, c.y);
       m.root.rotation.y = -c.h;
       // body pitch under braking/acceleration, roll in corners
@@ -1223,7 +1225,14 @@ export class Chase3D {
     });
 
     // Camera: chase (+ shake on impacts) or first person from the crowd
-    const f = cars[focus];
+    const f = ok(cars[focus]) ? cars[focus] : undefined;
+    if (!Number.isFinite(dt)) dt = 0;
+    // Never stay stuck: a bad camera value would make every later frame black, so start the camera over.
+    if (![this.camPos.x, this.camPos.y, this.camPos.z, this.camLook.x, this.camLook.y, this.camLook.z].every(Number.isFinite)) {
+      this.camPos.set(0, 0, 0);
+      this.camLook.set(0, 0, 0);
+      this.snap = true;
+    }
     if (f && this.camMode === 'fan' && this.areas.length) {
       this.fanCamera(f, dt);
       this.moon.position.set(f.x - 60, 120, f.y - 40);
@@ -2061,8 +2070,8 @@ function chainlinkTexture() {
 
 function adTexture() {
   const ads = [
-    ['TRACKLAB 3D', '#06080b', '#8cff2e'],
-    ['RACE · BET · EARN', '#8cff2e', '#06080b'],
+    ['RACETRENCH', '#06080b', '#a463ff'],
+    ['RACE · BET · EARN', '#9945ff', '#ffffff'],
     ['AI GRAND PRIX', '#101826', '#22d3ee'],
     ['NIGHT SERIES', '#3a0f4f', '#ff3dbb'],
   ];
@@ -2105,16 +2114,18 @@ function bannerTexture() {
   return canvasTex(512, 64, (c) => {
     c.fillStyle = '#07090c';
     c.fillRect(0, 0, 512, 64);
-    c.fillStyle = '#8cff2e';
+    c.fillStyle = '#9945ff';
     c.fillRect(0, 0, 512, 4);
     c.fillRect(0, 60, 512, 4);
     c.font = 'italic 800 38px "Exo 2", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillStyle = '#ffffff';
-    c.fillText('TRACKLAB', 220, 34);
-    c.fillStyle = '#8cff2e';
-    c.fillText('3D', 345, 34);
+    c.textAlign = 'right';
+    c.fillText('RACE', 222, 34);
+    c.fillStyle = '#a463ff';
+    c.textAlign = 'left';
+    c.fillText('TRENCH', 226, 34);
   }, false);
 }
 
@@ -2125,16 +2136,16 @@ function screenTexture() {
     g.addColorStop(1, '#3a0f4f');
     c.fillStyle = g;
     c.fillRect(0, 0, 256, 128);
-    c.strokeStyle = '#8cff2e';
+    c.strokeStyle = '#9945ff';
     c.lineWidth = 6;
     c.strokeRect(3, 3, 250, 122);
     c.font = 'italic 800 34px "Exo 2", sans-serif';
     c.textAlign = 'center';
     c.fillStyle = '#ffffff';
     c.fillText('LIVE', 128, 60);
-    c.fillStyle = '#8cff2e';
+    c.fillStyle = '#c39bff';
     c.font = '600 18px "Barlow", sans-serif';
-    c.fillText('TRACKLAB 3D', 128, 92);
+    c.fillText('RACETRENCH', 128, 92);
   }, false);
 }
 

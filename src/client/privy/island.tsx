@@ -55,7 +55,7 @@ export function mountPrivy(appId: string, chain: SolanaChain, onState: (s: Privy
       appId={appId}
       config={{
         loginMethods: ['twitter', 'email', 'google', 'wallet'],
-        appearance: { theme: 'dark', accentColor: '#8cff2e', walletChainType: 'solana-only', landingHeader: 'Sign in to TrackLab 3D' },
+        appearance: { theme: 'dark', accentColor: '#9945ff', walletChainType: 'solana-only', landingHeader: 'Sign in to RaceTrench' },
         embeddedWallets: { solana: { createOnLogin: 'users-without-wallets' } },
         externalWallets: { solana: { connectors: toSolanaWalletConnectors() } },
         solana: {

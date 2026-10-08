@@ -6,8 +6,8 @@ export const MIN_GRID = 6; // empty slots are filled with bots up to this many c
 export const SNAP_HZ = 20;
 export const CAR_SNAP_STRIDE = 9; // x, y, h, vx, vy, steer, slip, progress, flags
 
-/** Neon car colours (TrackLab night theme). */
-export const PLAYER_COLORS = ['#8cff2e', '#22d3ee', '#ff3dbb', '#ffd60a', '#ff8a1f', '#a259ff', '#ff3b3b', '#3b82ff', '#f1f5f9', '#ff7ab6'];
+/** Neon car colours (one per player). */
+export const PLAYER_COLORS = ['#14f195', '#22d3ee', '#ff3dbb', '#ffd60a', '#ff8a1f', '#a259ff', '#ff3b3b', '#3b82ff', '#f1f5f9', '#ff7ab6'];
 
 export type Phase = 'lobby' | 'race' | 'results';
 

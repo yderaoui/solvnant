@@ -46,7 +46,7 @@ async function exchange(s: PrivyState) {
   }
 }
 
-/** Open Privy's sign-in (X, email, Google or a wallet). */
+/** Open Privy's sign-in (X). */
 export async function privyLogin() {
   const s = await ensure();
   if (s.authenticated) {

@@ -5,7 +5,7 @@
 import { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PrivyProvider, usePrivy, type User } from '@privy-io/react-auth';
-import { toSolanaWalletConnectors, useWallets } from '@privy-io/react-auth/solana';
+import { useWallets } from '@privy-io/react-auth/solana';
 import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
 
 export type SolanaChain = 'solana:devnet' | 'solana:mainnet';
@@ -54,10 +54,9 @@ export function mountPrivy(appId: string, chain: SolanaChain, onState: (s: Privy
     <PrivyProvider
       appId={appId}
       config={{
-        loginMethods: ['twitter', 'email', 'google', 'wallet'],
+        loginMethods: ['twitter'], // X only (the client's call): no email, Google or outside wallets
         appearance: { theme: 'dark', accentColor: '#9945ff', walletChainType: 'solana-only', landingHeader: 'Sign in to RaceTrench' },
         embeddedWallets: { solana: { createOnLogin: 'users-without-wallets' } },
-        externalWallets: { solana: { connectors: toSolanaWalletConnectors() } },
         solana: {
           rpcs: {
             [chain]: { rpc: createSolanaRpc(http), rpcSubscriptions: createSolanaRpcSubscriptions(http.replace(/^https/, 'wss')) },

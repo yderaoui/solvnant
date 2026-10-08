@@ -878,7 +878,7 @@ export class LiveGame {
                ? `<div class="lb-ticket"><span><b>Race ticket</b><small>${cfg.tickets.price} ${escapeHtml(cfg.tickets.symbol)} · you have <b id="lb-tix">${me.tickets ?? 0}</b></small></span>
                     <button class="btn small" id="lb-buy">${icon('zap', 14)}Buy ticket</button></div>
                   ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost lb-faucet" id="lb-faucet">${icon('zap', 14)}Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}
-                  <p class="muted small" id="lb-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network: tickets use devnet test coins (no real value). Phantom: Settings → Developer settings → Testnet mode → Solana Devnet.' : ''}</p>`
+                  <p class="muted small" id="lb-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network: tickets use devnet test coins (no real value).' : ''}</p>`
                : ''
            }
            <a class="lb-warmup" href="#/drive">${icon('pad', 14)}Warm up with a test drive</a>

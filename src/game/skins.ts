@@ -27,6 +27,7 @@ export interface Rig {
   body: [number, number, number, number]; // hip x, hip y, torso half-length (x), half-width (z)
   wheels: [number, number, number][]; // axle x, y and radius of each pair of wheels (both sides)
   extra?: [number, number, number, number, number, number]; // a part that bobbles: centre x, y, z, radius, pivot x, y
+  face?: number; // rad: turns a head that the model has looking sideways back to the front
 }
 
 export const SKINS: Skin[] = [
@@ -42,7 +43,7 @@ export const SKINS: Skin[] = [
       [-0.5, 0.24, -0.1],
       [-0.5, 0.24, 0.1],
     ],
-    rig: { head: [-0.045, 0.87, 0, 0.1], neck: 0.79, body: [-0.08, 0.48, 0.17, 0.27], wheels: [[-0.15, 0.12, 0.125], [0.22, 0.07, 0.065]] },
+    rig: { head: [-0.045, 0.87, 0, 0.1], neck: 0.755, face: -0.5, body: [-0.08, 0.48, 0.17, 0.27], wheels: [[-0.15, 0.12, 0.125], [0.22, 0.07, 0.065]] },
   },
   {
     id: 'tjr',

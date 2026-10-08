@@ -98,6 +98,12 @@ export class Hub {
       sig TEXT PRIMARY KEY, uid TEXT NOT NULL, wallet TEXT NOT NULL, amount REAL NOT NULL,
       ts INTEGER NOT NULL, used_ref TEXT)`);
     this.sql.exec(`CREATE INDEX IF NOT EXISTS tickets_uid ON tickets(uid, used_ref)`);
+    // Which coin a ticket was paid in: switching coin (test network -> mainnet) must not carry old tickets over.
+    try {
+      this.sql.exec('ALTER TABLE tickets ADD COLUMN mint TEXT');
+    } catch {
+      /* already there */
+    }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS ticket_memos (uid TEXT PRIMARY KEY, memo TEXT NOT NULL, ts INTEGER NOT NULL)`);
     // Racer skins bought with the game coin (one row per skin per player; the payment can't be reused).
     this.sql.exec(`CREATE TABLE IF NOT EXISTS skins (
@@ -332,7 +338,7 @@ export class Hub {
 
   // ================================================================== race tickets (game coin)
   private ticketsLeft(uid: string): number {
-    return Number(this.sql.exec('SELECT COUNT(*) AS n FROM tickets WHERE uid = ? AND used_ref IS NULL', uid).one().n);
+    return Number(this.sql.exec('SELECT COUNT(*) AS n FROM tickets WHERE uid = ? AND used_ref IS NULL AND mint = ?', uid, this.cfg.tickets?.mint ?? '').one().n);
   }
 
   /** Start a purchase: the memo the payment must carry (ties the on-chain transfer to this account). */
@@ -356,7 +362,7 @@ export class Hub {
     const paid = await verifyTicketPayment(t, sig, row.memo);
     if (!paid) return json({ ok: false, pending: true }); // not confirmed yet: the client retries
     this.state.storage.transactionSync(() => {
-      this.sql.exec('INSERT OR IGNORE INTO tickets (sig, uid, wallet, amount, ts) VALUES (?, ?, ?, ?, ?)', sig, u.id, paid.wallet, paid.amount, Date.now());
+      this.sql.exec('INSERT OR IGNORE INTO tickets (sig, uid, wallet, amount, ts, mint) VALUES (?, ?, ?, ?, ?, ?)', sig, u.id, paid.wallet, paid.amount, Date.now(), t.mint);
       this.sql.exec('DELETE FROM ticket_memos WHERE uid = ?', u.id);
     });
     return json({ ok: true, tickets: this.ticketsLeft(u.id) });
@@ -374,7 +380,7 @@ export class Hub {
     const color = PLAYER_COLORS.includes(String(b.color)) ? String(b.color) : PLAYER_COLORS[0];
     let out: Response | null = null;
     this.state.storage.transactionSync(() => {
-      const ticket = this.sql.exec('SELECT sig FROM tickets WHERE uid = ? AND used_ref IS NULL ORDER BY ts LIMIT 1', u.id).toArray()[0] as { sig: string } | undefined;
+      const ticket = this.sql.exec('SELECT sig FROM tickets WHERE uid = ? AND used_ref IS NULL AND mint = ? ORDER BY ts LIMIT 1', u.id, t.mint).toArray()[0] as { sig: string } | undefined;
       if (!ticket) {
         out = json({ error: 'You need a race ticket.', needTicket: true }, 400);
         return;
@@ -710,7 +716,7 @@ export class Hub {
           if (pot.status !== 'lobby' || pot.entries[uid]) return false;
           // With coin tickets on, a seat also takes one of your tickets (given back if you don't race).
           if (this.cfg.tickets) {
-            const t = this.sql.exec('SELECT sig FROM tickets WHERE uid = ? AND used_ref IS NULL ORDER BY ts LIMIT 1', uid).toArray()[0] as { sig: string } | undefined;
+            const t = this.sql.exec('SELECT sig FROM tickets WHERE uid = ? AND used_ref IS NULL AND mint = ? ORDER BY ts LIMIT 1', uid, this.cfg.tickets.mint).toArray()[0] as { sig: string } | undefined;
             if (!t) {
               needTicket = true;
               return false;

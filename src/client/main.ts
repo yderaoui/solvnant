@@ -13,6 +13,7 @@ import { loadDraft, practiceEntries, renderAgentPage } from './agent';
 import { LeagueLobby } from './leagueLobby';
 import { renderBuyPage } from './buy';
 import { renderGarage } from './garage';
+import { renderRacePage, takeTicketRun } from './ticketrace';
 import { PracticeDrive } from './practice';
 import {
   db,
@@ -198,11 +199,11 @@ if (isLocalMode) $('mode-pill').hidden = false;
 let session = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 
-function show(view: 'stage' | 'leaderboard' | 'history' | 'agent' | 'buy' | 'garage') {
-  for (const v of ['stage', 'leaderboard', 'history', 'agent', 'buy', 'garage']) $(`view-${v}`).hidden = v !== view;
+function show(view: 'stage' | 'leaderboard' | 'history' | 'agent' | 'buy' | 'garage' | 'race') {
+  for (const v of ['stage', 'leaderboard', 'history', 'agent', 'buy', 'garage', 'race']) $(`view-${v}`).hidden = v !== view;
   for (const a of document.querySelectorAll<HTMLAnchorElement>('nav a')) {
     const href = a.getAttribute('href')!;
-    const on = location.hash.startsWith(href) || (href === '#/live' && location.hash === '') || (href === '#/league' && location.hash.startsWith('#/replay'));
+    const on = location.hash.startsWith(href) || (href === '#/race' && (location.hash === '' || location.hash.startsWith('#/run'))) || (href === '#/league' && location.hash.startsWith('#/replay'));
     a.classList.toggle('active', on);
     if (on) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
@@ -215,17 +216,32 @@ async function route() {
   leagueLobby.hide();
   viewer.close();
   const parts = location.hash.replace(/^#\/?/, '').split('/');
-  const page = parts[0] || 'live';
+  const page = parts[0] || 'race';
   // Switching between pages that share the 3D stage: cover it so the new track builds out of sight.
-  const stagePages = ['live', 'league', 'lab', 'replay', 'drive', ''];
+  const stagePages = ['live', 'league', 'lab', 'replay', 'drive', 'run'];
   const prevPage = document.body.dataset.page ?? '';
   if (prevPage !== page && stagePages.includes(prevPage) && stagePages.includes(page))
-    get3d()?.cover(page === 'live' ? 'LIVE RACE' : page === 'lab' ? 'TRACK LAB' : page === 'replay' ? 'REPLAY' : page === 'drive' ? 'TEST DRIVE' : 'AI LEAGUE');
+    get3d()?.cover(page === 'live' ? 'LIVE RACE' : page === 'lab' ? 'TRACK LAB' : page === 'replay' ? 'REPLAY' : page === 'drive' ? 'TEST DRIVE' : page === 'run' ? 'RACE' : 'AI LEAGUE');
   document.body.dataset.page = page;
   document.body.classList.remove('is-replay');
   if (my > 1) $('main').focus({ preventScroll: true }); // screen readers: announce the new view
   // The live multiplayer game and the AI-league broadcast share one stage; only one drives it.
-  if (practice.active && page !== 'drive') practice.stop();
+  if (practice.active && page !== 'drive' && page !== 'run') practice.stop();
+  if (page === 'run') {
+    // A ticketed race: only right after taking a seat (a reload can't restart the same run).
+    const run = takeTicketRun();
+    if (!run) {
+      if (!practice.ticket) {
+        location.hash = '#/race';
+        return;
+      }
+      return; // already racing
+    }
+    broadcast.deactivate();
+    if (live.active) live.stop();
+    show('stage');
+    return practice.start(undefined, run);
+  }
   if (page === 'drive') {
     broadcast.deactivate();
     if (live.active) live.stop();
@@ -258,6 +274,9 @@ async function route() {
     case 'garage':
       show('garage');
       return renderGarage();
+    case 'race':
+      show('race');
+      return renderRacePage();
     case 'agent':
       show('agent');
       return renderAgentPage();

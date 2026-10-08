@@ -834,7 +834,7 @@ export class Chase3D {
   }
 
   // ==================================================================== cars
-  setCars(entries: { name: string; color: string; skin?: string }[], you: number) {
+  setCars(entries: { name: string; color: string; skin?: string; ghost?: boolean }[], you: number) {
     // Skins not downloaded yet: race with the default one for now, swap them in when they arrive.
     const missing = [...new Set(entries.map((e) => e.skin ?? DEFAULT_SKIN))].filter((id) => !skinLoaded(id));
     if (missing.length) {
@@ -850,6 +850,7 @@ export class Chase3D {
     }
     this.cars = entries.map((e, i) => {
       const m = racer(e.color, e.skin);
+      if (e.ghost) ghostly(m.root);
       if (i !== you) {
         m.label = labelSprite(e.name, e.color);
         m.label.position.set(0, m.height + 0.9, 0);
@@ -1787,6 +1788,29 @@ function jitter(geo: THREE.BufferGeometry, amt: number, seed: number) {
 }
 
 // ====================================================================== cars
+
+/** Ghost racers (recorded runs): see-through, no shadow. Materials are cloned so real racers stay solid. */
+function ghostly(root: THREE.Object3D) {
+  const done = new Map<THREE.Material, THREE.Material>();
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.castShadow = false;
+    const swap = (m: THREE.Material) => {
+      if (m.blending === THREE.AdditiveBlending) return m; // flames stay as they are
+      let g = done.get(m);
+      if (!g) {
+        g = m.customProgramCacheKey() === 'racer-rig-1' ? m : m.clone(); // rigged materials are already per racer
+        g.transparent = true;
+        g.opacity = 0.42;
+        g.depthWrite = false;
+        done.set(m, g);
+      }
+      return g;
+    };
+    mesh.material = Array.isArray(mesh.material) ? mesh.material.map(swap) : swap(mesh.material);
+  });
+}
 
 /** A racer: Orangie on his turbo wheelchair, or the code-built kart if the model didn't load. */
 function racer(color: string, skin = DEFAULT_SKIN): CarModel {

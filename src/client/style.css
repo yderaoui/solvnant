@@ -268,8 +268,8 @@ body.is-live.is-spec:not(.has-market) .bet-bar { display: none !important; }
 body.is-live.is-racing.has-market .bet-bar { display: flex !important; left: 50%; right: auto; transform: translateX(-50%); width: min(560px, calc(100% - 520px)); bottom: var(--s4); }
 body.is-live .cam .live-only { display: inline-flex !important; }
 .cam .cam3d { display: none; }
-body[data-page='live'] .cam .cam3d, body[data-page='league'] .cam .cam3d, body[data-page='replay'] .cam .cam3d, body[data-page='drive'] .cam .cam3d { display: inline-flex; }
-body[data-page='drive'] #cam-fan, body[data-page='drive'] #cam-leader, body[data-page='drive'] #cam-overview { display: none !important; }
+body[data-page='live'] .cam .cam3d, body[data-page='league'] .cam .cam3d, body[data-page='replay'] .cam .cam3d, body[data-page='drive'] .cam .cam3d, body[data-page='run'] .cam .cam3d { display: inline-flex; }
+body[data-page='drive'] #cam-fan, body[data-page='drive'] #cam-leader, body[data-page='drive'] #cam-overview, body[data-page='run'] #cam-fan, body[data-page='run'] #cam-leader, body[data-page='run'] #cam-overview { display: none !important; }
 body.is-racing .cam .cam-fan { display: none; }
 .is-replay .cam .chip span { display: none; }
 .is-replay .cam .chip { width: 40px; justify-content: center; padding: 0; } /* drivers drive; the crowd view is for spectators */
@@ -1015,3 +1015,39 @@ body[data-page='drive'] .drive-only { display: inline-flex !important; }
 .pd-racer.on { border-color: var(--lime); background: rgba(164, 99, 255, 0.14); box-shadow: 0 0 0 1px var(--lime); }
 @media (max-width: 520px) { .pd-racers { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .go-flash.held { visibility: hidden; } /* test drive paused behind the racer picker */
+
+/* ---------------------------------------------------------------- race page (ticketed ghost lobbies) */
+.tr-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, 1fr); gap: var(--s4); margin-top: var(--s5); align-items: start; }
+.tr-main, .tr-side { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.tr-kicker { font-size: 11px; font-weight: 800; letter-spacing: 0.16em; color: var(--lime); }
+.tr-big { font-family: var(--font-display); font-style: italic; font-weight: 900; font-size: 52px; line-height: 1.05; }
+.tr-big small { font-size: 22px; color: var(--lime); }
+.tr-how { list-style: none; counter-reset: s; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.tr-how li { counter-increment: s; display: grid; grid-template-columns: 28px 1fr; column-gap: 10px; }
+.tr-how li::before { content: counter(s); grid-row: span 2; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; background: rgba(164, 99, 255, 0.16); color: var(--lime); border: 1px solid rgba(164, 99, 255, 0.4); }
+.tr-how b { font-size: 14px; }
+.tr-how span { color: var(--muted); font-size: 13px; }
+.tr-go { min-height: 52px; font-size: 16px; justify-content: center; }
+.tr-go small { font-size: 11px; opacity: 0.8; margin-left: 6px; font-style: normal; letter-spacing: 0.04em; }
+.tr-alt { justify-content: center; }
+.tr-note { margin: 0; }
+.tr-side h3 { margin: 0; font-size: 12px; letter-spacing: 0.14em; font-weight: 800; }
+.tr-owed { display: flex; gap: 10px; align-items: center; padding: var(--s3); border-radius: var(--r); background: rgba(20, 241, 149, 0.08); border: 1px solid rgba(20, 241, 149, 0.35); color: #14f195; }
+.tr-owed span { display: flex; flex-direction: column; color: var(--text); }
+.tr-owed small { color: var(--muted); }
+.tr-lobby { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); }
+.tr-lobby-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.tr-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; border: 1px solid var(--line-strong); color: var(--muted); }
+.tr-chip.open { color: var(--lime); border-color: rgba(164, 99, 255, 0.45); }
+.tr-chip.win { color: #14f195; border-color: rgba(20, 241, 149, 0.45); }
+.tr-lobby ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.tr-lobby li { display: grid; grid-template-columns: 16px 10px 1fr auto; gap: 8px; align-items: center; }
+.tr-lobby li.me .n { color: var(--lime); font-weight: 700; }
+.tr-lobby .p { color: var(--muted); font-size: 12px; }
+.tr-lobby .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+.tr-lobby .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-lobby .g { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+@media (max-width: 900px) { .tr-grid { grid-template-columns: 1fr; } .tr-big { font-size: 40px; } }
+@media (max-width: 1500px) {
+  nav a[href="#/agent"] span, nav a[href="#/leaderboard"] span { display: none; }
+}

@@ -143,7 +143,7 @@ export function handleAuthHash(toast: (t: string) => void): boolean {
   const m = /^#\/auth\??(.*)$/.exec(location.hash);
   if (!m) return false;
   const q = new URLSearchParams(m[1]);
-  const back = store.get('tl-after-login') || '#/live';
+  const back = store.get('tl-after-login') || '#/race';
   store.set('tl-after-login', null);
   const token = q.get('token');
   if (token)
@@ -383,7 +383,7 @@ export function showAuthModal(error?: string) {
     </div>`;
   m.hidden = false;
   $('auth-close').onclick = closeAuthModal;
-  document.getElementById('auth-x')?.addEventListener('click', () => store.set('tl-after-login', location.hash || '#/live'));
+  document.getElementById('auth-x')?.addEventListener('click', () => store.set('tl-after-login', location.hash || '#/race'));
   const form = document.getElementById('auth-guest') as HTMLFormElement | null;
   if (form) {
     form.onsubmit = async (e) => {

@@ -6,7 +6,9 @@ import { publicConfig, publicTickets, readConfig, type GameConfig } from './conf
 import { bearer, randomToken, signSession, verifySession, type Session } from './auth';
 import { isSolanaAddress, tokenHolding, verifyTicketPayment, verifyWalletSignature, walletMessage } from './solana';
 import { poolOdds, prizeSplit, settlePool } from './economy';
-import { cleanName } from './protocol';
+import { PLAYER_COLORS, cleanName } from './protocol';
+import { SEATS, SETTLE_AFTER_MS, COUNTDOWN_S, MAX_RACE_S, SUBMIT_SLACK_S, badLog, lobbyVerdict, rank, replayRun, split, submittedInTime } from './lobbies';
+import type { InputLogEntry } from '../sim/race';
 import { verifyPrivyToken } from './privy';
 import { DEFAULT_SKIN, SKINS, isSkin, skinById } from './skins';
 
@@ -103,6 +105,19 @@ export class Hub {
       ts INTEGER NOT NULL, PRIMARY KEY (uid, skin))`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS skin_memos (uid TEXT PRIMARY KEY, skin TEXT NOT NULL, memo TEXT NOT NULL, ts INTEGER NOT NULL)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS skin_choice (uid TEXT PRIMARY KEY, skin TEXT NOT NULL)`);
+    // Ticketed ghost lobbies (lobbies.ts): 5 seats, winner takes all.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS lobbies (
+      id TEXT PRIMARY KEY, seed TEXT NOT NULL, price REAL NOT NULL, status TEXT NOT NULL,
+      created INTEGER NOT NULL, settled INTEGER, winner TEXT)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS runs (
+      id TEXT PRIMARY KEY, lobby TEXT NOT NULL, uid TEXT NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, skin TEXT NOT NULL,
+      ticket TEXT NOT NULL, status TEXT NOT NULL, started INTEGER NOT NULL, deadline INTEGER NOT NULL,
+      finished INTEGER NOT NULL DEFAULT 0, finish_time REAL, progress REAL NOT NULL DEFAULT 0, input_log TEXT, note TEXT)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS runs_lobby ON runs(lobby)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS runs_uid ON runs(uid, started)`);
+    // What each settled pot owes: the winner's prize, the burn and the team share (paid onchain later).
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS payouts (
+      lobby TEXT NOT NULL, kind TEXT NOT NULL, uid TEXT, amount REAL NOT NULL, ts INTEGER NOT NULL, paid INTEGER NOT NULL DEFAULT 0)`);
   }
 
   // ================================================================== routing
@@ -147,6 +162,12 @@ export class Hub {
           return this.ticketIntent(u);
         case '/api/ticket/claim':
           return await this.ticketClaim(u, (await req.json()) as { signature?: string });
+        case '/api/lobby/join':
+          return this.lobbyJoin(u, (await req.json()) as { color?: string });
+        case '/api/lobby/submit':
+          return this.lobbySubmit(u, (await req.json()) as { run?: string; log?: unknown });
+        case '/api/lobby/mine':
+          return json(this.lobbyMine(u.id));
         case '/api/skin/intent':
           return this.skinIntent(u, (await req.json()) as { skin?: string });
         case '/api/skin/claim':
@@ -339,6 +360,170 @@ export class Hub {
       this.sql.exec('DELETE FROM ticket_memos WHERE uid = ?', u.id);
     });
     return json({ ok: true, tickets: this.ticketsLeft(u.id) });
+  }
+
+  // ================================================================== ticketed ghost lobbies
+  /** Take a seat: uses one ticket, returns the track and the ghosts already in that lobby. */
+  private lobbyJoin(u: UserRow, b: { color?: string }): Response {
+    const t = this.cfg.tickets;
+    if (!t) return fail('Ticketed races are not set up on this server.');
+    const now = Date.now();
+    this.expireRuns(now);
+    const racing = this.sql.exec("SELECT deadline FROM runs WHERE uid = ? AND status = 'racing'", u.id).toArray()[0] as { deadline: number } | undefined;
+    if (racing) return fail(`You already have a race running. If you left it, it counts as a DNF (frees up in ${Math.ceil((racing.deadline - now) / 1000)} s).`);
+    const color = PLAYER_COLORS.includes(String(b.color)) ? String(b.color) : PLAYER_COLORS[0];
+    let out: Response | null = null;
+    this.state.storage.transactionSync(() => {
+      const ticket = this.sql.exec('SELECT sig FROM tickets WHERE uid = ? AND used_ref IS NULL ORDER BY ts LIMIT 1', u.id).toArray()[0] as { sig: string } | undefined;
+      if (!ticket) {
+        out = json({ error: 'You need a race ticket.', needTicket: true }, 400);
+        return;
+      }
+      // Oldest open lobby with a free seat that this player isn't in yet (no skill rating yet: first come).
+      let lobby = this.sql
+        .exec(
+          `SELECT l.id, l.seed, l.price FROM lobbies l WHERE l.status = 'open' AND l.created > ? AND l.price = ?
+             AND (SELECT COUNT(*) FROM runs r WHERE r.lobby = l.id) < ? AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.lobby = l.id AND r.uid = ?)
+           ORDER BY l.created LIMIT 1`,
+          now - SETTLE_AFTER_MS,
+          t.price,
+          SEATS,
+          u.id,
+        )
+        .toArray()[0] as { id: string; seed: string; price: number } | undefined;
+      if (!lobby) {
+        lobby = { id: `lob_${randomToken(8)}`, seed: `lobby-${randomToken(9)}`, price: t.price };
+        this.sql.exec("INSERT INTO lobbies (id, seed, price, status, created) VALUES (?, ?, ?, 'open', ?)", lobby.id, lobby.seed, lobby.price, now);
+      }
+      const run = `run_${randomToken(10)}`;
+      const deadline = now + (COUNTDOWN_S + MAX_RACE_S + SUBMIT_SLACK_S) * 1000;
+      this.sql.exec(
+        "INSERT INTO runs (id, lobby, uid, name, color, skin, ticket, status, started, deadline) VALUES (?, ?, ?, ?, ?, ?, ?, 'racing', ?, ?)",
+        run,
+        lobby.id,
+        u.id,
+        u.name,
+        color,
+        this.chosenSkin(u.id),
+        ticket.sig,
+        now,
+        deadline,
+      );
+      this.sql.exec('UPDATE tickets SET used_ref = ? WHERE sig = ?', run, ticket.sig);
+      const ghosts = this.sql
+        .exec("SELECT name, color, skin, input_log, finish_time, finished FROM runs WHERE lobby = ? AND status = 'done' AND input_log IS NOT NULL ORDER BY started", lobby.id)
+        .toArray()
+        .map((r) => ({ name: String(r.name), color: String(r.color), skin: String(r.skin), log: JSON.parse(String(r.input_log)) as InputLogEntry[], finishTime: r.finished ? Number(r.finish_time) : null }));
+      const seats = Number(this.sql.exec('SELECT COUNT(*) AS n FROM runs WHERE lobby = ?', lobby.id).one().n);
+      out = json({ run, lobby: lobby.id, seed: lobby.seed, seats, ghosts, tickets: this.ticketsLeft(u.id), ...split(SEATS, lobby.price) });
+    });
+    return out!;
+  }
+
+  /** The run is over: re-simulate it from its inputs and record the official result. */
+  private lobbySubmit(u: UserRow, b: { run?: string; log?: unknown }): Response {
+    const now = Date.now();
+    const run = this.sql.exec('SELECT * FROM runs WHERE id = ? AND uid = ?', String(b.run ?? ''), u.id).toArray()[0] as
+      | { id: string; lobby: string; status: string; started: number; deadline: number }
+      | undefined;
+    if (!run) return fail('Race not found.');
+    if (run.status !== 'racing') return json({ ok: true, rejected: null, ...this.lobbyView(run.lobby, u.id) });
+    const why = badLog(b.log);
+    const lobby = this.sql.exec('SELECT seed FROM lobbies WHERE id = ?', run.lobby).one() as { seed: string };
+    let note: string | null = null;
+    let res = { finished: false, finishTime: null as number | null, progress: 0 };
+    if (why) note = `rejected: ${why}`;
+    else {
+      const r = replayRun(lobby.seed, b.log as InputLogEntry[]);
+      const when = now > run.deadline ? 'late' : submittedInTime(run.started, now, r);
+      if (when === 'late') note = 'rejected: sent in too late';
+      else if (when === 'early') note = 'rejected: sent in faster than it could be driven';
+      else res = { finished: r.finished, finishTime: r.finishTime, progress: r.progress };
+    }
+    this.sql.exec(
+      "UPDATE runs SET status = 'done', finished = ?, finish_time = ?, progress = ?, input_log = ?, note = ? WHERE id = ?",
+      res.finished ? 1 : 0,
+      res.finishTime,
+      res.progress,
+      note ? null : JSON.stringify(b.log),
+      note,
+      run.id,
+    );
+    this.updateLobby(run.lobby, now);
+    return json({ ok: true, rejected: note, ...this.lobbyView(run.lobby, u.id) });
+  }
+
+  /** Runs whose player left (no submission before the deadline) count as a DNF. */
+  private expireRuns(now: number) {
+    const gone = this.sql.exec("SELECT id, lobby FROM runs WHERE status = 'racing' AND deadline < ?", now).toArray();
+    for (const r of gone) {
+      this.sql.exec("UPDATE runs SET status = 'done', note = 'left the race (DNF)' WHERE id = ?", String(r.id));
+      this.updateLobby(String(r.lobby), now);
+    }
+  }
+
+  /** Settle or refund a lobby when its time has come (see lobbyVerdict). */
+  private updateLobby(id: string, now: number) {
+    const lobby = this.sql.exec('SELECT * FROM lobbies WHERE id = ?', id).toArray()[0] as { id: string; status: string; created: number; price: number } | undefined;
+    if (!lobby || lobby.status !== 'open') return;
+    const runs = this.sql.exec('SELECT * FROM runs WHERE lobby = ?', id).toArray() as unknown as { id: string; uid: string; status: string; finished: number; finish_time: number | null; progress: number; started: number; ticket: string }[];
+    const verdict = lobbyVerdict(lobby.created, now, runs.map((r) => ({ done: r.status === 'done' })));
+    if (verdict === 'wait') return;
+    this.state.storage.transactionSync(() => {
+      if (verdict === 'refund') {
+        for (const r of runs) this.sql.exec('UPDATE tickets SET used_ref = NULL WHERE sig = ? AND used_ref = ?', r.ticket, r.id);
+        this.sql.exec("UPDATE lobbies SET status = 'refunded', settled = ? WHERE id = ?", now, id);
+        return;
+      }
+      const order = rank(runs.map((r) => ({ ...r, finished: !!r.finished, finishTime: r.finish_time })));
+      const winner = order[0];
+      const s = split(runs.length, lobby.price);
+      this.sql.exec("UPDATE lobbies SET status = 'settled', settled = ?, winner = ? WHERE id = ?", now, winner.uid, id);
+      this.sql.exec("INSERT INTO payouts (lobby, kind, uid, amount, ts) VALUES (?, 'prize', ?, ?, ?)", id, winner.uid, s.prize, now);
+      this.sql.exec("INSERT INTO payouts (lobby, kind, uid, amount, ts) VALUES (?, 'burn', NULL, ?, ?)", id, s.burn, now);
+      this.sql.exec("INSERT INTO payouts (lobby, kind, uid, amount, ts) VALUES (?, 'team', NULL, ?, ?)", id, s.team, now);
+    });
+  }
+
+  /** A lobby as one player sees it: seats ranked so far, pot, what happens next. */
+  private lobbyView(id: string, uid: string) {
+    const l = this.sql.exec('SELECT * FROM lobbies WHERE id = ?', id).one() as unknown as { id: string; status: string; created: number; price: number; winner: string | null };
+    const runs = this.sql.exec('SELECT uid, name, color, skin, status, finished, finish_time, progress, started, note FROM runs WHERE lobby = ?', id).toArray() as unknown as {
+      uid: string;
+      name: string;
+      color: string;
+      skin: string;
+      status: string;
+      finished: number;
+      finish_time: number | null;
+      progress: number;
+      started: number;
+      note: string | null;
+    }[];
+    const seats = rank(runs.map((r) => ({ ...r, finished: !!r.finished, finishTime: r.finish_time }))).map((r) => ({
+      name: r.name,
+      color: r.color,
+      skin: r.skin,
+      you: r.uid === uid,
+      racing: r.status === 'racing',
+      finished: r.finished,
+      finishTime: r.finishTime,
+      progress: Math.round(r.progress),
+      note: r.note,
+    }));
+    const s = split(Math.max(runs.length, 1), l.price);
+    return {
+      lobby: { id: l.id, status: l.status, created: l.created, settleBy: l.created + SETTLE_AFTER_MS, seats: runs.length, maxSeats: SEATS, price: l.price, pot: s.pot, prize: s.prize, youWon: l.status === 'settled' && l.winner === uid },
+      seats,
+    };
+  }
+
+  /** The player's recent lobbies and what the settled pots owe them. */
+  private lobbyMine(uid: string) {
+    this.expireRuns(Date.now());
+    const ids = this.sql.exec('SELECT lobby, MAX(started) AS s FROM runs WHERE uid = ? GROUP BY lobby ORDER BY s DESC LIMIT 12', uid).toArray().map((r) => String(r.lobby));
+    const owed = Number(this.sql.exec("SELECT COALESCE(SUM(amount), 0) AS n FROM payouts WHERE uid = ? AND kind = 'prize' AND paid = 0", uid).one().n);
+    return { lobbies: ids.map((id) => this.lobbyView(id, uid)), owed, tickets: this.ticketsLeft(uid), ...split(SEATS, this.cfg.tickets?.price ?? 0) };
   }
 
   // ================================================================== racer skins (game coin)
@@ -653,6 +838,9 @@ export class Hub {
     for (const r of this.sql.exec("SELECT ref FROM live_pots WHERE status IN ('lobby','open') AND created < ?", now - LIVE_POT_TIMEOUT_MS).toArray()) this.voidLivePot(String(r.ref));
     for (const r of this.sql.exec("SELECT id FROM markets WHERE kind = 'live' AND status IN ('open','closed') AND created < ?", now - LIVE_POT_TIMEOUT_MS).toArray())
       this.settleMarket(String(r.id), null, true);
+    // Ticketed lobbies: players who left count as DNF; settle or refund lobbies past 30 minutes.
+    this.expireRuns(now);
+    for (const r of this.sql.exec("SELECT id FROM lobbies WHERE status = 'open'").toArray()) this.updateLobby(String(r.id), now);
     if (this.cfg.supabase) {
       try {
         await this.syncLeagueMarkets(now);
@@ -661,7 +849,9 @@ export class Hub {
       }
     }
     // Keep ticking while people are around (or bets are waiting to be settled).
-    const pending = Number(this.sql.exec("SELECT COUNT(*) AS n FROM markets WHERE status IN ('open','closed')").one().n);
+    const pending =
+      Number(this.sql.exec("SELECT COUNT(*) AS n FROM markets WHERE status IN ('open','closed')").one().n) +
+      Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobbies WHERE status = 'open'").one().n);
     if (pending > 0 || now - this.lastActivity < 3600_000) await this.state.storage.setAlarm(now + 60_000);
   }
 

@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@1,900&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #222; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="logo" width="720" height="360"></canvas>
+<script type="module">
+// Wide RaceTrench logo for the Privy sign-in window (2:1, transparent): R mark + "ACETRENCH", as on the X banner.
+// Open through the dev server: /brand/make-logo.html
+const PURPLE = '#9945ff';
+const R = new Path2D('M108 100 H262 C312 100 334 128 334 166 C334 198 316 220 286 229 L334 320 H258 L218 238 H182 V320 H108 Z M182 156 V184 H252 C264 184 270 178 270 170 C270 162 264 156 252 156 Z');
+
+function mark(ctx, cx, cy, size) {
+  const s = size / 400;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  ctx.translate(-200, -205);
+  const k = Math.tan((14 * Math.PI) / 180);
+  ctx.transform(1, 0, -k, 1, k * 205, 0);
+  const g = ctx.createLinearGradient(108, 100, 334, 320);
+  g.addColorStop(0, '#b77bff');
+  g.addColorStop(1, PURPLE);
+  ctx.fillStyle = g;
+  ctx.fill(R, 'evenodd');
+  ctx.save();
+  ctx.clip(R, 'evenodd');
+  ctx.globalCompositeOperation = 'destination-out'; // livery stripes cut through (transparent)
+  ctx.fillRect(130, 100, 9, 230);
+  ctx.fillRect(147, 100, 4, 230);
+  ctx.restore();
+  ctx.restore();
+}
+
+await document.fonts.load('italic 900 100px "Exo 2"');
+const c = document.getElementById('logo').getContext('2d');
+const W = 720, H = 360;
+const font = 92;
+c.font = `italic 900 ${font}px "Exo 2"`;
+const ace = 'ACE', trench = 'TRENCH';
+const wAce = c.measureText(ace).width, wTr = c.measureText(trench).width;
+const cap = font * 0.72, markSize = (cap / 220) * 400, rW = (226 / 400) * markSize;
+const total = rW + 14 + wAce + 4 + wTr;
+const x0 = (W - total) / 2, base = H / 2 + cap / 2;
+mark(c, x0 + rW / 2 + 6, base - cap / 2 - 1, markSize);
+const xText = x0 + rW + 14;
+c.fillStyle = '#ffffff';
+c.fillText(ace, xText, base);
+c.fillStyle = PURPLE;
+c.fillText(trench, xText + wAce + 4, base);
+document.title = 'ready';
+</script>
+</body>
+</html>

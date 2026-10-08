@@ -298,7 +298,7 @@ export function buildRacer(id: string, color: string): RacerParts {
     // it looks around and bobs to the beat
     const vibe = Math.max(0, Math.sin(T * 7.5)) ** 2;
     pose.aHead.value.set(
-      look.step((skin.rig.face ?? 0) + clamp(-yawRate * 0.5, 0.45) + idle * Math.sin(T * 0.6) * 0.32, dt),
+      look.step((skin.rig.face ?? 0) + clamp(-yawRate * 0.5, 0.45) + idle * Math.sin(T * 0.6) * 0.15, dt),
       nod.step(clamp(a * 0.018, 0.22) + idle * vibe * -0.12 + k * Math.sin(T * 11) * 0.025, dt),
       tilt.step(clamp(lat * 0.012, 0.22) + Math.sin(T * 1.3) * 0.04, dt),
     );

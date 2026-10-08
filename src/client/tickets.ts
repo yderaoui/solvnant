@@ -102,7 +102,9 @@ async function payCoins(intentPath: string, intentBody: object, claimPath: strin
   try {
     signature = await wallet.send(tx);
   } catch (e) {
-    throw new Error(/reject|cancel|denied/i.test(String((e as Error).message)) ? 'You cancelled the payment.' : `Wallet error: ${(e as Error).message}`);
+    console.error('payment: the wallet could not send', e, (e as { cause?: unknown }).cause);
+    const why = [(e as Error).message, String((e as { cause?: { message?: string } }).cause?.message ?? '')].filter(Boolean).join(' / ');
+    throw new Error(/reject|cancel|denied|closed/i.test(why) ? 'You cancelled the payment.' : `Wallet error: ${why}`);
   }
   step('Waiting for the network to confirm…');
   remember(pendingKey, signature);

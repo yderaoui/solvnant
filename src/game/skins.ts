@@ -68,6 +68,19 @@ export const SKINS: Skin[] = [
       [-0.49, 0.1, 0.12],
     ],
   },
+  {
+    id: 'ansem',
+    name: 'Ansem',
+    tagline: 'Rides the bull. Literally. On monster truck wheels',
+    price: 500,
+    file: 'ansem',
+    yaw: Math.PI,
+    length: 3.4,
+    exhaust: [
+      [-0.45, 0.42, -0.22],
+      [-0.45, 0.42, 0.22],
+    ],
+  },
 ];
 
 export const DEFAULT_SKIN = SKINS[0].id;

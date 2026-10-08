@@ -13,6 +13,7 @@ export interface Skin {
   yaw: number; // turns the model to face +X (the way cars drive)
   length: number; // m, nose to tail once scaled
   exhaust: [number, number, number][]; // flame spots, model units, after the yaw (x back = negative)
+  rainbow?: boolean; // exhaust flames cycle through the rainbow
 }
 
 export const SKINS: Skin[] = [
@@ -119,6 +120,20 @@ export const SKINS: Skin[] = [
       [-0.48, 0.2, -0.16],
       [-0.48, 0.2, 0.16],
     ],
+  },
+  {
+    id: 'vitalik',
+    name: 'Vitalik',
+    tagline: 'Pink unicorn toy car, rainbow exhaust',
+    price: 500,
+    file: 'vitalik',
+    yaw: Math.PI / 2,
+    length: 3,
+    exhaust: [
+      [-0.47, 0.15, -0.12],
+      [-0.47, 0.15, 0.12],
+    ],
+    rainbow: true,
   },
 ];
 

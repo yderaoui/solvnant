@@ -119,8 +119,9 @@ export function buildRacer(id: string, color: string): RacerParts {
   // exhaust flames, pointing backwards
   const flames: THREE.Mesh[] = [];
   const cores: THREE.Mesh[] = [];
+  const outer = skin.rainbow ? flameMat.clone() : flameMat; // rainbow skins get their own, recoloured each frame
   for (const [x, y, z] of skin.exhaust) {
-    const f = new THREE.Mesh(G.flame, flameMat);
+    const f = new THREE.Mesh(G.flame, outer);
     const k = new THREE.Mesh(G.flame, coreMat);
     for (const m of [f, k]) {
       m.rotation.y = Math.PI;
@@ -138,6 +139,7 @@ export function buildRacer(id: string, color: string): RacerParts {
   const animate = (t: number, speed: number) => {
     const k = Math.min(1, speed / 30);
     const on = speed > 0.5;
+    if (skin.rainbow) outer.color.setHSL((t * 0.6) % 1, 1, 0.55);
     for (let i = 0; i < flames.length; i++) {
       const f = 0.5 + k * 1.2 + Math.sin(t * 47 + i * 2) * 0.1 + Math.sin(t * 31 + i) * 0.07;
       flames[i].scale.set(0.2 + f * 0.45, 0.13 + k * 0.03, 0.13 + k * 0.03);

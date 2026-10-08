@@ -1112,3 +1112,5 @@ body[data-page='drive'] .drive-only { display: inline-flex !important; }
 .snd-styles button.on { border-color: var(--lime); background: rgba(164, 99, 255, 0.16); color: var(--lime-hi); }
 .snd-foot { display: flex; gap: 8px; margin-top: 4px; }
 .snd-foot .btn { flex: 1; justify-content: center; }
+.tr-paid { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-size: 12px; font-weight: 700; color: #14f195; text-decoration: none; font-style: normal; letter-spacing: 0; }
+.tr-paid.wait { color: var(--muted); }

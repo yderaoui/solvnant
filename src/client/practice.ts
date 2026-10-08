@@ -15,6 +15,7 @@ import { icon } from './icons';
 import { driveSkin, mySkin, setTrySkin } from './garage';
 import { account } from './account';
 import { soloConfig } from '../game/lobbies';
+import { payoutNote } from './ticketrace';
 import type { Car } from '../sim/physics';
 import type { InputLogEntry } from '../sim/race';
 import { SKINS, botSkin, skinById } from '../game/skins';
@@ -45,6 +46,7 @@ interface SeatView {
   note: string | null;
 }
 interface LobbyView {
+  payout?: { status: string; sig: string | null } | null;
   lobby: { status: string; settleBy: number; seats: number; maxSeats: number; pot: number; prize: number; youWon: boolean };
   seats: SeatView[];
   rejected?: string | null;
@@ -405,7 +407,7 @@ export class PracticeDrive {
     const head =
       L.status === 'settled'
         ? L.youWon
-          ? `${icon('trophy', 26)}YOU WON ${L.prize.toLocaleString('en-US')} ${escapeHtml(sym)}`
+          ? `${icon('trophy', 26)}YOU WON ${L.prize.toLocaleString('en-US')} ${escapeHtml(sym)}${payoutNote(view.payout)}`
           : `${icon('flag', 26)}LOBBY SETTLED: P${mine + 1}`
         : me?.finished
           ? `${icon('flag', 26)}${fmt(me.finishTime!, 2)} · P${mine + 1} OF ${L.seats} SO FAR`

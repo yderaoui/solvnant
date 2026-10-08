@@ -23,6 +23,7 @@ interface Seat {
   note: string | null;
 }
 interface LobbyView {
+  payout?: { status: string; sig: string | null } | null;
   lobby: { id: string; status: string; settleBy: number; seats: number; maxSeats: number; pot: number; prize: number; youWon: boolean };
   seats: Seat[];
 }
@@ -118,13 +119,24 @@ function pot(price: number, sym: string) {
   </div>`;
 }
 
+/** Winner's payout: paid (with a link to the transaction), on its way, or done by hand. */
+export function payoutNote(p: { status: string; sig: string | null } | null | undefined): string {
+  if (!p) return '';
+  if (p.status === 'paid' && p.sig) {
+    const dev = account.cfg?.tickets?.cluster === 'devnet' ? '?cluster=devnet' : '';
+    return ` <a class="tr-paid" href="https://solscan.io/tx/${p.sig}${dev}" target="_blank" rel="noopener">${icon('check', 12)}Paid · view</a>`;
+  }
+  if (p.status === 'pending' || p.status === 'sent') return ' <span class="tr-paid wait">paying…</span>';
+  return ' <span class="tr-paid wait">paid by the team shortly</span>';
+}
+
 function lobbyCard(v: LobbyView, sym: string) {
   const L = v.lobby;
   const mineAt = v.seats.findIndex((s) => s.you);
   const chip =
     L.status === 'settled'
       ? L.youWon
-        ? `<span class="tr-chip win">${icon('trophy', 12)}WON ${L.prize.toLocaleString('en-US')} ${sym}</span>`
+        ? `<span class="tr-chip win">${icon('trophy', 12)}WON ${L.prize.toLocaleString('en-US')} ${sym}</span>${payoutNote(v.payout)}`
         : `<span class="tr-chip">SETTLED · P${mineAt + 1}</span>`
       : L.status === 'refunded'
         ? `<span class="tr-chip">REFUNDED</span>`

@@ -11,6 +11,7 @@ import { SEATS, SETTLE_AFTER_MS, COUNTDOWN_S, MAX_RACE_S, SUBMIT_SLACK_S, badLog
 import type { InputLogEntry } from '../sim/race';
 import { verifyPrivyToken } from './privy';
 import { DEFAULT_SKIN, SKINS, isSkin, skinById, skinPrice } from './skins';
+import { blockHeight, buildPayout, cosignPurchase, loadHouse, sendWire, txStatus, type House } from './house';
 
 interface SqlCursor {
   toArray(): Record<string, unknown>[];
@@ -113,6 +114,14 @@ export class Hub {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS skin_choice (uid TEXT PRIMARY KEY, skin TEXT NOT NULL)`);
     // Every payment memo handed out, so any of them can be claimed later (not only the latest one).
     this.sql.exec(`CREATE TABLE IF NOT EXISTS pay_memos (memo TEXT PRIMARY KEY, uid TEXT NOT NULL, ts INTEGER NOT NULL)`);
+    // Automatic payouts, one transaction per settled lobby. status: pending -> sent -> paid (or failed /
+    // manual). A new transaction is only built once the previous one can no longer land (its blockhash
+    // expired without it showing up), so a winner is never paid twice.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS lobby_payouts (
+      lobby TEXT PRIMARY KEY, uid TEXT NOT NULL, wallet TEXT, prize REAL NOT NULL, burn REAL NOT NULL, team REAL NOT NULL,
+      status TEXT NOT NULL, sig TEXT, last_valid INTEGER, attempts INTEGER NOT NULL DEFAULT 0, error TEXT, ts INTEGER NOT NULL, paid_at INTEGER)`);
+    // Fees the house paid for players' purchases (daily cap per player).
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS sponsored (sig TEXT PRIMARY KEY, uid TEXT NOT NULL, ts INTEGER NOT NULL)`);
     // Ticketed ghost lobbies (lobbies.ts): 5 seats, winner takes all.
     this.sql.exec(`CREATE TABLE IF NOT EXISTS lobbies (
       id TEXT PRIMARY KEY, seed TEXT NOT NULL, price REAL NOT NULL, status TEXT NOT NULL,
@@ -136,7 +145,7 @@ export class Hub {
     void this.ensureAlarm();
     try {
       if (p.startsWith('/internal/')) return await this.internal(p, req);
-      if (p === '/api/config') return json(publicConfig(this.cfg));
+      if (p === '/api/config') return json({ ...publicConfig(this.cfg), sponsor: (await this.house())?.address ?? null });
       if (p === '/api/guest' && req.method === 'POST') return await this.guest(req);
       if (p === '/api/privy' && req.method === 'POST') return await this.privyLogin(req);
       if (p === '/api/leaderboard') return json(this.leaderboard());
@@ -170,6 +179,8 @@ export class Hub {
           return this.ticketIntent(u);
         case '/api/ticket/claim':
           return await this.ticketClaim(u, (await req.json()) as { signature?: string });
+        case '/api/pay/sponsor':
+          return await this.sponsorPurchase(u, (await req.json()) as { tx?: string });
         case '/api/pay/recover':
           return await this.recoverPayments(u, (await req.json()) as { signatures?: unknown });
         case '/api/lobby/join':
@@ -422,6 +433,101 @@ export class Hub {
     return { ok: true, kind: 'ticket' };
   }
 
+  // ================================================================== the house wallet (payouts, fees)
+  private houseP: Promise<House | null> | null = null;
+  /** The house wallet, if it's set up and is the treasury (payments must land where payouts come from). */
+  private house(): Promise<House | null> {
+    this.houseP ??= (async () => {
+      const t = this.cfg.tickets;
+      if (!t || !this.cfg.houseSecret) return null;
+      try {
+        const h = await loadHouse(this.cfg.houseSecret);
+        if (h && h.address !== t.treasury) {
+          console.log(`house wallet ${h.address} is not the treasury ${t.treasury}: payouts and sponsored fees are off`);
+          return null;
+        }
+        return h;
+      } catch (e) {
+        console.log('house wallet:', (e as Error).message);
+        return null;
+      }
+    })();
+    return this.houseP;
+  }
+
+  /** Pay settled lobbies: one transaction each, never twice (see lobby_payouts). */
+  private async processPayouts() {
+    const t = this.cfg.tickets;
+    const house = await this.house();
+    if (!t || !house) return;
+    const rows = this.sql.exec("SELECT * FROM lobby_payouts WHERE status IN ('pending','sent') ORDER BY ts LIMIT 5").toArray() as unknown as {
+      lobby: string;
+      wallet: string;
+      prize: number;
+      burn: number;
+      team: number;
+      status: string;
+      sig: string | null;
+      last_valid: number | null;
+      attempts: number;
+    }[];
+    for (const r of rows) {
+      if (r.status === 'sent' && r.sig) {
+        const st = await txStatus(t, r.sig);
+        if (st?.ok) this.sql.exec("UPDATE lobby_payouts SET status = 'paid', paid_at = ?, error = NULL WHERE lobby = ?", Date.now(), r.lobby);
+        else if (st) this.sql.exec("UPDATE lobby_payouts SET status = 'failed', error = ? WHERE lobby = ?", JSON.stringify(st.err).slice(0, 300), r.lobby);
+        else if ((await blockHeight(t)) > (r.last_valid ?? 0) + 10) this.sql.exec("UPDATE lobby_payouts SET status = 'pending' WHERE lobby = ?", r.lobby); // expired, never landed
+        continue;
+      }
+      if (r.attempts >= 6) {
+        this.sql.exec("UPDATE lobby_payouts SET status = 'failed' WHERE lobby = ?", r.lobby);
+        continue;
+      }
+      try {
+        const built = await buildPayout(t, house, { winner: r.wallet, prize: r.prize, burn: r.burn, team: r.team, teamWallet: this.cfg.teamWallet, note: `RaceTrench payout ${r.lobby}` });
+        // remember the id before sending: if anything breaks after this, we look for it instead of paying again
+        this.sql.exec("UPDATE lobby_payouts SET status = 'sent', sig = ?, last_valid = ?, attempts = attempts + 1, error = NULL WHERE lobby = ?", built.signature, built.lastValid, r.lobby);
+        try {
+          await sendWire(t, built.wire);
+        } catch (e) {
+          this.sql.exec('UPDATE lobby_payouts SET error = ? WHERE lobby = ?', (e as Error).message.slice(0, 300), r.lobby);
+        }
+      } catch (e) {
+        this.sql.exec('UPDATE lobby_payouts SET attempts = attempts + 1, error = ? WHERE lobby = ?', (e as Error).message.slice(0, 300), r.lobby);
+      }
+    }
+  }
+
+  /** Sponsored gas: the house pays the network fee of a player's purchase (after checking it exactly). */
+  private async sponsorPurchase(u: UserRow, b: { tx?: string }): Promise<Response> {
+    const t = this.cfg.tickets;
+    const house = await this.house();
+    if (!t || !house) return fail('Sponsored fees are not available.');
+    const day = Date.now() - 86_400_000;
+    if (Number(this.sql.exec('SELECT COUNT(*) AS n FROM sponsored WHERE uid = ? AND ts > ?', u.id, day).one().n) >= 30) return fail('Daily limit of sponsored purchases reached. Try again tomorrow.');
+    let out;
+    try {
+      out = await cosignPurchase(t, house, String(b.tx ?? ''), {
+        priceOf: (memo) => {
+          const row = this.sql.exec('SELECT uid FROM pay_memos WHERE memo = ?', memo).toArray()[0] as { uid: string } | undefined;
+          if (!row || row.uid !== u.id) return null;
+          const sk = /^RaceTrench skin ([a-z0-9]+) /.exec(memo);
+          if (sk) return isSkin(sk[1]) ? skinPrice(skinById(sk[1]), t.price) : null;
+          return /^RaceTrench ticket /.test(memo) ? t.price : null;
+        },
+      });
+    } catch (e) {
+      return fail((e as Error).message);
+    }
+    this.sql.exec('INSERT OR IGNORE INTO sponsored (sig, uid, ts) VALUES (?, ?, ?)', out.signature, u.id, Date.now());
+    try {
+      await sendWire(t, out.wire);
+    } catch (e) {
+      return fail(`The network refused the payment: ${(e as Error).message.slice(0, 200)}`);
+    }
+    return json({ ok: true, signature: out.signature });
+  }
+
   /** Recovery: the browser lists its wallet's recent RaceTrench payments; credit the ones not counted yet. */
   private async recoverPayments(u: UserRow, b: { signatures?: unknown }): Promise<Response> {
     const sigs = (Array.isArray(b.signatures) ? b.signatures : []).map(String).slice(0, 25);
@@ -559,6 +665,20 @@ export class Hub {
       this.sql.exec("INSERT INTO payouts (lobby, kind, uid, amount, ts) VALUES (?, 'prize', ?, ?, ?)", id, winner.uid, s.prize, now);
       this.sql.exec("INSERT INTO payouts (lobby, kind, uid, amount, ts) VALUES (?, 'burn', NULL, ?, ?)", id, s.burn, now);
       this.sql.exec("INSERT INTO payouts (lobby, kind, uid, amount, ts) VALUES (?, 'team', NULL, ?, ?)", id, s.team, now);
+      // Paid to the wallet that paid for the winning seat.
+      const w = this.sql.exec('SELECT wallet FROM tickets WHERE sig = ?', winner.ticket).toArray()[0] as { wallet: string } | undefined;
+      this.sql.exec(
+        'INSERT OR IGNORE INTO lobby_payouts (lobby, uid, wallet, prize, burn, team, status, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        id,
+        winner.uid,
+        w?.wallet ?? null,
+        s.prize,
+        s.burn,
+        s.team,
+        w?.wallet ? 'pending' : 'manual',
+        now,
+      );
+      void this.state.storage.setAlarm(now + 2000); // pay soon
     });
   }
 
@@ -589,7 +709,9 @@ export class Hub {
       note: r.note,
     }));
     const s = split(Math.max(runs.length, 1), l.price);
+    const po = this.sql.exec('SELECT status, sig FROM lobby_payouts WHERE lobby = ?', id).toArray()[0] as { status: string; sig: string | null } | undefined;
     return {
+      payout: po ? { status: po.status, sig: po.status === 'paid' ? po.sig : null } : null,
       lobby: { id: l.id, status: l.status, created: l.created, settleBy: l.created + SETTLE_AFTER_MS, seats: runs.length, maxSeats: SEATS, price: l.price, pot: s.pot, prize: s.prize, youWon: l.status === 'settled' && l.winner === uid },
       seats,
     };
@@ -904,6 +1026,11 @@ export class Hub {
     // Ticketed lobbies: players who left count as DNF; settle or refund lobbies past 30 minutes.
     this.expireRuns(now);
     for (const r of this.sql.exec("SELECT id FROM lobbies WHERE status = 'open'").toArray()) this.updateLobby(String(r.id), now);
+    try {
+      await this.processPayouts();
+    } catch (e) {
+      console.log('payouts', (e as Error).message);
+    }
     if (this.cfg.supabase) {
       try {
         await this.syncLeagueMarkets(now);
@@ -914,7 +1041,8 @@ export class Hub {
     // Keep ticking while people are around (or bets are waiting to be settled).
     const pending =
       Number(this.sql.exec("SELECT COUNT(*) AS n FROM markets WHERE status IN ('open','closed')").one().n) +
-      Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobbies WHERE status = 'open'").one().n);
+      Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobbies WHERE status = 'open'").one().n) +
+      Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobby_payouts WHERE status IN ('pending','sent')").one().n);
     if (pending > 0 || now - this.lastActivity < 3600_000) await this.state.storage.setAlarm(now + 60_000);
   }
 

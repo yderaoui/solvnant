@@ -52,6 +52,9 @@ export interface GameConfig {
   siteUrl: string; // where to send people back after X login
   gate: GateConfig | null;
   tickets: TicketConfig | null;
+  /** The house wallet's secret key (HOUSE_SECRET): pays winners and players' fees. Never sent anywhere. */
+  houseSecret: string | null;
+  teamWallet: string | null; // receives the 5% team share of each pot
   points: PointsConfig;
   supabase: { url: string; key: string } | null;
   betsCloseAt: number; // live races: bets close when the leader has done this fraction of the distance
@@ -96,6 +99,8 @@ export function readConfig(env: Env): GameConfig {
             verifyKey: env.TICKET_VERIFY_KEY || undefined,
           }
         : null,
+    houseSecret: env.HOUSE_SECRET?.trim() || null,
+    teamWallet: env.TEAM_WALLET?.trim() || null,
     points: {
       signup: num(env.POINTS_SIGNUP, 1000),
       daily: num(env.POINTS_DAILY, 100),

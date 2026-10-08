@@ -160,7 +160,8 @@ export async function readPayment(cfg: TicketConfig, signature: string, fetchFn:
   const bal = (list: TokenBalance[] | undefined) =>
     (list ?? []).filter((b) => b.owner === cfg.treasury && b.mint === cfg.mint).reduce((s, b) => s + (b.uiTokenAmount.uiAmount ?? 0), 0);
   const amount = bal(tx.meta.postTokenBalances) - bal(tx.meta.preTokenBalances);
-  const wallet = tx.transaction.message.accountKeys.find((k) => k.signer)?.pubkey ?? '';
+  // who paid: the signer that isn't the house (the house co-signs sponsored payments as fee payer)
+  const wallet = tx.transaction.message.accountKeys.find((k) => k.signer && k.pubkey !== cfg.treasury)?.pubkey ?? '';
   return { wallet, amount, memos };
 }
 

@@ -4,6 +4,7 @@
 name = "ai-grand-prix-game"
 main = "src/game/worker.ts"
 compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"] # @solana/kit (house wallet signing)
 
 [[durable_objects.bindings]]
 name = "ROOM"

@@ -17,3 +17,6 @@ scratch
 
 # devnet test keys (never commit)
 .devnet/
+
+# big original 3D exports (the optimized copies live in public/assets/characters)
+characters/*-source.glb

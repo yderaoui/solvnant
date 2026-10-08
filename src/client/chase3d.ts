@@ -2,7 +2,7 @@
 // heading h -> rotation.y = -h. Loaded on demand so the 2D map pages never download three.js or the assets.
 //
 // Assets (public/assets, credited in README):
-//   - Ferrari 458 Italia model by vicent091036 (from the three.js examples)
+//   - Orangie turbo wheelchair racer (made with Tripo, public/assets/characters)
 //   - Poly Haven CC0: asphalt_02, aerial_grass_rock, pine_bark textures; rogland_clear_night HDRI
 // Everything else (trees, crowd, stands, fences, kerbs, ad boards) is generated here.
 import * as THREE from 'three';
@@ -18,6 +18,7 @@ import { Rng } from '../sim/rng';
 import type { Obstacles } from '../sim/obstacles';
 import type { CarVisual } from './renderer';
 import { buildKart } from './kart';
+import { buildOrangie, loadOrangie, orangieLoaded } from './orangie';
 import { CARD_H, CARD_W, MAX_IMPACTS, MAX_CARS_UNIFORM, VARIANTS, bakeAtlas, cardMaterial, crowdUniforms, humanGeometry, humanMaterial, lookAttributes, type CrowdUniforms } from './crowd3d';
 
 const ASSET = (p: string) => `${import.meta.env.BASE_URL}assets/${p}`;
@@ -222,7 +223,7 @@ export class Chase3D {
         () => done(),
       ),
     );
-    const car = Promise.resolve(); // the racers are built in code (kart.ts): nothing to download
+    const car = loadOrangie(); // the racer model (Orangie on his turbo wheelchair)
 
     this.cu = crowdUniforms();
     this.humanMat = humanMaterial(this.cu);
@@ -837,10 +838,10 @@ export class Chase3D {
       this.carGroup.remove(c.root);
     }
     this.cars = entries.map((e, i) => {
-      const m = orangeKart(e.color);
+      const m = racer(e.color);
       if (i !== you) {
         m.label = labelSprite(e.name, e.color);
-        m.label.position.set(0, 3.5, 0);
+        m.label.position.set(0, 4, 0);
         m.root.add(m.label);
       }
       this.carGroup.add(m.root);
@@ -1095,7 +1096,7 @@ export class Chase3D {
         o.visible = true;
       }
     });
-    const extra = orangeKart('#ffffff').root;
+    const extra = racer('#ffffff').root;
     if (extra) this.scene.add(extra);
     const prev = gl.getRenderTarget();
     gl.setRenderTarget(this.composer.renderTarget1);
@@ -1222,8 +1223,8 @@ export class Chase3D {
       const dx = Math.cos(f.h),
         dz = Math.sin(f.h);
       const back = 8.8 + Math.min(3, f.speed * 0.04);
-      const want = new THREE.Vector3(f.x - dx * back, 2.9 + Math.min(0.8, f.speed * 0.01), f.y - dz * back);
-      const look = new THREE.Vector3(f.x + dx * 8, 1.0, f.y + dz * 8);
+      const want = new THREE.Vector3(f.x - dx * back, 4.4 + Math.min(0.8, f.speed * 0.01), f.y - dz * back); // high enough to see the rider over the engine
+      const look = new THREE.Vector3(f.x + dx * 8, 1.6, f.y + dz * 8);
       if (this.snap) {
         this.camPos.copy(want);
         this.camLook.copy(look);
@@ -1767,8 +1768,21 @@ function jitter(geo: THREE.BufferGeometry, amt: number, seed: number) {
 
 // ====================================================================== cars
 
-/** Cabin/brake detail that can't be seen from a chase camera (~100k of the model's 360k triangles). */
-/** A racer: the orange in a rocket office chair (kart.ts), turned to face +X, with a cheap far LOD. */
+/** A racer: Orangie on his turbo wheelchair, or the code-built kart if the model didn't load. */
+function racer(color: string): CarModel {
+  if (!orangieLoaded()) return orangeKart(color);
+  const k = buildOrangie(color);
+  const lod = new THREE.LOD();
+  lod.addLevel(k.model, 0);
+  lod.addLevel(k.far, 55);
+  const body = new THREE.Group();
+  body.add(lod);
+  const root = new THREE.Group();
+  root.add(body);
+  return { root, body, wheels: [], front: [], tail: null, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null], wheelR: 1, animate: k.animate };
+}
+
+/** Fallback racer: the orange in a rocket office chair (kart.ts), turned to face +X, with a cheap far LOD. */
 function orangeKart(color: string): CarModel {
   const k = buildKart(color);
   k.model.rotation.y = -Math.PI / 2; // built facing -Z; our cars face +X

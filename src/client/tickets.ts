@@ -26,20 +26,46 @@ export const ticketsOn = () => !!account.cfg?.tickets;
  * Throws with a readable message (wallet missing, rejected, not enough coins, …).
  */
 /** The wallet that pays: the Privy wallet when Privy is on, else Phantom (or another injected wallet). */
-async function payer(): Promise<{ address: string; send: (tx: import('@solana/web3.js').Transaction) => Promise<string> }> {
+type Web3 = typeof import('@solana/web3.js');
+interface Payer {
+  address: string;
+  /** Sign and send; `signed(sig)` is called as soon as the transaction's id is known (before sending). */
+  send: (tx: import('@solana/web3.js').Transaction, conn: import('@solana/web3.js').Connection, signed: (sig: string) => void) => Promise<string>;
+}
+
+async function payer(): Promise<Payer> {
   const { privyOn, privyWallet } = await import('./privy/client');
   if (privyOn()) {
     const w = await privyWallet();
+    const web3: Web3 = await import('@solana/web3.js');
     const { base58Encode } = await import('../game/solana');
     return {
       address: w.address,
-      send: async (tx) => base58Encode(await w.signAndSend(new Uint8Array(tx.serialize({ requireAllSignatures: false, verifySignatures: false })))),
+      // Privy only signs; we send it ourselves. Privy's own send-and-confirm reported failures for
+      // payments that had in fact gone through (its confirmation step broke), so the game never
+      // learned the transaction id.
+      send: async (tx, conn, signed) => {
+        const bytes = await w.sign(new Uint8Array(tx.serialize({ requireAllSignatures: false, verifySignatures: false })));
+        const sigBytes = web3.Transaction.from(bytes).signature;
+        if (!sigBytes) throw new Error('The wallet did not sign the payment.');
+        const sig = base58Encode(new Uint8Array(sigBytes));
+        signed(sig);
+        await conn.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 5 });
+        return sig;
+      },
     };
   }
   const provider = walletProvider();
   if (!provider) throw new Error('No Solana wallet found. Install Phantom (phantom.app), then reload this page.');
   const { publicKey } = await provider.connect();
-  return { address: publicKey.toString(), send: async (tx) => (await provider.signAndSendTransaction(tx)).signature };
+  return {
+    address: publicKey.toString(),
+    send: async (tx, _conn, signed) => {
+      const sig = (await provider.signAndSendTransaction(tx)).signature;
+      signed(sig);
+      return sig;
+    },
+  };
 }
 
 export async function buyTicket(step: (text: string) => void): Promise<number> {
@@ -99,12 +125,21 @@ async function payCoins(intentPath: string, intentBody: object, claimPath: strin
   tx.recentBlockhash = (await conn.getLatestBlockhash('confirmed')).blockhash;
   step(`Approve ${intent.price} ${intent.symbol} in your wallet…`);
   let signature: string;
+  let known: string | null = null;
   try {
-    signature = await wallet.send(tx);
+    signature = await wallet.send(tx, conn, (sig) => {
+      known = sig;
+      remember(pendingKey, sig); // credited later even if this page closes now
+    });
   } catch (e) {
-    console.error('payment: the wallet could not send', e, (e as { cause?: unknown }).cause);
-    const why = [(e as Error).message, String((e as { cause?: { message?: string } }).cause?.message ?? '')].filter(Boolean).join(' / ');
-    throw new Error(/reject|cancel|denied|closed/i.test(why) ? 'You cancelled the payment.' : `Wallet error: ${why}`);
+    if (known) {
+      // Signed, and the send reported a problem: it may still land. Let the server look for it.
+      signature = known;
+    } else {
+      console.error('payment: the wallet could not send', e, (e as { cause?: unknown }).cause);
+      const why = [(e as Error).message, String((e as { cause?: { message?: string } }).cause?.message ?? '')].filter(Boolean).join(' / ');
+      throw new Error(/reject|cancel|denied|closed/i.test(why) ? 'You cancelled the payment.' : `Wallet error: ${why}`);
+    }
   }
   step('Waiting for the network to confirm…');
   remember(pendingKey, signature);
@@ -177,4 +212,30 @@ export async function getTestCoins(step: (text: string) => void): Promise<string
   const sym = account.cfg?.tickets?.symbol ?? '$TRACK';
   const privy = (await import('./privy/client')).privyOn();
   return `Received ${j.coins} test ${sym}${j.sol ? ` and ${j.sol} test SOL for fees` : ''}.${privy ? ' You can buy a ticket now.' : ' Switch Phantom to the test network (Settings → Developer settings → Testnet mode → Solana Devnet) to see them.'}`;
+}
+
+/**
+ * Payments that reached the treasury but were never credited (the page closed, or the wallet reported
+ * an error after sending): list this wallet's recent RaceTrench payments and let the server credit them.
+ * Resolves with what was recovered.
+ */
+export async function recoverPayments(): Promise<{ tickets: number; skins: string[] }> {
+  const none = { tickets: 0, skins: [] as string[] };
+  const t = account.cfg?.tickets;
+  if (!t || !account.me) return none;
+  const { privyOn, privyWallet } = await import('./privy/client');
+  if (!privyOn()) return none;
+  const w = await privyWallet(15_000);
+  const r = await fetch(t.rpcUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getSignaturesForAddress', params: [w.address, { limit: 25 }] }),
+  });
+  const list = ((await r.json()) as { result?: { signature: string; err: unknown; memo: string | null; blockTime: number | null }[] }).result ?? [];
+  const weekAgo = Date.now() / 1000 - 7 * 86400;
+  const sigs = list.filter((x) => !x.err && x.memo?.includes('RaceTrench ') && (x.blockTime ?? 0) > weekAgo).map((x) => x.signature);
+  if (!sigs.length) return none;
+  const res = await account.api<{ tickets: number; skins: string[]; me: import('./account').Me }>('/api/pay/recover', { signatures: sigs });
+  if (res.me) account.setMe(res.me);
+  return { tickets: res.tickets, skins: res.skins };
 }

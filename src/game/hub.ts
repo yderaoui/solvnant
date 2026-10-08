@@ -4,7 +4,7 @@
 // are only reachable from the live race room (the Worker never forwards /internal from outside).
 import { publicConfig, publicTickets, readConfig, type GameConfig } from './config';
 import { bearer, randomToken, signSession, verifySession, type Session } from './auth';
-import { isSolanaAddress, tokenHolding, verifyTicketPayment, verifyWalletSignature, walletMessage } from './solana';
+import { isSolanaAddress, readPayment, tokenHolding, verifyWalletSignature, walletMessage } from './solana';
 import { poolOdds, prizeSplit, settlePool } from './economy';
 import { PLAYER_COLORS, cleanName } from './protocol';
 import { SEATS, SETTLE_AFTER_MS, COUNTDOWN_S, MAX_RACE_S, SUBMIT_SLACK_S, badLog, lobbyVerdict, rank, replayRun, split, submittedInTime } from './lobbies';
@@ -111,6 +111,8 @@ export class Hub {
       ts INTEGER NOT NULL, PRIMARY KEY (uid, skin))`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS skin_memos (uid TEXT PRIMARY KEY, skin TEXT NOT NULL, memo TEXT NOT NULL, ts INTEGER NOT NULL)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS skin_choice (uid TEXT PRIMARY KEY, skin TEXT NOT NULL)`);
+    // Every payment memo handed out, so any of them can be claimed later (not only the latest one).
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS pay_memos (memo TEXT PRIMARY KEY, uid TEXT NOT NULL, ts INTEGER NOT NULL)`);
     // Ticketed ghost lobbies (lobbies.ts): 5 seats, winner takes all.
     this.sql.exec(`CREATE TABLE IF NOT EXISTS lobbies (
       id TEXT PRIMARY KEY, seed TEXT NOT NULL, price REAL NOT NULL, status TEXT NOT NULL,
@@ -168,6 +170,8 @@ export class Hub {
           return this.ticketIntent(u);
         case '/api/ticket/claim':
           return await this.ticketClaim(u, (await req.json()) as { signature?: string });
+        case '/api/pay/recover':
+          return await this.recoverPayments(u, (await req.json()) as { signatures?: unknown });
         case '/api/lobby/join':
           return this.lobbyJoin(u, (await req.json()) as { color?: string });
         case '/api/lobby/submit':
@@ -347,25 +351,92 @@ export class Hub {
     if (!t) return fail('Coin tickets are not set up on this server.');
     const memo = `RaceTrench ticket ${randomToken(9)}`;
     this.sql.exec('INSERT OR REPLACE INTO ticket_memos (uid, memo, ts) VALUES (?, ?, ?)', u.id, memo, Date.now());
+    this.sql.exec('INSERT OR IGNORE INTO pay_memos (memo, uid, ts) VALUES (?, ?, ?)', memo, u.id, Date.now());
     return json({ memo, ...publicTickets(t) });
   }
 
-  /** The player paid: check the transaction on-chain and credit one ticket (once per signature). */
+  /** The player paid for a ticket: check it on-chain and credit it (once per signature). */
   private async ticketClaim(u: UserRow, b: { signature?: string }): Promise<Response> {
+    const r = await this.claimPayment(u, String(b.signature ?? ''));
+    if (r.error) return fail(r.error);
+    return json({ ok: r.ok, pending: r.pending, tickets: this.ticketsLeft(u.id) });
+  }
+
+  /**
+   * Credit one on-chain payment to this player: a ticket ("RaceTrench ticket …" memo) or a racer
+   * ("RaceTrench skin <id> …"). It's theirs if the memo was handed to them, or if it was paid from a wallet
+   * that already paid for this account (so payments whose confirmation the browser never saw can be
+   * recovered later). Each transaction counts once.
+   */
+  private async claimPayment(u: UserRow, sig: string): Promise<{ ok: boolean; pending?: boolean; kind?: 'ticket' | 'skin'; skin?: string; error?: string }> {
     const t = this.cfg.tickets;
-    if (!t) return fail('Coin tickets are not set up on this server.');
-    const sig = String(b.signature ?? '');
-    const seen = this.sql.exec('SELECT uid FROM tickets WHERE sig = ?', sig).toArray()[0] as { uid: string } | undefined;
-    if (seen) return seen.uid === u.id ? json({ ok: true, tickets: this.ticketsLeft(u.id) }) : fail('That payment was already used.');
-    const row = this.sql.exec('SELECT memo, ts FROM ticket_memos WHERE uid = ?', u.id).toArray()[0] as { memo: string; ts: number } | undefined;
-    if (!row || Date.now() - row.ts > 30 * 60_000) return fail('The ticket purchase expired. Start again.');
-    const paid = await verifyTicketPayment(t, sig, row.memo);
-    if (!paid) return json({ ok: false, pending: true }); // not confirmed yet: the client retries
+    if (!t) return { ok: false, error: 'Coin payments are not set up on this server.' };
+    const usedT = this.sql.exec('SELECT uid FROM tickets WHERE sig = ?', sig).toArray()[0] as { uid: string } | undefined;
+    const usedS = this.sql.exec('SELECT uid, skin FROM skins WHERE sig = ?', sig).toArray()[0] as { uid: string; skin: string } | undefined;
+    if (usedT || usedS) return (usedT ?? usedS)!.uid === u.id ? { ok: true, kind: usedT ? 'ticket' : 'skin', skin: usedS?.skin } : { ok: false, error: 'That payment was already used.' };
+    let paid;
+    try {
+      paid = await readPayment(t, sig);
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+    if (!paid) return { ok: false, pending: true };
+    const memo = paid.memos.find((m) => /^RaceTrench (ticket|skin) /.test(m));
+    if (!memo) return { ok: false, error: 'This payment is not a RaceTrench purchase.' };
+    const handed = this.sql.exec('SELECT uid FROM pay_memos WHERE memo = ?', memo).toArray()[0] as { uid: string } | undefined;
+    const legacy =
+      this.sql.exec('SELECT 1 FROM ticket_memos WHERE uid = ? AND memo = ?', u.id, memo).toArray().length > 0 ||
+      this.sql.exec('SELECT 1 FROM skin_memos WHERE uid = ? AND memo = ?', u.id, memo).toArray().length > 0;
+    const knownWallet =
+      !!paid.wallet &&
+      (this.sql.exec('SELECT 1 FROM tickets WHERE uid = ? AND wallet = ? LIMIT 1', u.id, paid.wallet).toArray().length > 0 ||
+        this.sql.exec('SELECT 1 FROM skins WHERE uid = ? AND wallet = ? LIMIT 1', u.id, paid.wallet).toArray().length > 0);
+    const mine = handed ? handed.uid === u.id : legacy || knownWallet;
+    if (!mine) return { ok: false, error: 'This payment is not for this account (memo mismatch).' };
+    const now = Date.now();
+    const sk = /^RaceTrench skin ([a-z0-9]+) /.exec(memo);
+    if (sk) {
+      if (!isSkin(sk[1])) return { ok: false, error: 'Unknown racer in that payment.' };
+      const skin = skinById(sk[1]);
+      const price = skinPrice(skin, t.price);
+      if (paid.amount + 1e-9 < price) return { ok: false, error: `The treasury received ${paid.amount} coins, this costs ${price}.` };
+      this.state.storage.transactionSync(() => {
+        const owned = this.sql.exec('SELECT 1 FROM skins WHERE uid = ? AND skin = ?', u.id, skin.id).toArray().length > 0;
+        if (owned) {
+          // Paid twice for the same racer: count the extra payment as tickets instead of losing it.
+          const n = Math.floor((paid.amount + 1e-9) / t.price);
+          for (let k = 0; k < n; k++) this.sql.exec('INSERT OR IGNORE INTO tickets (sig, uid, wallet, amount, ts, mint) VALUES (?, ?, ?, ?, ?, ?)', k ? `${sig}#${k}` : sig, u.id, paid.wallet, t.price, now, t.mint);
+        } else {
+          this.sql.exec('INSERT OR IGNORE INTO skins (uid, skin, sig, wallet, amount, ts) VALUES (?, ?, ?, ?, ?, ?)', u.id, skin.id, sig, paid.wallet, paid.amount, now);
+          this.sql.exec('INSERT OR REPLACE INTO skin_choice (uid, skin) VALUES (?, ?)', u.id, skin.id);
+        }
+        this.sql.exec('DELETE FROM skin_memos WHERE uid = ? AND memo = ?', u.id, memo);
+      });
+      return { ok: true, kind: 'skin', skin: skin.id };
+    }
+    if (paid.amount + 1e-9 < t.price) return { ok: false, error: `The treasury received ${paid.amount} coins, this costs ${t.price}.` };
     this.state.storage.transactionSync(() => {
-      this.sql.exec('INSERT OR IGNORE INTO tickets (sig, uid, wallet, amount, ts, mint) VALUES (?, ?, ?, ?, ?, ?)', sig, u.id, paid.wallet, paid.amount, Date.now(), t.mint);
-      this.sql.exec('DELETE FROM ticket_memos WHERE uid = ?', u.id);
+      this.sql.exec('INSERT OR IGNORE INTO tickets (sig, uid, wallet, amount, ts, mint) VALUES (?, ?, ?, ?, ?, ?)', sig, u.id, paid.wallet, paid.amount, now, t.mint);
+      this.sql.exec('DELETE FROM ticket_memos WHERE uid = ? AND memo = ?', u.id, memo);
     });
-    return json({ ok: true, tickets: this.ticketsLeft(u.id) });
+    return { ok: true, kind: 'ticket' };
+  }
+
+  /** Recovery: the browser lists its wallet's recent RaceTrench payments; credit the ones not counted yet. */
+  private async recoverPayments(u: UserRow, b: { signatures?: unknown }): Promise<Response> {
+    const sigs = (Array.isArray(b.signatures) ? b.signatures : []).map(String).slice(0, 25);
+    let tickets = 0;
+    const skins: string[] = [];
+    // Twice: once a payment is credited its wallet is known, which can make the others claimable.
+    for (let pass = 0; pass < 2; pass++)
+      for (const sig of sigs) {
+        const before = this.sql.exec('SELECT 1 FROM tickets WHERE sig = ? UNION SELECT 1 FROM skins WHERE sig = ?', sig, sig).toArray().length;
+        if (before) continue;
+        const r = await this.claimPayment(u, sig);
+        if (r.ok && r.kind === 'ticket') tickets++;
+        if (r.ok && r.kind === 'skin' && r.skin) skins.push(r.skin);
+      }
+    return json({ ok: true, tickets, skins, ticketsLeft: this.ticketsLeft(u.id), me: await this.me(this.user(u.id)!) });
   }
 
   // ================================================================== ticketed ghost lobbies
@@ -559,29 +630,15 @@ export class Hub {
     if (this.ownedSkins(u.id).includes(skin.id)) return fail('You already own this skin.');
     const memo = `RaceTrench skin ${skin.id} ${randomToken(9)}`;
     this.sql.exec('INSERT OR REPLACE INTO skin_memos (uid, skin, memo, ts) VALUES (?, ?, ?, ?)', u.id, skin.id, memo, Date.now());
+    this.sql.exec('INSERT OR IGNORE INTO pay_memos (memo, uid, ts) VALUES (?, ?, ?)', memo, u.id, Date.now());
     return json({ memo, ...publicTickets(t), price: skinPrice(skin, t.price) });
   }
 
-  /** The player paid for a skin: check it on-chain, unlock it and put it on. */
+  /** The player paid for a racer: check it on-chain, unlock it and put it on. */
   private async skinClaim(u: UserRow, b: { signature?: string }): Promise<Response> {
-    const t = this.cfg.tickets;
-    if (!t) return fail('Coin payments are not set up on this server.');
-    const sig = String(b.signature ?? '');
-    const seen = this.sql.exec('SELECT uid FROM skins WHERE sig = ?', sig).toArray()[0] as { uid: string } | undefined;
-    const seenTicket = this.sql.exec('SELECT uid FROM tickets WHERE sig = ?', sig).toArray().length > 0;
-    if (seen?.uid === u.id) return json({ ok: true, skin: this.chosenSkin(u.id), skins: this.ownedSkins(u.id) });
-    if (seen || seenTicket) return fail('That payment was already used.');
-    const row = this.sql.exec('SELECT skin, memo, ts FROM skin_memos WHERE uid = ?', u.id).toArray()[0] as { skin: string; memo: string; ts: number } | undefined;
-    if (!row || Date.now() - row.ts > 30 * 60_000) return fail('The skin purchase expired. Start again.');
-    const skin = skinById(row.skin);
-    const paid = await verifyTicketPayment({ ...t, price: skinPrice(skin, t.price) }, sig, row.memo);
-    if (!paid) return json({ ok: false, pending: true }); // not confirmed yet: the client retries
-    this.state.storage.transactionSync(() => {
-      this.sql.exec('INSERT OR IGNORE INTO skins (uid, skin, sig, wallet, amount, ts) VALUES (?, ?, ?, ?, ?, ?)', u.id, skin.id, sig, paid.wallet, paid.amount, Date.now());
-      this.sql.exec('INSERT OR REPLACE INTO skin_choice (uid, skin) VALUES (?, ?)', u.id, skin.id);
-      this.sql.exec('DELETE FROM skin_memos WHERE uid = ?', u.id);
-    });
-    return json({ ok: true, skin: skin.id, skins: this.ownedSkins(u.id) });
+    const r = await this.claimPayment(u, String(b.signature ?? ''));
+    if (r.error) return fail(r.error);
+    return json({ ok: r.ok, pending: r.pending, skin: this.chosenSkin(u.id), skins: this.ownedSkins(u.id) });
   }
 
   /** Give back tickets held for a race that this player didn't end up driving in. */

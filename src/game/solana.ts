@@ -124,11 +124,17 @@ interface ParsedTx {
   };
 }
 
+export interface Payment {
+  wallet: string; // who paid (the fee payer / signer)
+  amount: number; // coins received by the treasury
+  memos: string[];
+}
+
 /**
- * Check a ticket payment on-chain: the transaction succeeded, carries our one-time memo, and moved at
- * least `price` of the coin into the treasury wallet. Returns null if it isn't visible yet (retry).
+ * Read a payment on-chain: the transaction succeeded; returns who paid, how many coins the treasury
+ * received and the memos it carries. Null if it isn't visible yet (or the RPC is busy): retry.
  */
-export async function verifyTicketPayment(cfg: TicketConfig, signature: string, memo: string, fetchFn: typeof fetch = fetch): Promise<TicketPayment | null> {
+export async function readPayment(cfg: TicketConfig, signature: string, fetchFn: typeof fetch = fetch): Promise<Payment | null> {
   if (!/^[1-9A-HJ-NP-Za-km-z]{60,100}$/.test(signature)) throw new Error('That is not a transaction signature.');
   // Public RPCs often refuse or rate-limit (403/429/5xx, timeouts): treat that as "not visible yet" so
   // the client keeps retrying instead of the player losing a paid ticket.
@@ -151,11 +157,21 @@ export async function verifyTicketPayment(cfg: TicketConfig, signature: string, 
   if (!tx || !tx.meta) return null; // not confirmed yet
   if (tx.meta.err) throw new Error('The payment transaction failed on-chain.');
   const memos = tx.transaction.message.instructions.filter((i) => i.program === 'spl-memo').map((i) => String(i.parsed));
-  if (!memos.includes(memo)) throw new Error('This payment is not for this ticket (memo mismatch).');
   const bal = (list: TokenBalance[] | undefined) =>
     (list ?? []).filter((b) => b.owner === cfg.treasury && b.mint === cfg.mint).reduce((s, b) => s + (b.uiTokenAmount.uiAmount ?? 0), 0);
-  const received = bal(tx.meta.postTokenBalances) - bal(tx.meta.preTokenBalances);
-  if (received + 1e-9 < cfg.price) throw new Error(`The treasury received ${received} coins, this costs ${cfg.price}.`);
+  const amount = bal(tx.meta.postTokenBalances) - bal(tx.meta.preTokenBalances);
   const wallet = tx.transaction.message.accountKeys.find((k) => k.signer)?.pubkey ?? '';
-  return { wallet, amount: received };
+  return { wallet, amount, memos };
+}
+
+/**
+ * Check a ticket payment on-chain: the transaction succeeded, carries our one-time memo, and moved at
+ * least `price` of the coin into the treasury wallet. Returns null if it isn't visible yet (retry).
+ */
+export async function verifyTicketPayment(cfg: TicketConfig, signature: string, memo: string, fetchFn: typeof fetch = fetch): Promise<TicketPayment | null> {
+  const p = await readPayment(cfg, signature, fetchFn);
+  if (!p) return null;
+  if (!p.memos.includes(memo)) throw new Error('This payment is not for this ticket (memo mismatch).');
+  if (p.amount + 1e-9 < cfg.price) throw new Error(`The treasury received ${p.amount} coins, this costs ${cfg.price}.`);
+  return { wallet: p.wallet, amount: p.amount };
 }

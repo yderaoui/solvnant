@@ -18,7 +18,7 @@ export interface PrivyState {
   logout: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
   /** The player's Solana wallet: Privy's embedded one if there is one, else a connected external one. */
-  wallet: { address: string; embedded: boolean; signAndSend: (tx: Uint8Array) => Promise<Uint8Array> } | null;
+  wallet: { address: string; embedded: boolean; signAndSend: (tx: Uint8Array) => Promise<Uint8Array>; sign: (tx: Uint8Array) => Promise<Uint8Array> } | null;
 }
 
 function Bridge({ chain, onState }: { chain: SolanaChain; onState: (s: PrivyState) => void }) {
@@ -38,6 +38,7 @@ function Bridge({ chain, onState }: { chain: SolanaChain; onState: (s: PrivyStat
             address: pick.address,
             embedded: /privy/i.test(pick.standardWallet.name),
             signAndSend: async (tx) => (await pick.signAndSendTransaction({ transaction: tx, chain })).signature,
+            sign: async (tx) => (await pick.signTransaction({ transaction: tx, chain })).signedTransaction,
           }
         : null,
     });

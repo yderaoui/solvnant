@@ -50,6 +50,19 @@ const leagueLobby = new LeagueLobby((html) => broadcast.center(html));
 const practice = new PracticeDrive();
 if (import.meta.env.DEV) (window as unknown as { __practice: PracticeDrive }).__practice = practice; // browser tests
 void accountLoading;
+// Once per visit, when signed in: credit any coin payment that reached the treasury but wasn't counted.
+let recovered = false;
+account.onChange(() => {
+  if (recovered || !account.me || !account.cfg?.tickets || !account.cfg.privy) return;
+  recovered = true;
+  void import('./tickets')
+    .then((t) => t.recoverPayments())
+    .then((r) => {
+      const parts = [r.tickets ? `${r.tickets} ticket${r.tickets === 1 ? '' : 's'}` : '', ...r.skins.map((s) => `the ${s.toUpperCase()} racer`)].filter(Boolean);
+      if (parts.length) toast(`Recovered your earlier payment${parts.length > 1 || r.tickets > 1 ? 's' : ''}: ${parts.join(' and ')}.`);
+    })
+    .catch((e) => console.warn('payment recovery', e));
+});
 
 broadcast.onSelectCar = (car) => {
   const race = broadcast.race;

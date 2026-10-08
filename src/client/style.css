@@ -1002,3 +1002,16 @@ nav::-webkit-scrollbar { display: none; }
 .bay-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .bay-step:empty { display: none; }
 .bay.empty { opacity: 0.45; border-style: dashed; }
+
+/* test drive: racer picker */
+.drive-only { display: none !important; }
+body[data-page='drive'] .drive-only { display: inline-flex !important; }
+.pd-try { margin-top: var(--s4); }
+.pd-racers { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: var(--s2); }
+.pd-racer { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 4px 6px; border-radius: var(--r); border: 1px solid var(--line-strong); background: rgba(255, 255, 255, 0.03); color: var(--text); font-size: 11px; font-weight: 700; cursor: pointer; min-width: 0; transition: border-color var(--fast), background var(--fast); }
+.pd-racer img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; }
+.pd-racer span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-racer:hover { border-color: var(--lime); }
+.pd-racer.on { border-color: var(--lime); background: rgba(164, 99, 255, 0.14); box-shadow: 0 0 0 1px var(--lime); }
+@media (max-width: 520px) { .pd-racers { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.go-flash.held { visibility: hidden; } /* test drive paused behind the racer picker */

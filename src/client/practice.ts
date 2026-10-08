@@ -12,8 +12,8 @@ import { audio, get3d, load3d } from './view3d';
 import { drawMinimap, fmt } from './livegame';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
-import { driveSkin } from './garage';
-import { botSkin } from '../game/skins';
+import { driveSkin, setTrySkin } from './garage';
+import { SKINS, botSkin, skinById } from '../game/skins';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const BOTS = 5;
@@ -37,11 +37,14 @@ export class PracticeDrive {
   private raf = 0;
   private seed = '';
   private finished = false;
+  private picking = false; // the racer picker is open: the race is paused
+  private pausedAt = 0;
 
   constructor() {
     window.addEventListener('keydown', (e) => this.onKey(e, true));
     window.addEventListener('keyup', (e) => this.onKey(e, false));
     window.addEventListener('blur', () => this.keys.clear());
+    $('drv-racer').onclick = () => this.active && this.pickRacer();
     for (const b of document.querySelectorAll<HTMLElement>('[data-touch]')) {
       const k = b.dataset.touch!;
       b.addEventListener('pointerdown', () => this.active && this.keys.add(k));
@@ -51,6 +54,8 @@ export class PracticeDrive {
 
   async start(seed?: string) {
     this.active = true;
+    this.picking = false;
+    $('go-flash').classList.remove('held');
     this.seed = seed ?? `drive-${Math.floor(Math.random() * 1e9).toString(36)}`;
     document.body.classList.add('is-live', 'is-racing', 'view-3d');
     $('cam-chase').classList.add('active');
@@ -103,7 +108,8 @@ export class PracticeDrive {
     get3d()?.setVisible(false);
     audio.update(0, 0, 0, 0, 1);
     this.center('');
-    $('go-flash').classList.remove('show');
+    $('go-flash').classList.remove('show', 'held');
+    this.picking = false;
     this.sim?.dispose();
     this.sim = null;
   }
@@ -119,6 +125,8 @@ export class PracticeDrive {
       if (down) this.keys.add(k);
       else this.keys.delete(k);
     } else if (down && e.code === 'KeyR' && this.finished) void this.start(this.seed);
+    else if (down && e.code === 'KeyP' && !e.repeat) this.picking ? this.resume() : this.pickRacer();
+    else if (down && e.code === 'Escape' && this.picking) this.resume();
   }
 
   private input(): Input {
@@ -132,6 +140,12 @@ export class PracticeDrive {
     const now = performance.now();
     const dt = Math.min(0.1, (now - this.lastWall) / 1000);
     this.lastWall = now;
+    if (this.picking) {
+      this.startAt += now - (this.pausedAt || now); // hold the countdown too
+      this.pausedAt = now;
+      return;
+    }
+    this.pausedAt = 0;
     const sim = this.sim;
     const input = this.input();
     // The race clock starts at lights out; before that the grid just sits there.
@@ -262,9 +276,52 @@ export class PracticeDrive {
           <button class="btn" id="pd-new">${icon('shuffle', 14)}New track</button>
           <a class="btn btn-lime" href="#/live">${icon('flag', 14)}PLAY FOR REAL</a>
         </div>
+        <div class="res-kicker pd-try">TRY ANOTHER RACER</div>
+        ${this.racerRow()}
       </div>`);
+    this.bindRacers();
     $('pd-again').onclick = () => void this.start(this.seed);
     $('pd-new').onclick = () => void this.start();
+  }
+
+  private racerRow(): string {
+    const cur = driveSkin();
+    return `<div class="pd-racers">${SKINS.map(
+      (s) =>
+        `<button class="pd-racer${s.id === cur ? ' on' : ''}" data-racer="${s.id}" aria-pressed="${s.id === cur}" title="${escapeHtml(s.name)}${s.price ? '' : ' (free)'}"><img src="${import.meta.env.BASE_URL}assets/characters/${s.file}.webp" alt="" loading="lazy" /><span>${escapeHtml(s.name)}</span></button>`,
+    ).join('')}</div>`;
+  }
+
+  private bindRacers() {
+    for (const b of document.querySelectorAll<HTMLButtonElement>('[data-racer]'))
+      b.onclick = () => {
+        setTrySkin(b.dataset.racer!);
+        void this.start(this.seed); // same track, new racer
+      };
+  }
+
+  /** The Racer button: pause the drive behind a picker of every racer. */
+  private pickRacer() {
+    if (this.finished || this.picking) return;
+    this.keys.clear();
+    this.picking = true;
+    $('go-flash').classList.add('held');
+    this.center(`
+      <div class="card results" role="dialog" aria-label="Pick a racer">
+        <div class="res-kicker">TEST DRIVE · ANY RACER, FREE</div>
+        <div class="res-head">${icon('car', 26)}PICK YOUR RACER</div>
+        <p class="muted small">Now: <b>${escapeHtml(skinById(driveSkin()).name)}</b>. Picking one restarts this track with it.</p>
+        ${this.racerRow()}
+        <div class="res-foot"><button class="btn" id="pd-close">${icon('x', 14)}Keep driving</button></div>
+      </div>`);
+    this.bindRacers();
+    $('pd-close').onclick = () => this.resume();
+  }
+
+  private resume() {
+    this.picking = false;
+    $('go-flash').classList.remove('held');
+    this.center('');
   }
 
   private center(html: string) {

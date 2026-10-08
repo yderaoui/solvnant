@@ -14,6 +14,11 @@ let trySkin: string | null = null; // picked with "Test drive" in the garage
 let busy: string | null = null; // skin being bought
 const steps = new Map<string, string>(); // progress / error text per skin
 
+/** Test drive: drive this racer (any of them, owned or not). */
+export function setTrySkin(id: string) {
+  trySkin = isSkin(id) ? id : null;
+}
+
 /** The skin you drive in the test drive: the one you're trying, else your own. */
 export function driveSkin(): string {
   return trySkin ?? mySkin();

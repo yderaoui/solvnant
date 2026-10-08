@@ -1,4 +1,6 @@
 // PixiJS renderer: track, cars, labels, tire smoke and a broadcast camera.
+// CSP-safe mode: PixiJS otherwise generates shader/uniform code with new Function (blocked by our Content-Security-Policy).
+import 'pixi.js/unsafe-eval';
 import { Application, Circle, Container, Graphics, Text } from 'pixi.js';
 import type { Track } from '../sim/track';
 import type { Obstacles } from '../sim/obstacles';

@@ -1051,3 +1051,48 @@ body[data-page='drive'] .drive-only { display: inline-flex !important; }
 @media (max-width: 1500px) {
   nav a[href="#/agent"] span, nav a[href="#/leaderboard"] span { display: none; }
 }
+
+/* ---------------------------------------------------------------- intro (lore) */
+.intro { position: fixed; inset: 0; z-index: 500; display: grid; place-items: center; padding: var(--s4); cursor: pointer;
+  background: radial-gradient(ellipse at 50% 30%, rgba(153, 69, 255, 0.28), transparent 60%), radial-gradient(ellipse at 50% 110%, rgba(20, 241, 149, 0.12), transparent 50%), #05060a;
+  animation: in-fade 0.35s ease-out; }
+.intro.out { opacity: 0; transition: opacity 0.3s; }
+.in-card { width: min(640px, 100%); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; animation: in-up 0.6s var(--ease-out); }
+.in-art { min-height: 170px; display: grid; place-items: center; width: 100%; margin-bottom: 8px; }
+.in-kicker { font-size: 12px; font-weight: 800; letter-spacing: 0.32em; color: var(--lime); animation: in-up 0.6s 0.1s var(--ease-out) both; }
+.in-title { margin: 0; font-family: var(--font-display); font-style: italic; font-weight: 900; font-size: clamp(34px, 7vw, 64px); line-height: 1.02; text-transform: uppercase; animation: in-up 0.6s 0.2s var(--ease-out) both; }
+.in-text { margin: 0; max-width: 46ch; color: #c4cad3; font-size: clamp(15px, 2.2vw, 18px); line-height: 1.5; animation: in-up 0.6s 0.35s var(--ease-out) both; }
+.in-cta { margin-top: 18px; min-height: 52px; padding: 0 28px; font-size: 16px; animation: in-up 0.6s 0.5s var(--ease-out) both, in-pulse 1.8s 1.2s ease-in-out infinite; }
+.in-dots { position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
+.in-dots i { width: 8px; height: 8px; border-radius: 99px; background: rgba(255, 255, 255, 0.2); transition: width 0.3s, background 0.3s; }
+.in-dots i.on { width: 26px; background: var(--lime); }
+.in-skip { position: absolute; top: 18px; right: 18px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line-strong); background: rgba(0, 0, 0, 0.4); color: var(--muted); font-weight: 700; font-size: 13px; cursor: pointer; }
+.in-skip:hover { color: var(--text); }
+.in-next { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--line-strong); background: rgba(0, 0, 0, 0.35); color: var(--text); font-size: 28px; cursor: pointer; }
+/* card art */
+.in-chart { position: relative; width: min(320px, 80vw); }
+.in-chart svg { width: 100%; overflow: visible; }
+.in-chart polyline { fill: none; stroke: #ff4d6d; stroke-width: 4; stroke-linejoin: round; stroke-dasharray: 500; stroke-dashoffset: 500; animation: in-draw 1.6s 0.2s ease-in forwards; filter: drop-shadow(0 0 8px rgba(255, 77, 109, 0.6)); }
+.in-chart span { position: absolute; right: -6px; bottom: -34px; font-family: var(--mono); font-weight: 700; color: #ff4d6d; font-size: 22px; opacity: 0; animation: in-fade 0.4s 1.6s forwards; }
+.in-bottle { position: relative; display: grid; place-items: center; }
+.in-bottle span { font-size: 96px; animation: in-tip 2.4s ease-in-out infinite; transform-origin: 50% 80%; filter: grayscale(0.6); }
+.in-bottle b { position: absolute; bottom: -4px; font-size: 13px; letter-spacing: 0.3em; color: #ff4d6d; border: 2px solid #ff4d6d; padding: 2px 8px; transform: rotate(-8deg); background: #05060a; }
+.in-ledger { position: relative; width: 190px; height: 170px; display: grid; place-items: center; }
+.in-glow { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, rgba(20, 241, 149, 0.55), rgba(153, 69, 255, 0.25) 45%, transparent 70%); animation: in-breathe 2.2s ease-in-out infinite; }
+.in-book { position: relative; width: 120px; height: 150px; border-radius: 8px 14px 14px 8px; display: grid; place-items: center; font-family: var(--font-display); font-style: italic; font-weight: 900; letter-spacing: 0.08em; color: #0d0618;
+  background: linear-gradient(135deg, #e9d9ff, #b77bff 45%, #9945ff); box-shadow: inset 8px 0 0 rgba(0, 0, 0, 0.25), 0 0 40px rgba(153, 69, 255, 0.7); animation: in-float 3s ease-in-out infinite; }
+.in-flag { width: 220px; height: 120px; border-radius: 6px; background: conic-gradient(#fff 25%, #111 0 50%, #fff 0 75%, #111 0) 0 0 / 40px 40px; transform: perspective(400px) rotateY(-14deg); animation: in-wave 1.6s ease-in-out infinite; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
+.in-row { display: flex; justify-content: center; gap: 0; width: 100%; }
+.in-row img { width: clamp(80px, 19vw, 170px); aspect-ratio: 4 / 3; object-fit: contain; margin: 0 -8px; opacity: 0; animation: in-drive 0.7s var(--d) var(--ease-out) forwards; filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.6)); }
+@keyframes in-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes in-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes in-draw { to { stroke-dashoffset: 0; } }
+@keyframes in-tip { 0%, 100% { transform: rotate(-12deg); } 50% { transform: rotate(18deg); } }
+@keyframes in-breathe { 0%, 100% { transform: scale(0.92); opacity: 0.8; } 50% { transform: scale(1.06); opacity: 1; } }
+@keyframes in-float { 0%, 100% { transform: translateY(-4px) rotate(-3deg); } 50% { transform: translateY(6px) rotate(2deg); } }
+@keyframes in-wave { 0%, 100% { transform: perspective(400px) rotateY(-14deg) skewY(0deg); } 50% { transform: perspective(400px) rotateY(-6deg) skewY(-3deg); } }
+@keyframes in-drive { from { opacity: 0; transform: translateX(-60px); } to { opacity: 1; transform: none; } }
+@keyframes in-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(164, 99, 255, 0.5); } 50% { box-shadow: 0 0 0 10px rgba(164, 99, 255, 0); } }
+@media (prefers-reduced-motion: reduce) { .intro *, .intro { animation: none !important; } .in-chart polyline { stroke-dashoffset: 0; } .in-chart span, .in-row img { opacity: 1; } }
+.tr-intro { align-self: flex-start; background: none; border: 0; padding: 0; color: var(--lime); font-weight: 700; font-size: 13px; cursor: pointer; }
+.tr-intro:hover { text-decoration: underline; }

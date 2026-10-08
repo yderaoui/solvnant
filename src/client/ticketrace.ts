@@ -8,6 +8,7 @@ import { toast } from './toast';
 import { fmt } from './livegame';
 import { PLAYER_COLORS } from '../game/protocol';
 import type { TicketRun } from './practice';
+import { showIntro } from './intro';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -60,6 +61,7 @@ export async function renderRacePage() {
     return;
   }
   const how = `
+    <button class="tr-intro" id="tr-intro">▶ Why are they racing? Watch the intro</button>
     <ol class="tr-how">
       <li><b>Buy a ticket</b><span>${t.price.toLocaleString('en-US')} ${sym} each</span></li>
       <li><b>Race the ghosts</b><span>The recorded runs of the players already in your lobby. No bots, no waiting.</span></li>
@@ -70,6 +72,7 @@ export async function renderRacePage() {
       <button class="btn btn-lime tr-go" id="tr-signin">${icon('flag', 16)}SIGN IN WITH X TO RACE</button>
       <a class="btn btn-ghost tr-alt" href="#/drive">${icon('pad', 14)}Test drive first, free</a></section></div>`;
     $('tr-signin').onclick = () => showAuthModal();
+    $('tr-intro').onclick = () => showIntro();
     return;
   }
   let mine: Mine;
@@ -100,6 +103,7 @@ export async function renderRacePage() {
       </section>
     </div>`;
   $('tr-go').onclick = () => raceNow();
+  $('tr-intro').onclick = () => showIntro();
   $('tr-buy').onclick = () => void buy();
   const f = document.getElementById('tr-faucet');
   if (f) f.onclick = () => void faucet();

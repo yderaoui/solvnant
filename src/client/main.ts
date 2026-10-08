@@ -14,6 +14,7 @@ import { LeagueLobby } from './leagueLobby';
 import { renderBuyPage } from './buy';
 import { renderGarage } from './garage';
 import { renderRacePage, takeTicketRun } from './ticketrace';
+import { introSeen, showIntro } from './intro';
 import { PracticeDrive } from './practice';
 import {
   db,
@@ -560,3 +561,5 @@ async function renderHistory() {
 }
 
 route();
+// First visit: the lore intro (not over a link someone shared into a race, replay or the lab).
+if (!introSeen() && /^(#\/(race|live|drive|garage|league)?)?$/.test(location.hash)) showIntro();

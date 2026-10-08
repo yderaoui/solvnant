@@ -45,11 +45,12 @@ function Bridge({ chain, onState }: { chain: SolanaChain; onState: (s: PrivyStat
   return null;
 }
 
-export function mountPrivy(appId: string, chain: SolanaChain, onState: (s: PrivyState) => void) {
+export function mountPrivy(appId: string, chain: SolanaChain, onState: (s: PrivyState) => void, rpcUrl?: string) {
   const host = document.createElement('div');
   host.id = 'privy-root';
   document.body.appendChild(host);
-  const http = chain === 'solana:devnet' ? 'https://api.devnet.solana.com' : 'https://api.mainnet-beta.solana.com';
+  const http = rpcUrl ?? (chain === 'solana:devnet' ? 'https://api.devnet.solana.com' : 'https://api.mainnet-beta.solana.com');
+  const ws = chain === 'solana:devnet' ? 'wss://api.devnet.solana.com' : 'wss://api.mainnet-beta.solana.com';
   createRoot(host).render(
     <PrivyProvider
       appId={appId}
@@ -59,7 +60,7 @@ export function mountPrivy(appId: string, chain: SolanaChain, onState: (s: Privy
         embeddedWallets: { solana: { createOnLogin: 'users-without-wallets' } },
         solana: {
           rpcs: {
-            [chain]: { rpc: createSolanaRpc(http), rpcSubscriptions: createSolanaRpcSubscriptions(http.replace(/^https/, 'wss')) },
+            [chain]: { rpc: createSolanaRpc(http), rpcSubscriptions: createSolanaRpcSubscriptions(ws) },
           },
         },
       }}

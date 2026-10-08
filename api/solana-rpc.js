@@ -8,18 +8,35 @@ const UPSTREAM = {
   'mainnet-beta': process.env.SOLANA_UPSTREAM_MAINNET || 'https://api.mainnet-beta.solana.com',
 };
 
+// What the players' browsers (and Privy's wallet) may ask for: reading balances and sending a signed payment.
+const BROWSER_METHODS = new Set([
+  'getAccountInfo', 'getBalance', 'getTokenAccountBalance', 'getLatestBlockhash', 'getMinimumBalanceForRentExemption',
+  'getSignatureStatuses', 'getFeeForMessage', 'getRecentPrioritizationFees', 'sendTransaction', 'simulateTransaction',
+  'getEpochInfo', 'getSlot', 'getBlockHeight', 'getGenesisHash', 'getVersion',
+]);
+const ORIGINS = ['https://www.racetrench.com', 'https://racetrench.com', 'https://solvnant.vercel.app', 'http://localhost:5173'];
+
 export default async function handler(req, res) {
+  const origin = req.headers.origin;
+  if (ORIGINS.includes(origin)) {
+    res.setHeader('access-control-allow-origin', origin);
+    res.setHeader('access-control-allow-headers', 'content-type, solana-client');
+    res.setHeader('access-control-allow-methods', 'POST, OPTIONS');
+  }
+  if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const key = process.env.RPC_PROXY_KEY;
-  if (!key || req.headers['x-rpc-key'] !== key) return res.status(401).json({ error: 'unauthorized' });
+  const server = !!key && req.headers['x-rpc-key'] === key;
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-  if (body.method !== 'getTransaction') return res.status(400).json({ error: 'only getTransaction is allowed' });
+  if (Array.isArray(body)) return res.status(400).json({ error: 'no batches' });
+  const allowed = server ? body.method === 'getTransaction' || BROWSER_METHODS.has(body.method) : BROWSER_METHODS.has(body.method);
+  if (!allowed) return res.status(server ? 400 : 401).json({ error: 'method not allowed' });
   const cluster = req.query.cluster === 'mainnet-beta' ? 'mainnet-beta' : 'devnet';
   try {
     const r = await fetch(UPSTREAM[cluster], {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTransaction', params: body.params }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: body.id ?? 1, method: body.method, params: body.params }),
     });
     res.status(r.status).setHeader('content-type', 'application/json').send(await r.text());
   } catch (e) {

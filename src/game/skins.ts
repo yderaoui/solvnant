@@ -175,6 +175,8 @@ export const SKINS: Skin[] = [
 ];
 
 export const DEFAULT_SKIN = SKINS[0].id;
+/** What a racer costs in the game coin: catalog prices are in units where a ticket is 100 (500 = 5 tickets). */
+export const skinPrice = (s: Skin, ticketPrice: number): number => (s.price ? Math.round((s.price / 100) * ticketPrice * 1e6) / 1e6 : 0);
 export const skinById = (id: string | null | undefined): Skin => SKINS.find((s) => s.id === id) ?? SKINS[0];
 export const isSkin = (id: unknown): id is string => SKINS.some((s) => s.id === id);
 /** Bots and AI drivers show off the whole range, so everyone sees the paid skins in races. */

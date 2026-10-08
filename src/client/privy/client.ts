@@ -17,7 +17,7 @@ function chain(): SolanaChain {
 /** Load Privy (once) and wait until it knows whether the person is signed in. */
 async function ensure(): Promise<PrivyState> {
   if (!privyOn()) throw new Error('Privy is not set up.');
-  mounting ??= import('./island').then(({ mountPrivy }) => mountPrivy(account.cfg!.privy!, chain(), onState));
+  mounting ??= import('./island').then(({ mountPrivy }) => mountPrivy(account.cfg!.privy!, chain(), onState, account.cfg?.tickets?.rpcUrl));
   await mounting;
   while (!state?.ready) await new Promise<void>((r) => waiters.push(r));
   return state;

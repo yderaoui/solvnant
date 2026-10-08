@@ -264,7 +264,8 @@ function renderMenu(toast: (t: string) => void) {
             <div class="acct-wallet"><span>You have <b>${me.tickets ?? 0}</b> ticket${me.tickets === 1 ? '' : 's'}</span><span>${cfg.tickets.price} ${escapeHtml(cfg.tickets.symbol)} each</span></div>
             <div class="acct-row"><button class="btn small btn-lime" id="am-buyticket">${icon('zap', 14)}Buy a ticket</button>
             ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost" id="am-faucet">Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}</div>
-            <p class="muted small" id="am-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>`
+            <p class="muted small" id="am-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>
+          ${cfg.privy ? `<section><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">Payments come from this wallet. It needs a little SOL for network fees.</p></section>` : ''}`
         : ''
     }
     ${wallet}
@@ -286,6 +287,7 @@ function renderMenu(toast: (t: string) => void) {
     }
   };
   document.getElementById('am-wlink')?.addEventListener('click', () => void linkWallet(toast));
+  if (cfg.privy && document.getElementById('am-mywallet')) void paintMyWallet(cfg.tickets?.rpcUrl);
   document.getElementById('am-faucet')?.addEventListener('click', async () => {
     const step = document.getElementById('am-buystep')!;
     try {
@@ -332,6 +334,26 @@ function renderMenu(toast: (t: string) => void) {
         : '<li class="muted">Nothing yet.</li>';
     })
     .catch(() => {});
+}
+
+/** Account menu: the Privy wallet's address (copy button) and SOL balance. */
+async function paintMyWallet(rpcUrl: string | undefined) {
+  const box = document.getElementById('am-mywallet');
+  if (!box) return;
+  try {
+    const { privyWallet } = await import('./privy/client');
+    const w = await privyWallet(15_000);
+    let sol = '';
+    if (rpcUrl) {
+      const r = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [w.address] }) });
+      const j = (await r.json()) as { result?: { value: number } };
+      if (j.result) sol = `${(j.result.value / 1e9).toFixed(4)} SOL`;
+    }
+    box.innerHTML = `<code title="${escapeHtml(w.address)}">${escapeHtml(w.address.slice(0, 6))}…${escapeHtml(w.address.slice(-6))}</code><span>${sol}</span><button class="btn small btn-ghost" id="am-copyw">${icon('copy', 14)}Copy</button>`;
+    document.getElementById('am-copyw')!.onclick = () => void navigator.clipboard.writeText(w.address).then(() => toastFn?.('Wallet address copied'));
+  } catch (e) {
+    box.innerHTML = `<span class="muted small">${escapeHtml((e as Error).message)}</span>`;
+  }
 }
 
 interface PhantomProvider {

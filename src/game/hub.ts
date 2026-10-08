@@ -10,7 +10,7 @@ import { PLAYER_COLORS, cleanName } from './protocol';
 import { SEATS, SETTLE_AFTER_MS, COUNTDOWN_S, MAX_RACE_S, SUBMIT_SLACK_S, badLog, lobbyVerdict, rank, replayRun, split, submittedInTime } from './lobbies';
 import type { InputLogEntry } from '../sim/race';
 import { verifyPrivyToken } from './privy';
-import { DEFAULT_SKIN, SKINS, isSkin, skinById } from './skins';
+import { DEFAULT_SKIN, SKINS, isSkin, skinById, skinPrice } from './skins';
 
 interface SqlCursor {
   toArray(): Record<string, unknown>[];
@@ -553,7 +553,7 @@ export class Hub {
     if (this.ownedSkins(u.id).includes(skin.id)) return fail('You already own this skin.');
     const memo = `RaceTrench skin ${skin.id} ${randomToken(9)}`;
     this.sql.exec('INSERT OR REPLACE INTO skin_memos (uid, skin, memo, ts) VALUES (?, ?, ?, ?)', u.id, skin.id, memo, Date.now());
-    return json({ memo, ...publicTickets(t), price: skin.price });
+    return json({ memo, ...publicTickets(t), price: skinPrice(skin, t.price) });
   }
 
   /** The player paid for a skin: check it on-chain, unlock it and put it on. */
@@ -568,7 +568,7 @@ export class Hub {
     const row = this.sql.exec('SELECT skin, memo, ts FROM skin_memos WHERE uid = ?', u.id).toArray()[0] as { skin: string; memo: string; ts: number } | undefined;
     if (!row || Date.now() - row.ts > 30 * 60_000) return fail('The skin purchase expired. Start again.');
     const skin = skinById(row.skin);
-    const paid = await verifyTicketPayment({ ...t, price: skin.price }, sig, row.memo);
+    const paid = await verifyTicketPayment({ ...t, price: skinPrice(skin, t.price) }, sig, row.memo);
     if (!paid) return json({ ok: false, pending: true }); // not confirmed yet: the client retries
     this.state.storage.transactionSync(() => {
       this.sql.exec('INSERT OR IGNORE INTO skins (uid, skin, sig, wallet, amount, ts) VALUES (?, ?, ?, ?, ?, ?)', u.id, skin.id, sig, paid.wallet, paid.amount, Date.now());

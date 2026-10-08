@@ -71,9 +71,18 @@ async function payCoins(intentPath: string, intentBody: object, claimPath: strin
   const owner = new PublicKey(publicKey.toString());
   const mint = new PublicKey(intent.mint);
   const treasury = new PublicKey(intent.treasury);
-  const from = spl.getAssociatedTokenAddressSync(mint, owner);
-  const to = spl.getAssociatedTokenAddressSync(mint, treasury);
-  const units = BigInt(Math.round(intent.price * 10 ** intent.decimals));
+  // The coin may be a classic SPL token or a Token-2022 one (newer pump.fun coins): ask the chain.
+  const mintInfo = await conn.getAccountInfo(mint);
+  if (!mintInfo) throw new Error(`Can't find the ${intent.symbol} coin on this network. Try again in a moment.`);
+  const programId = mintInfo.owner;
+  const decimals = (await spl.getMint(conn, mint, 'confirmed', programId)).decimals;
+  const from = spl.getAssociatedTokenAddressSync(mint, owner, false, programId);
+  const to = spl.getAssociatedTokenAddressSync(mint, treasury, true, programId);
+  const units = BigInt(Math.round(intent.price * 10 ** decimals));
+  // Network fees are paid in SOL: a brand new wallet has none.
+  const lamports = await conn.getBalance(owner);
+  if (lamports < 2_500_000)
+    throw new Error(`Your wallet needs a little SOL for network fees (about 0.003 SOL). Send some to ${wallet.address} (copy it from your account menu).`);
   // Friendly errors before the wallet pops up
   try {
     const bal = await conn.getTokenAccountBalance(from);
@@ -83,8 +92,8 @@ async function payCoins(intentPath: string, intentBody: object, claimPath: strin
     throw new Error(`This wallet has no ${intent.symbol} yet${intent.cluster === 'devnet' ? ' (devnet test coins)' : ''}.`);
   }
   const tx = new Transaction();
-  tx.add(spl.createAssociatedTokenAccountIdempotentInstruction(owner, to, treasury, mint)); // treasury's coin account, if new
-  tx.add(spl.createTransferCheckedInstruction(from, mint, to, owner, units, intent.decimals));
+  tx.add(spl.createAssociatedTokenAccountIdempotentInstruction(owner, to, treasury, mint, programId)); // treasury's coin account, if new
+  tx.add(spl.createTransferCheckedInstruction(from, mint, to, owner, units, decimals, [], programId));
   tx.add(new TransactionInstruction({ programId: new PublicKey(MEMO_PROGRAM), keys: [], data: Buffer.from(intent.memo, 'utf8') }));
   tx.feePayer = owner;
   tx.recentBlockhash = (await conn.getLatestBlockhash('confirmed')).blockhash;

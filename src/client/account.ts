@@ -167,7 +167,7 @@ export function initAccountUi(toast: (t: string) => void) {
     const me = account.me;
     if (account.ready && !me && account.cfg?.privy && !preloaded) {
       preloaded = true;
-      setTimeout(() => void import('./privy/client').then((p) => p.preloadPrivy()), 1500);
+      void import('./privy/client').then((p) => p.preloadPrivy());
     }
     if (!account.ready) {
       host.innerHTML = '';

@@ -36,6 +36,8 @@ import { raceStartAt, slotAt, slotStart } from '../sim/schedule';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 hydrateIcons();
+// Who's signed in, first: it doesn't need the map, and the sign-in download starts from it.
+const accountLoading = account.load();
 await document.fonts.ready; // badges on the map measure their text, so the real font must be loaded first
 const renderer = await RaceRenderer.create($('stage-canvas'));
 const broadcast = new Broadcast(renderer);
@@ -46,7 +48,7 @@ initAccountUi(toast);
 const leagueLobby = new LeagueLobby((html) => broadcast.center(html));
 const practice = new PracticeDrive();
 if (import.meta.env.DEV) (window as unknown as { __practice: PracticeDrive }).__practice = practice; // browser tests
-void account.load();
+void accountLoading;
 
 broadcast.onSelectCar = (car) => {
   const race = broadcast.race;

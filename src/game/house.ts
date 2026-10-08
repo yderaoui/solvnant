@@ -269,3 +269,52 @@ export async function cosignPurchase(cfg: TicketConfig, house: House, wireBase64
   const wire = getBase64Decoder().decode(getTransactionEncoder().encode(signed as never));
   return { wire, signature: getBase58Decoder().decode(sig), player, memo };
 }
+
+/**
+ * A player's withdrawal (their coins out of their game wallet), signed by the player with the house as
+ * fee payer. Allowed: one transfer of the game coin from the player's own coin account, optionally the
+ * creation of the destination's coin account (paid by the house: `allowCreate`), an optional memo.
+ * The house may appear only as the fee payer and as payer of that account creation.
+ */
+export async function cosignWithdrawal(cfg: TicketConfig, house: House, wireBase64: string, allowCreate: boolean) {
+  const m = await mintInfo(cfg);
+  const tx = getTransactionDecoder().decode(getBase64Encoder().encode(wireBase64));
+  const msg = getCompiledTransactionMessageDecoder().decode(tx.messageBytes) as unknown as {
+    header: { numSignerAccounts: number };
+    staticAccounts: string[];
+    instructions: { programAddressIndex: number; accountIndices?: number[]; data?: Uint8Array }[];
+    addressTableLookups?: unknown[];
+  };
+  const keys = msg.staticAccounts;
+  const bad = (why: string) => new Error(`This withdrawal can't be sponsored (${why}).`);
+  if (msg.addressTableLookups?.length) throw bad('lookup tables');
+  if (keys[0] !== house.address || msg.header.numSignerAccounts !== 2) throw bad('signers');
+  const player = keys[1];
+  const playerAta = await ataOf(player, cfg.mint, m.program);
+  let transfers = 0,
+    creates = 0;
+  for (const ins of msg.instructions) {
+    const prog = keys[ins.programAddressIndex];
+    const acc = (ins.accountIndices ?? []).map((i) => keys[i]);
+    const data = ins.data ?? new Uint8Array();
+    if (prog === PROGRAMS.computeBudget || prog === PROGRAMS.memo) continue;
+    if (prog === PROGRAMS.ata) {
+      if (!allowCreate) throw bad('the destination has no coin account yet; daily limit reached');
+      if (!(data.length === 0 || (data.length === 1 && data[0] === 1))) throw bad('account creation');
+      if (acc[0] !== house.address || acc[3] !== cfg.mint || acc[5] !== m.program || acc[2] === house.address) throw bad('account creation');
+      if (acc[1] !== (await ataOf(acc[2], cfg.mint, m.program))) throw bad('account creation');
+      creates++;
+      continue;
+    }
+    if (acc.includes(house.address)) throw bad('house account used');
+    if (prog !== m.program) throw bad('unexpected instruction');
+    if (data[0] !== 12 || data.length !== 10 || data[9] !== m.decimals) throw bad('not a transfer');
+    if (acc[0] !== playerAta || acc[1] !== cfg.mint || acc[3] !== player) throw bad('transfer accounts');
+    transfers++;
+  }
+  if (transfers !== 1 || creates > 1) throw bad('one transfer');
+  if (!tx.signatures[player as Address]) throw bad('not signed by you');
+  const sig = await signBytes(house.signer.keyPair.privateKey, tx.messageBytes);
+  const wire = getBase64Decoder().decode(getTransactionEncoder().encode({ ...tx, signatures: { ...tx.signatures, [house.address]: sig } } as never));
+  return { wire, signature: getBase58Decoder().decode(sig), created: creates > 0 };
+}

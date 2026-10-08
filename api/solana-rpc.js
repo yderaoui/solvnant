@@ -12,7 +12,7 @@ const UPSTREAM = {
 const BROWSER_METHODS = new Set([
   'getAccountInfo', 'getBalance', 'getTokenAccountBalance', 'getLatestBlockhash', 'getMinimumBalanceForRentExemption',
   'getSignatureStatuses', 'getFeeForMessage', 'getRecentPrioritizationFees', 'sendTransaction', 'simulateTransaction',
-  'getEpochInfo', 'getSlot', 'getBlockHeight', 'getGenesisHash', 'getVersion', 'getSignaturesForAddress',
+  'getEpochInfo', 'getSlot', 'getBlockHeight', 'getGenesisHash', 'getVersion', 'getSignaturesForAddress', 'getTokenAccountsByOwner',
 ]);
 const ORIGINS = ['https://www.racetrench.com', 'https://racetrench.com', 'https://solvnant.vercel.app', 'http://localhost:5173'];
 

@@ -11,7 +11,7 @@ import { SEATS, SETTLE_AFTER_MS, COUNTDOWN_S, MAX_RACE_S, SUBMIT_SLACK_S, badLog
 import type { InputLogEntry } from '../sim/race';
 import { verifyPrivyToken } from './privy';
 import { DEFAULT_SKIN, SKINS, isSkin, skinById, skinPrice } from './skins';
-import { blockHeight, buildPayout, cosignPurchase, loadHouse, sendWire, txStatus, type House } from './house';
+import { blockHeight, buildPayout, cosignPurchase, cosignWithdrawal, loadHouse, sendWire, txStatus, type House } from './house';
 
 interface SqlCursor {
   toArray(): Record<string, unknown>[];
@@ -181,6 +181,8 @@ export class Hub {
           return await this.ticketClaim(u, (await req.json()) as { signature?: string });
         case '/api/pay/sponsor':
           return await this.sponsorPurchase(u, (await req.json()) as { tx?: string });
+        case '/api/pay/withdraw':
+          return await this.sponsorWithdrawal(u, (await req.json()) as { tx?: string });
         case '/api/pay/recover':
           return await this.recoverPayments(u, (await req.json()) as { signatures?: unknown });
         case '/api/lobby/join':
@@ -524,6 +526,30 @@ export class Hub {
       await sendWire(t, out.wire);
     } catch (e) {
       return fail(`The network refused the payment: ${(e as Error).message.slice(0, 200)}`);
+    }
+    return json({ ok: true, signature: out.signature });
+  }
+
+  /** Withdrawals out of a player's game wallet: the house pays the fee (account creation: once a day). */
+  private async sponsorWithdrawal(u: UserRow, b: { tx?: string }): Promise<Response> {
+    const t = this.cfg.tickets;
+    const house = await this.house();
+    if (!t || !house) return fail('Sponsored fees are not available.');
+    const day = Date.now() - 86_400_000;
+    if (Number(this.sql.exec('SELECT COUNT(*) AS n FROM sponsored WHERE uid = ? AND ts > ?', u.id, day).one().n) >= 30) return fail('Daily limit of sponsored transactions reached. Try again tomorrow.');
+    const created = Number(this.sql.exec("SELECT COUNT(*) AS n FROM sponsored WHERE uid = ? AND ts > ? AND sig LIKE 'create:%'", u.id, day).one().n);
+    let out;
+    try {
+      out = await cosignWithdrawal(t, house, String(b.tx ?? ''), created < 1);
+    } catch (e) {
+      return fail((e as Error).message);
+    }
+    this.sql.exec('INSERT OR IGNORE INTO sponsored (sig, uid, ts) VALUES (?, ?, ?)', out.signature, u.id, Date.now());
+    if (out.created) this.sql.exec('INSERT OR IGNORE INTO sponsored (sig, uid, ts) VALUES (?, ?, ?)', `create:${out.signature}`, u.id, Date.now());
+    try {
+      await sendWire(t, out.wire);
+    } catch (e) {
+      return fail(`The network refused the withdrawal: ${(e as Error).message.slice(0, 200)}`);
     }
     return json({ ok: true, signature: out.signature });
   }

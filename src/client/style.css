@@ -1114,3 +1114,8 @@ body[data-page='drive'] .drive-only { display: inline-flex !important; }
 .snd-foot .btn { flex: 1; justify-content: center; }
 .tr-paid { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-size: 12px; font-weight: 700; color: #14f195; text-decoration: none; font-style: normal; letter-spacing: 0; }
 .tr-paid.wait { color: var(--muted); }
+.am-withdraw { margin-top: 8px; }
+.am-withdraw summary { cursor: pointer; font-weight: 700; font-size: 13px; color: var(--lime); }
+.am-withdraw input { width: 100%; min-width: 0; padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--line-strong); background: rgba(0, 0, 0, 0.3); color: var(--text); font: inherit; font-size: 13px; }
+.am-withdraw .acct-row input { flex: 1; }
+.am-withdraw > * + * { margin-top: 8px; }

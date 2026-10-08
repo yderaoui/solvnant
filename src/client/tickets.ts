@@ -434,3 +434,68 @@ export async function recoverPayments(): Promise<{
   if (res.me) account.setMe(res.me);
   return { tickets: res.tickets, skins: res.skins };
 }
+
+/** The game wallet's coin balance (for the account menu). */
+export async function coinBalance(): Promise<number | null> {
+  const t = account.cfg?.tickets;
+  if (!t) return null;
+  const { privyWallet } = await import('./privy/client');
+  const w = await privyWallet(15_000);
+  const r = await fetch(t.rpcUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTokenAccountsByOwner', params: [w.address, { mint: t.mint }, { encoding: 'jsonParsed' }] }),
+  });
+  const v = ((await r.json()) as { result?: { value: { account: { data: { parsed: { info: { tokenAmount: { uiAmount: number } } } } } }[] } }).result?.value ?? [];
+  return v.reduce((s, a) => s + (a.account.data.parsed.info.tokenAmount.uiAmount ?? 0), 0);
+}
+
+/** Send coins out of the game wallet to any Solana address. The game pays the fee when it can. */
+export async function withdrawCoins(to: string, amount: number, step: (text: string) => void): Promise<string> {
+  const t = account.cfg?.tickets;
+  if (!t || !account.me) throw new Error('Sign in first.');
+  if (!(amount > 0)) throw new Error('Enter an amount.');
+  step('Preparing…');
+  const { Buffer } = await import('buffer');
+  (globalThis as unknown as { Buffer: typeof Buffer }).Buffer ??= Buffer;
+  const [{ Connection, PublicKey, Transaction }, spl] = await Promise.all([import('@solana/web3.js'), import('@solana/spl-token')]);
+  let dest: InstanceType<typeof PublicKey>;
+  try {
+    dest = new PublicKey(to.trim());
+  } catch {
+    throw new Error('That is not a Solana address.');
+  }
+  const wallet = await payer();
+  const conn = new Connection(t.rpcUrl, 'confirmed');
+  const owner = new PublicKey(wallet.address);
+  const mint = new PublicKey(t.mint);
+  const programId = (await conn.getAccountInfo(mint))!.owner;
+  const decimals = (await spl.getMint(conn, mint, 'confirmed', programId)).decimals;
+  const from = spl.getAssociatedTokenAddressSync(mint, owner, false, programId);
+  const toAta = spl.getAssociatedTokenAddressSync(mint, dest, true, programId);
+  const units = BigInt(Math.floor(amount * 10 ** decimals + 1e-6));
+  const bal = BigInt((await conn.getTokenAccountBalance(from)).value.amount);
+  if (bal < units) throw new Error(`You only have ${Number(bal) / 10 ** decimals} ${t.symbol}.`);
+  const sponsorAddr = (account.cfg as { sponsor?: string | null } | null)?.sponsor ?? null;
+  const sponsor = sponsorAddr && wallet.signOnly ? new PublicKey(sponsorAddr) : null;
+  const tx = new Transaction();
+  if (!(await conn.getAccountInfo(toAta))) tx.add(spl.createAssociatedTokenAccountIdempotentInstruction(sponsor ?? owner, toAta, dest, mint, programId));
+  tx.add(spl.createTransferCheckedInstruction(from, mint, toAta, owner, units, decimals, [], programId));
+  tx.feePayer = sponsor ?? owner;
+  tx.recentBlockhash = (await conn.getLatestBlockhash('confirmed')).blockhash;
+  step(`Approve sending ${amount.toLocaleString('en-US')} ${t.symbol} in your wallet…`);
+  let sig: string;
+  if (sponsor) {
+    const signedTx = await wallet.signOnly!(tx);
+    step('Sending (the game pays the network fee)…');
+    sig = (await account.api<{ signature: string }>('/api/pay/withdraw', { tx: Buffer.from(signedTx).toString('base64') })).signature;
+  } else sig = await wallet.send(tx, conn, () => {});
+  step('Waiting for the network to confirm…');
+  for (let i = 0; i < 40; i++) {
+    const s = (await conn.getSignatureStatuses([sig])).value[0];
+    if (s?.err) throw new Error('The withdrawal failed on-chain.');
+    if (s && (s.confirmationStatus === 'confirmed' || s.confirmationStatus === 'finalized')) return sig;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return sig; // sent; the explorer link shows it once it confirms
+}

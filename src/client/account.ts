@@ -265,7 +265,13 @@ function renderMenu(toast: (t: string) => void) {
             <div class="acct-row"><button class="btn small btn-lime" id="am-buyticket">${icon('zap', 14)}Buy a ticket</button>
             ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost" id="am-faucet">Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}</div>
             <p class="muted small" id="am-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>
-          ${cfg.privy ? `<section><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">Payments come from this wallet. It needs a little SOL for network fees.</p></section>` : ''}`
+          ${cfg.privy ? `<section><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">Payments come from this wallet, and prizes arrive here.</p>
+            <details class="am-withdraw"><summary>Withdraw ${escapeHtml(cfg.tickets?.symbol ?? '')}</summary>
+              <input id="am-wd-to" placeholder="Send to (Solana address)" autocomplete="off" spellcheck="false" />
+              <div class="acct-row"><input id="am-wd-amt" type="number" min="0" step="any" placeholder="Amount" /><button class="btn small btn-ghost" id="am-wd-max">Max</button></div>
+              <button class="btn small btn-lime" id="am-wd-go">Withdraw</button>
+              <p class="muted small" id="am-wd-step"></p>
+            </details></section>` : ''}`
         : ''
     }
     ${wallet}
@@ -288,6 +294,29 @@ function renderMenu(toast: (t: string) => void) {
   };
   document.getElementById('am-wlink')?.addEventListener('click', () => void linkWallet(toast));
   if (cfg.privy && document.getElementById('am-mywallet')) void paintMyWallet(cfg.tickets?.rpcUrl);
+  document.getElementById('am-wd-max')?.addEventListener('click', async () => {
+    const { coinBalance } = await import('./tickets');
+    const b = await coinBalance().catch(() => null);
+    if (b !== null) (document.getElementById('am-wd-amt') as HTMLInputElement).value = String(b);
+  });
+  document.getElementById('am-wd-go')?.addEventListener('click', async () => {
+    const step = document.getElementById('am-wd-step')!;
+    const btn = document.getElementById('am-wd-go') as HTMLButtonElement;
+    btn.disabled = true;
+    try {
+      const { withdrawCoins } = await import('./tickets');
+      const to = (document.getElementById('am-wd-to') as HTMLInputElement).value;
+      const amt = Number((document.getElementById('am-wd-amt') as HTMLInputElement).value);
+      const sig = await withdrawCoins(to, amt, (t) => (step.textContent = t));
+      const dev = cfg.tickets?.cluster === 'devnet' ? '?cluster=devnet' : '';
+      step.innerHTML = `Sent ✓ <a href="https://solscan.io/tx/${sig}${dev}" target="_blank" rel="noopener">view</a>`;
+      void paintMyWallet(cfg.tickets?.rpcUrl);
+    } catch (e) {
+      step.textContent = (e as Error).message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
   document.getElementById('am-faucet')?.addEventListener('click', async () => {
     const step = document.getElementById('am-buystep')!;
     try {
@@ -349,6 +378,8 @@ async function paintMyWallet(rpcUrl: string | undefined) {
       const j = (await r.json()) as { result?: { value: number } };
       if (j.result) sol = `${(j.result.value / 1e9).toFixed(4)} SOL`;
     }
+    const coins = await import('./tickets').then((t) => t.coinBalance()).catch(() => null);
+    if (coins !== null) sol = `${coins.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${account.cfg?.tickets?.symbol ?? ''}${sol ? ' · ' + sol : ''}`;
     box.innerHTML = `<code title="${escapeHtml(w.address)}">${escapeHtml(w.address.slice(0, 6))}…${escapeHtml(w.address.slice(-6))}</code><span>${sol}</span><button class="btn small btn-ghost" id="am-copyw">${icon('copy', 14)}Copy</button>`;
     document.getElementById('am-copyw')!.onclick = () => void navigator.clipboard.writeText(w.address).then(() => toastFn?.('Wallet address copied'));
   } catch (e) {

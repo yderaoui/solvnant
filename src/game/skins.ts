@@ -81,6 +81,19 @@ export const SKINS: Skin[] = [
       [-0.45, 0.42, 0.22],
     ],
   },
+  {
+    id: 'elon',
+    name: 'Elon Musk',
+    tagline: 'Chrome cyber buggy, next stop Mars',
+    price: 500,
+    file: 'elon',
+    yaw: Math.PI,
+    length: 3.4,
+    exhaust: [
+      [-0.49, 0.25, -0.15],
+      [-0.49, 0.25, 0.15],
+    ],
+  },
 ];
 
 export const DEFAULT_SKIN = SKINS[0].id;

@@ -157,10 +157,18 @@ export function handleAuthHash(toast: (t: string) => void): boolean {
 }
 
 // ====================================================================== UI: header chip + menu
+let toastFn: ((t: string) => void) | null = null;
+let preloaded = false;
+
 export function initAccountUi(toast: (t: string) => void) {
+  toastFn = toast;
   const host = $('account');
   const paint = () => {
     const me = account.me;
+    if (account.ready && !me && account.cfg?.privy && !preloaded) {
+      preloaded = true;
+      setTimeout(() => void import('./privy/client').then((p) => p.preloadPrivy()), 1500);
+    }
     if (!account.ready) {
       host.innerHTML = '';
       return;
@@ -357,7 +365,12 @@ export function showAuthModal(error?: string) {
   const cfg = account.cfg;
   // Privy has its own sign-in window (X only).
   if (cfg?.privy && !error) {
-    void import('./privy/client').then((p) => p.privyLogin()).catch((e) => showAuthModal((e as Error).message || 'Sign-in failed.'));
+    // If Privy is still downloading, say so (otherwise the click looks like it did nothing).
+    const slow = setTimeout(() => toastFn?.('Opening X sign-in…'), 350);
+    void import('./privy/client')
+      .then((p) => p.privyLogin())
+      .catch((e) => showAuthModal((e as Error).message || 'Sign-in failed.'))
+      .finally(() => clearTimeout(slow));
     return;
   }
   const m = $('auth-modal');

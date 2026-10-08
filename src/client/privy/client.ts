@@ -23,6 +23,11 @@ async function ensure(): Promise<PrivyState> {
   return state;
 }
 
+/** Signed-out visitors: load Privy in the background so "Sign in" opens straight away (it's a big download). */
+export function preloadPrivy() {
+  if (privyOn() && !account.me) void ensure().catch(() => {});
+}
+
 function onState(s: PrivyState) {
   state = s;
   if (s.ready) waiters.splice(0).forEach((w) => w());

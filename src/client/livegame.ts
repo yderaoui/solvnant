@@ -11,7 +11,7 @@ import type { CarVisual, RaceRenderer } from './renderer';
 import { audio, get3d, load3d } from './view3d';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
-import { account, fmtPts, showAuthModal } from './account';
+import { account, fmtPts, priceLabel, showAuthModal } from './account';
 import { BetWidget } from './bets';
 import { toast } from './toast';
 import { buyTicket, claimPendingTicket, getTestCoins } from './tickets';
@@ -858,7 +858,7 @@ export class LiveGame {
              <select id="lb-back" aria-label="Points to bet on yourself">${[0, 50, 100, 250, 500].map((v) => `<option value="${v}" ${v === this.backSelf ? 'selected' : ''}>${v ? `${v} pts` : 'Off'}</option>`).join('')}</select></label>
            ${
              cfg?.tickets
-               ? `<div class="lb-ticket"><span><b>Race ticket</b><small>${cfg.tickets.price} ${escapeHtml(cfg.tickets.symbol)} · you have <b id="lb-tix">${me.tickets ?? 0}</b></small></span>
+               ? `<div class="lb-ticket"><span><b>Race ticket</b><small>${escapeHtml(priceLabel(cfg.tickets))} · you have <b id="lb-tix">${me.tickets ?? 0}</b></small></span>
                     <button class="btn small" id="lb-buy">${icon('zap', 14)}Buy ticket</button></div>
                   ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost lb-faucet" id="lb-faucet">${icon('zap', 14)}Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}
                   <p class="muted small" id="lb-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network: tickets use devnet test coins (no real value).' : ''}</p>`
@@ -909,7 +909,7 @@ export class LiveGame {
           <div class="lcard">
             <h3>RACE RULES</h3>
             <ul class="rules">
-              ${cfg?.tickets ? `<li>${icon('zap', 16)}Entry: 1 race ticket (${cfg.tickets.price} ${escapeHtml(cfg.tickets.symbol)}), given back if you leave before lights out</li>` : ''}
+              ${cfg?.tickets ? `<li>${icon('zap', 16)}Entry: 1 race ticket (${escapeHtml(priceLabel(cfg.tickets))}), given back if you leave before lights out</li>` : ''}
               <li>${icon('follow', 16)}Max 10 players per race</li>
               <li>${icon('replay', 16)}Last round's racers give up their seat when the grid is full</li>
               <li>${icon('flag', 16)}One entry per account${cfg?.x ? ' (X login keeps bots out)' : ''}</li>

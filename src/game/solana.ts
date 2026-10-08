@@ -176,3 +176,44 @@ export async function verifyTicketPayment(cfg: TicketConfig, signature: string, 
   if (p.amount + 1e-9 < cfg.price) throw new Error(`The treasury received ${p.amount} coins, this costs ${cfg.price}.`);
   return { wallet: p.wallet, amount: p.amount };
 }
+
+/**
+ * The coin's USD price from Jupiter and DexScreener. When both answer, the LOWER one is used: a ticket then
+ * costs a few more coins rather than fewer, so pumping one thin market can't make tickets cheap.
+ * Null if neither has a price (a coin nobody trades yet).
+ */
+export async function coinPriceUsd(mint: string, fetchFn: typeof fetch = fetch): Promise<number | null> {
+  const prices: number[] = [];
+  await Promise.all([
+    (async () => {
+      try {
+        const r = await fetchFn(`https://lite-api.jup.ag/price/v3?ids=${mint}`);
+        const j = (await r.json()) as Record<string, { usdPrice?: number } | undefined>;
+        const p = Number(j[mint]?.usdPrice);
+        if (p > 0 && Number.isFinite(p)) prices.push(p);
+      } catch {
+        /* unavailable */
+      }
+    })(),
+    (async () => {
+      try {
+        const r = await fetchFn(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+        const d = (await r.json()) as { pairs?: { priceUsd?: string; liquidity?: { usd?: number } }[] };
+        const best = (d.pairs ?? []).filter((x) => Number(x.priceUsd) > 0).sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
+        const p = Number(best?.priceUsd);
+        if (p > 0 && Number.isFinite(p)) prices.push(p);
+      } catch {
+        /* unavailable */
+      }
+    })(),
+  ]);
+  return prices.length ? Math.min(...prices) : null;
+}
+
+/** How many coins make `usd` at `price`, rounded UP to a tidy number (whole coins when they're cheap). */
+export function coinsFor(usd: number, priceUsd: number): number {
+  const raw = usd / priceUsd;
+  const dec = raw >= 1000 ? 0 : raw >= 10 ? 2 : 6;
+  const k = 10 ** dec;
+  return Number((Math.ceil(raw * k - 1e-9) / k).toFixed(dec));
+}

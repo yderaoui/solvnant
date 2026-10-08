@@ -136,6 +136,11 @@ class Account {
 
 export const account = new Account();
 
+/** A price in tickets, as players see it: dollars when tickets are priced in USD, else coins. */
+export function priceLabel(t: { price: number; priceUsd?: number; symbol: string }, tickets = 1): string {
+  return t.priceUsd ? `$${(t.priceUsd * tickets).toLocaleString('en-US')}` : `${(t.price * tickets).toLocaleString('en-US')} ${t.symbol}`;
+}
+
 export const fmtPts = (n: number) => `${Math.round(n).toLocaleString('en-US')}`;
 
 /** X sends people back to #/auth?token=… (or ?error=…). Returns true if this was that callback. */
@@ -261,7 +266,7 @@ function renderMenu(toast: (t: string) => void) {
     ${
       cfg.tickets
         ? `<section><h4>Race tickets</h4>
-            <div class="acct-wallet"><span>You have <b>${me.tickets ?? 0}</b> ticket${me.tickets === 1 ? '' : 's'}</span><span>${cfg.tickets.price} ${escapeHtml(cfg.tickets.symbol)} each</span></div>
+            <div class="acct-wallet"><span>You have <b>${me.tickets ?? 0}</b> ticket${me.tickets === 1 ? '' : 's'}</span><span>${escapeHtml(priceLabel(cfg.tickets))} each</span></div>
             <div class="acct-row"><button class="btn small btn-lime" id="am-buyticket">${icon('zap', 14)}Buy a ticket</button>
             ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost" id="am-faucet">Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}</div>
             <p class="muted small" id="am-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>

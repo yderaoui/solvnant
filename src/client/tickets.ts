@@ -234,7 +234,7 @@ async function payCoins(
   );
   tx.feePayer = sponsor ?? owner;
   tx.recentBlockhash = (await conn.getLatestBlockhash("confirmed")).blockhash;
-  step(`Approve ${intent.price} ${intent.symbol} in your wallet…`);
+  step(`Approve ${intent.price.toLocaleString('en-US')} ${intent.symbol}${(intent as { usd?: number | null }).usd ? ` (≈ $${(intent as { usd?: number }).usd})` : ''} in your wallet…`);
   if (sponsor) {
     let signedTx: Uint8Array;
     try {

@@ -35,7 +35,8 @@ export interface TicketConfig {
   mint: string; // the coin (SPL token mint)
   decimals: number;
   treasury: string; // wallet that receives ticket payments
-  price: number; // coins per ticket
+  price: number; // coins per ticket (fallback when the coin has no market price yet)
+  priceUsd?: number; // ticket price in USD, paid in the coin at the live price (TICKET_PRICE_USD)
   symbol: string; // shown in the UI, e.g. $TRACK
   // Server-side payment check. Solana's public RPC refuses Cloudflare Workers (403), so this points at
   // a provider (e.g. Helius) or the site's /api/solana-rpc proxy. Never sent to browsers.
@@ -94,6 +95,7 @@ export function readConfig(env: Env): GameConfig {
             decimals: num(env.TICKET_DECIMALS, 6),
             treasury: env.TICKET_TREASURY.trim(),
             price: num(env.TICKET_PRICE, 100),
+            priceUsd: env.TICKET_PRICE_USD ? num(env.TICKET_PRICE_USD, 20) : undefined,
             symbol: env.TICKET_SYMBOL || '$TRACK',
             verifyUrl: env.TICKET_VERIFY_URL || undefined,
             verifyKey: env.TICKET_VERIFY_KEY || undefined,

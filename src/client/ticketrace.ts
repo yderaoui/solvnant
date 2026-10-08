@@ -1,7 +1,7 @@
 // Race page: ticketed ghost lobbies (5 seats, winner takes all). Shows how it works, your tickets, a
 // "Race now" button that takes a seat (one ticket) and your recent lobbies. The race itself runs on the
 // stage (#/run, PracticeDrive in ticket mode).
-import { account, showAuthModal } from './account';
+import { account, priceLabel, showAuthModal } from './account';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
 import { toast } from './toast';
@@ -64,12 +64,12 @@ export async function renderRacePage() {
   const how = `
     <button class="tr-intro" id="tr-intro">▶ Why are they racing? Watch the intro</button>
     <ol class="tr-how">
-      <li><b>Buy a ticket</b><span>${t.price.toLocaleString('en-US')} ${sym} each</span></li>
+      <li><b>Buy a ticket</b><span>${escapeHtml(priceLabel(t))} each, paid in ${sym}</span></li>
       <li><b>Race the ghosts</b><span>The recorded runs of the players already in your lobby. No bots, no waiting.</span></li>
       <li><b>Fastest wins it all</b><span>The lobby settles at 5 players, or at 4 after 30 minutes. 3 or fewer: tickets refunded.</span></li>
     </ol>`;
   if (!account.me) {
-    el.innerHTML = `<div class="tr-grid"><section class="card tr-main">${pot(t.price, sym)}${how}
+    el.innerHTML = `<div class="tr-grid"><section class="card tr-main">${pot(t, sym)}${how}
       <button class="btn btn-lime tr-go" id="tr-signin">${icon('flag', 16)}SIGN IN WITH X TO RACE</button>
       <a class="btn btn-ghost tr-alt" href="#/drive">${icon('pad', 14)}Test drive first, free</a></section></div>`;
     $('tr-signin').onclick = () => showAuthModal();
@@ -88,9 +88,9 @@ export async function renderRacePage() {
   el.innerHTML = `
     <div class="tr-grid">
       <section class="card tr-main">
-        ${pot(t.price, sym)}
+        ${pot(t, sym)}
         ${how}
-        <div class="lb-ticket"><span><b>Your tickets: <span id="tr-tix">${mine.tickets}</span></b><small>${t.price.toLocaleString('en-US')} ${sym} each${devnet ? ' · test coins, no real value' : ''}</small></span>
+        <div class="lb-ticket"><span><b>Your tickets: <span id="tr-tix">${mine.tickets}</span></b><small>${escapeHtml(priceLabel(t))} each${t.priceUsd ? `, paid in ${sym} at the live price` : ''}${devnet ? ' · test coins, no real value' : ''}</small></span>
           <button class="btn small" id="tr-buy">${icon('zap', 14)}Buy ticket</button></div>
         ${devnet ? `<button class="btn small btn-ghost lb-faucet" id="tr-faucet">${icon('zap', 14)}Get free test ${sym}</button>` : ''}
         <p class="muted small" id="tr-step"></p>
@@ -110,12 +110,14 @@ export async function renderRacePage() {
   if (f) f.onclick = () => void faucet();
 }
 
-function pot(price: number, sym: string) {
-  const full = price * 5;
+function pot(t: { price: number; priceUsd?: number }, sym: string) {
+  const full = (t.priceUsd ?? t.price) * 5;
+  const n = (v: number) => v.toLocaleString('en-US');
+  const big = t.priceUsd ? `$${n(full * 0.8)} <small>in ${sym}</small>` : `${n(full * 0.8)} <small>${sym}</small>`;
   return `<div class="tr-pot">
     <div class="tr-kicker">5 PLAYERS · ONE TRACK · WINNER TAKES ALL</div>
-    <div class="tr-big">${(full * 0.8).toLocaleString('en-US')} <small>${sym}</small></div>
-    <div class="muted small">to the winner of a full lobby (80% of ${full.toLocaleString('en-US')}). 15% buys back and burns the token, 5% goes to the team.</div>
+    <div class="tr-big">${big}</div>
+    <div class="muted small">to the winner of a full lobby (80% of ${t.priceUsd ? '$' : ''}${n(full)}${t.priceUsd ? '' : ' ' + sym}). 15% is burned, 5% goes to the team.</div>
   </div>`;
 }
 

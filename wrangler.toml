@@ -47,7 +47,8 @@ TICKET_CLUSTER = "mainnet-beta"
 TICKET_MINT = "2EtATUYcuiCYkQRugSQvhGaE1AVXxqb8drpueeGvk4C8"
 TICKET_DECIMALS = "6"
 TICKET_TREASURY = "WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc"
-TICKET_PRICE = "1000"
+TICKET_PRICE = "1000" # fallback: used only while the coin has no market price
+TICKET_PRICE_USD = "20" # tickets cost $20, paid in the coin at the live price (racers: $100)
 TICKET_SYMBOL = "$PTEST"
 TICKET_RPC_URL = "https://solvnant.vercel.app/api/solana-rpc?cluster=mainnet-beta"
 TICKET_VERIFY_URL = "https://solvnant.vercel.app/api/solana-rpc"

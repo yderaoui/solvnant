@@ -1,7 +1,7 @@
 // Garage: pick your racer skin. Free skins work for everyone; paid ones are bought once with the game
 // coin (same wallet payment as a race ticket) and kept on the account. Any skin can be test driven.
 import { SKINS, DEFAULT_SKIN, isSkin, skinById, skinPrice } from '../game/skins';
-import { account, showAuthModal } from './account';
+import { account, priceLabel, showAuthModal } from './account';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
 import { toast } from './toast';
@@ -44,7 +44,7 @@ export function renderGarage() {
   const mine = mySkin();
   const ticket = account.cfg?.tickets?.price ?? 100;
   const cards = SKINS.map((s) => {
-    const price = skinPrice(s, ticket).toLocaleString('en-US');
+    const price = account.cfg?.tickets ? priceLabel(account.cfg.tickets, skinPrice(s, 1)) : skinPrice(s, ticket).toLocaleString('en-US');
     const have = owned(s.id);
     const on = have && s.id === mine;
     const step = steps.get(s.id) ?? '';
@@ -52,11 +52,11 @@ export function renderGarage() {
       ? `<button class="btn small btn-lime" disabled>${icon('check', 14)}Racing with it</button>`
       : have
         ? `<button class="btn small btn-lime" data-use="${s.id}">Race with it</button>`
-        : `<button class="btn small btn-lime" data-buy="${s.id}" ${busy || !payOn ? 'disabled' : ''}>${icon('zap', 14)}Buy for ${price} ${escapeHtml(sym)}</button>`;
+        : `<button class="btn small btn-lime" data-buy="${s.id}" ${busy || !payOn ? 'disabled' : ''}>${icon('zap', 14)}Buy for ${escapeHtml(price)}</button>`;
     return `<article class="bay${on ? ' on' : ''}${have ? '' : ' locked'}">
       <div class="bay-pic"><img src="${ASSET(`characters/${s.file}.webp`)}" alt="${escapeHtml(s.name)}" loading="lazy" width="480" height="360" /></div>
       <div class="bay-info">
-        <div class="bay-top"><h2>${escapeHtml(s.name)}</h2><span class="bay-tag">${s.price === 0 ? 'FREE' : have ? 'OWNED' : `${icon('lock', 12)}${price} ${escapeHtml(sym)}`}</span></div>
+        <div class="bay-top"><h2>${escapeHtml(s.name)}</h2><span class="bay-tag">${s.price === 0 ? 'FREE' : have ? 'OWNED' : `${icon('lock', 12)}${escapeHtml(price)}`}</span></div>
         <p class="muted small">${escapeHtml(s.tagline)}</p>
         <div class="bay-actions">${action}<button class="btn small btn-ghost" data-try="${s.id}">${icon('pad', 14)}Test drive</button></div>
         <p class="muted small bay-step" aria-live="polite">${escapeHtml(step)}</p>

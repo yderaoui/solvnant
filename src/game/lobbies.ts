@@ -91,11 +91,15 @@ export function rank<T extends SeatRow>(seats: T[]): T[] {
 
 /** How a pot is split (amounts in coins, rounded to 6 decimals; the team gets the rounding). */
 export function split(seats: number, price: number) {
-  const pot = seats * price;
+  return splitPot(seats * price);
+}
+
+/** Split a pot of coins (what was actually paid in): 80% winner, 15% burned, 5% team. */
+export function splitPot(pot: number) {
   const r = (v: number) => Math.floor(v * 1e6) / 1e6;
   const prize = r(pot * SPLIT.prize);
   const burn = r(pot * SPLIT.burn);
-  return { pot, prize, burn, team: r(pot - prize - burn) };
+  return { pot, prize, burn, team: Math.round((pot - prize - burn) * 1e6) / 1e6 }; // the exact remainder
 }
 
 /** What should happen to a lobby now. */

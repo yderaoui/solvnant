@@ -107,6 +107,19 @@ export const SKINS: Skin[] = [
       [-0.49, 0.12, 0.15],
     ],
   },
+  {
+    id: 'jack',
+    name: 'Jack Duval',
+    tagline: 'Land yacht, twin outboard motors',
+    price: 500,
+    file: 'jack',
+    yaw: Math.PI / 2,
+    length: 3.8,
+    exhaust: [
+      [-0.48, 0.2, -0.16],
+      [-0.48, 0.2, 0.16],
+    ],
+  },
 ];
 
 export const DEFAULT_SKIN = SKINS[0].id;

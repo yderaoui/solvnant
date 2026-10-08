@@ -971,9 +971,16 @@ nav a, .x-btn b, .x-btn small { white-space: nowrap; }
 /* test drive entry points */
 .lb-testdrive { width: 100%; margin-top: var(--s2); }
 .lb-warmup { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 var(--s2); font-size: 13px; color: var(--lime); }
-@media (max-width: 1560px) {
+@media (max-width: 1680px) {
   nav a[href="#/history"] span, nav a[href="#/lab"] span { display: none; }
 }
+@media (min-width: 761px) and (max-width: 1500px) {
+  nav a { padding: 0 10px; }
+  .x-btn small { display: none; }
+}
+/* never let the links push the page wider: the row scrolls instead (phones) */
+nav { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+nav::-webkit-scrollbar { display: none; }
 
 /* ---------------------------------------------------------------- garage (racer skins) */
 .garage-note { display: flex; gap: 8px; align-items: center; margin: var(--s4) 0 0; color: var(--muted); font-size: 13px; }

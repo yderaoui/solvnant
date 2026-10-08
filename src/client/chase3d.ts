@@ -45,7 +45,7 @@ interface CarModel {
   skid: [Pt | null, Pt | null];
   wheelR: number; // m, for wheel spin
   height: number; // m, for the name tag
-  animate?: (t: number, speed: number) => void; // per-frame extras (rocket flame, bounce)
+  animate?: (t: number, dt: number, speed: number, yawRate: number, accel: number) => void; // per-frame extras (rider, wheels, flames)
 }
 
 interface TreePart {
@@ -1197,7 +1197,7 @@ export class Chase3D {
       m.roll += (THREE.MathUtils.clamp(yawRate * c.speed * 0.0025, -0.06, 0.06) - m.roll) * Math.min(1, dt * 6);
       m.body.rotation.set(m.roll, 0, m.pitch, 'YXZ');
       m.spin += (c.speed * dt) / m.wheelR;
-      m.animate?.(this.time, c.speed);
+      m.animate?.(this.time, dt, c.speed, yawRate, accel);
       const steer = THREE.MathUtils.clamp(yawRate * 0.35, -0.45, 0.45);
       for (const w of m.wheels) w.rotation.x = m.spin;
       for (const w of m.front) w.rotation.y = steer;
@@ -1815,7 +1815,7 @@ function orangeKart(color: string): CarModel {
   body.add(lod);
   const root = new THREE.Group();
   root.add(body);
-  return { root, body, wheels: k.wheels, front: k.front, tail: k.tail, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null], wheelR: 0.075 * 1.8, animate: k.animate, height: 2.6 };
+  return { root, body, wheels: k.wheels, front: k.front, tail: k.tail, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null], wheelR: 0.075 * 1.8, animate: (t, _dt, speed) => k.animate(t, speed), height: 2.6 };
 }
 
 // ====================================================================== particles

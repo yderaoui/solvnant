@@ -2,12 +2,13 @@
 // the points ledger, betting markets (live races + AI League) and live-race prize pots.
 // Public routes live under /api/* (called by browsers with a session token); /internal/* routes
 // are only reachable from the live race room (the Worker never forwards /internal from outside).
-import { publicConfig, readConfig, type GameConfig } from './config';
+import { publicConfig, publicTickets, readConfig, type GameConfig } from './config';
 import { bearer, randomToken, signSession, verifySession, type Session } from './auth';
 import { isSolanaAddress, tokenHolding, verifyTicketPayment, verifyWalletSignature, walletMessage } from './solana';
 import { poolOdds, prizeSplit, settlePool } from './economy';
 import { cleanName } from './protocol';
 import { verifyPrivyToken } from './privy';
+import { DEFAULT_SKIN, SKINS, isSkin, skinById } from './skins';
 
 interface SqlCursor {
   toArray(): Record<string, unknown>[];
@@ -96,6 +97,12 @@ export class Hub {
       ts INTEGER NOT NULL, used_ref TEXT)`);
     this.sql.exec(`CREATE INDEX IF NOT EXISTS tickets_uid ON tickets(uid, used_ref)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS ticket_memos (uid TEXT PRIMARY KEY, memo TEXT NOT NULL, ts INTEGER NOT NULL)`);
+    // Racer skins bought with the game coin (one row per skin per player; the payment can't be reused).
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS skins (
+      uid TEXT NOT NULL, skin TEXT NOT NULL, sig TEXT NOT NULL UNIQUE, wallet TEXT NOT NULL, amount REAL NOT NULL,
+      ts INTEGER NOT NULL, PRIMARY KEY (uid, skin))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS skin_memos (uid TEXT PRIMARY KEY, skin TEXT NOT NULL, memo TEXT NOT NULL, ts INTEGER NOT NULL)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS skin_choice (uid TEXT PRIMARY KEY, skin TEXT NOT NULL)`);
   }
 
   // ================================================================== routing
@@ -140,6 +147,12 @@ export class Hub {
           return this.ticketIntent(u);
         case '/api/ticket/claim':
           return await this.ticketClaim(u, (await req.json()) as { signature?: string });
+        case '/api/skin/intent':
+          return this.skinIntent(u, (await req.json()) as { skin?: string });
+        case '/api/skin/claim':
+          return await this.skinClaim(u, (await req.json()) as { signature?: string });
+        case '/api/skin/select':
+          return this.skinSelect(u, (await req.json()) as { skin?: string });
         case '/api/agents':
           return req.method === 'POST' ? await this.submitAgent(u, (await req.json()) as { name?: string; code?: string }) : json(await this.myAgents(u));
       }
@@ -277,6 +290,8 @@ export class Hub {
       raceBlock: el.reason,
       dailyAt: u.daily_at + 20 * 3600_000,
       tickets: this.ticketsLeft(u.id),
+      skins: this.ownedSkins(u.id),
+      skin: this.chosenSkin(u.id),
     };
   }
 
@@ -305,7 +320,7 @@ export class Hub {
     if (!t) return fail('Coin tickets are not set up on this server.');
     const memo = `TrackLab ticket ${randomToken(9)}`;
     this.sql.exec('INSERT OR REPLACE INTO ticket_memos (uid, memo, ts) VALUES (?, ?, ?)', u.id, memo, Date.now());
-    return json({ memo, ...t });
+    return json({ memo, ...publicTickets(t) });
   }
 
   /** The player paid: check the transaction on-chain and credit one ticket (once per signature). */
@@ -324,6 +339,58 @@ export class Hub {
       this.sql.exec('DELETE FROM ticket_memos WHERE uid = ?', u.id);
     });
     return json({ ok: true, tickets: this.ticketsLeft(u.id) });
+  }
+
+  // ================================================================== racer skins (game coin)
+  private ownedSkins(uid: string): string[] {
+    const bought = new Set(this.sql.exec('SELECT skin FROM skins WHERE uid = ?', uid).toArray().map((r) => String(r.skin)));
+    return SKINS.filter((s) => s.price === 0 || bought.has(s.id)).map((s) => s.id);
+  }
+
+  private chosenSkin(uid: string): string {
+    const row = this.sql.exec('SELECT skin FROM skin_choice WHERE uid = ?', uid).toArray()[0] as { skin: string } | undefined;
+    return row && this.ownedSkins(uid).includes(row.skin) ? row.skin : DEFAULT_SKIN;
+  }
+
+  private skinSelect(u: UserRow, b: { skin?: string }): Response {
+    if (!isSkin(b.skin)) return fail('Unknown skin.');
+    if (!this.ownedSkins(u.id).includes(b.skin)) return fail('Buy this skin first.');
+    this.sql.exec('INSERT OR REPLACE INTO skin_choice (uid, skin) VALUES (?, ?)', u.id, b.skin);
+    return json({ ok: true, skin: b.skin, skins: this.ownedSkins(u.id) });
+  }
+
+  /** Start buying a skin: same coin payment as a ticket, with its own memo and price. */
+  private skinIntent(u: UserRow, b: { skin?: string }): Response {
+    const t = this.cfg.tickets;
+    if (!t) return fail('Coin payments are not set up on this server.');
+    if (!isSkin(b.skin)) return fail('Unknown skin.');
+    const skin = skinById(b.skin);
+    if (this.ownedSkins(u.id).includes(skin.id)) return fail('You already own this skin.');
+    const memo = `RaceTrench skin ${skin.id} ${randomToken(9)}`;
+    this.sql.exec('INSERT OR REPLACE INTO skin_memos (uid, skin, memo, ts) VALUES (?, ?, ?, ?)', u.id, skin.id, memo, Date.now());
+    return json({ memo, ...publicTickets(t), price: skin.price });
+  }
+
+  /** The player paid for a skin: check it on-chain, unlock it and put it on. */
+  private async skinClaim(u: UserRow, b: { signature?: string }): Promise<Response> {
+    const t = this.cfg.tickets;
+    if (!t) return fail('Coin payments are not set up on this server.');
+    const sig = String(b.signature ?? '');
+    const seen = this.sql.exec('SELECT uid FROM skins WHERE sig = ?', sig).toArray()[0] as { uid: string } | undefined;
+    const seenTicket = this.sql.exec('SELECT uid FROM tickets WHERE sig = ?', sig).toArray().length > 0;
+    if (seen?.uid === u.id) return json({ ok: true, skin: this.chosenSkin(u.id), skins: this.ownedSkins(u.id) });
+    if (seen || seenTicket) return fail('That payment was already used.');
+    const row = this.sql.exec('SELECT skin, memo, ts FROM skin_memos WHERE uid = ?', u.id).toArray()[0] as { skin: string; memo: string; ts: number } | undefined;
+    if (!row || Date.now() - row.ts > 30 * 60_000) return fail('The skin purchase expired. Start again.');
+    const skin = skinById(row.skin);
+    const paid = await verifyTicketPayment({ ...t, price: skin.price }, sig, row.memo);
+    if (!paid) return json({ ok: false, pending: true }); // not confirmed yet: the client retries
+    this.state.storage.transactionSync(() => {
+      this.sql.exec('INSERT OR IGNORE INTO skins (uid, skin, sig, wallet, amount, ts) VALUES (?, ?, ?, ?, ?, ?)', u.id, skin.id, sig, paid.wallet, paid.amount, Date.now());
+      this.sql.exec('INSERT OR REPLACE INTO skin_choice (uid, skin) VALUES (?, ?)', u.id, skin.id);
+      this.sql.exec('DELETE FROM skin_memos WHERE uid = ?', u.id);
+    });
+    return json({ ok: true, skin: skin.id, skins: this.ownedSkins(u.id) });
   }
 
   /** Give back tickets held for a race that this player didn't end up driving in. */
@@ -435,7 +502,7 @@ export class Hub {
         const u = this.user(String(b.uid));
         if (!u) return json({ ok: false, reason: 'Account not found. Sign in again.' });
         const el = await this.eligibility(u);
-        return json({ ok: el.ok, reason: el.reason, points: u.points });
+        return json({ ok: el.ok, reason: el.reason, points: u.points, skin: this.chosenSkin(u.id) });
       }
       case '/internal/charge': {
         const ok = this.state.storage.transactionSync(() => this.charge(String(b.uid), Number(b.amount), String(b.reason), b.ref ? String(b.ref) : null));

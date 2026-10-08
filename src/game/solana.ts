@@ -155,7 +155,7 @@ export async function verifyTicketPayment(cfg: TicketConfig, signature: string, 
   const bal = (list: TokenBalance[] | undefined) =>
     (list ?? []).filter((b) => b.owner === cfg.treasury && b.mint === cfg.mint).reduce((s, b) => s + (b.uiTokenAmount.uiAmount ?? 0), 0);
   const received = bal(tx.meta.postTokenBalances) - bal(tx.meta.preTokenBalances);
-  if (received + 1e-9 < cfg.price) throw new Error(`The treasury received ${received} coins, a ticket costs ${cfg.price}.`);
+  if (received + 1e-9 < cfg.price) throw new Error(`The treasury received ${received} coins, this costs ${cfg.price}.`);
   const wallet = tx.transaction.message.accountKeys.find((k) => k.signer)?.pubkey ?? '';
   return { wallet, amount: received };
 }

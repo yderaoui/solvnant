@@ -18,7 +18,8 @@ import { Rng } from '../sim/rng';
 import type { Obstacles } from '../sim/obstacles';
 import type { CarVisual } from './renderer';
 import { buildKart } from './kart';
-import { buildOrangie, loadOrangie, orangieLoaded } from './orangie';
+import { buildRacer, loadSkin, skinLoaded } from './racer3d';
+import { DEFAULT_SKIN } from '../game/skins';
 import { CARD_H, CARD_W, MAX_IMPACTS, MAX_CARS_UNIFORM, VARIANTS, bakeAtlas, cardMaterial, crowdUniforms, humanGeometry, humanMaterial, lookAttributes, type CrowdUniforms } from './crowd3d';
 
 const ASSET = (p: string) => `${import.meta.env.BASE_URL}assets/${p}`;
@@ -43,6 +44,7 @@ interface CarModel {
   roll: number;
   skid: [Pt | null, Pt | null];
   wheelR: number; // m, for wheel spin
+  height: number; // m, for the name tag
   animate?: (t: number, speed: number) => void; // per-frame extras (rocket flame, bounce)
 }
 
@@ -106,6 +108,7 @@ export class Chase3D {
   private obsGroup = new THREE.Group();
   private carGroup = new THREE.Group();
   private cars: CarModel[] = [];
+  private carsToken: object | null = null; // the setCars call waiting for skins to download
   private camPos = new THREE.Vector3();
   private camLook = new THREE.Vector3();
   private snap = true;
@@ -223,7 +226,7 @@ export class Chase3D {
         () => done(),
       ),
     );
-    const car = loadOrangie(); // the racer model (Orangie on his turbo wheelchair)
+    const car = loadSkin(DEFAULT_SKIN); // the free racer; other skins load when a race needs them
 
     this.cu = crowdUniforms();
     this.humanMat = humanMaterial(this.cu);
@@ -831,17 +834,25 @@ export class Chase3D {
   }
 
   // ==================================================================== cars
-  setCars(entries: { name: string; color: string }[], you: number) {
+  setCars(entries: { name: string; color: string; skin?: string }[], you: number) {
+    // Skins not downloaded yet: race with the default one for now, swap them in when they arrive.
+    const missing = [...new Set(entries.map((e) => e.skin ?? DEFAULT_SKIN))].filter((id) => !skinLoaded(id));
+    if (missing.length) {
+      const token = (this.carsToken = {});
+      void Promise.all(missing.map(loadSkin)).then(() => {
+        if (this.carsToken === token) this.setCars(entries, you);
+      });
+    } else this.carsToken = null;
     for (const c of this.cars) {
       c.label?.material.map?.dispose();
       c.label?.material.dispose();
       this.carGroup.remove(c.root);
     }
     this.cars = entries.map((e, i) => {
-      const m = racer(e.color);
+      const m = racer(e.color, e.skin);
       if (i !== you) {
         m.label = labelSprite(e.name, e.color);
-        m.label.position.set(0, 4, 0);
+        m.label.position.set(0, m.height + 0.9, 0);
         m.root.add(m.label);
       }
       this.carGroup.add(m.root);
@@ -1769,9 +1780,10 @@ function jitter(geo: THREE.BufferGeometry, amt: number, seed: number) {
 // ====================================================================== cars
 
 /** A racer: Orangie on his turbo wheelchair, or the code-built kart if the model didn't load. */
-function racer(color: string): CarModel {
-  if (!orangieLoaded()) return orangeKart(color);
-  const k = buildOrangie(color);
+function racer(color: string, skin = DEFAULT_SKIN): CarModel {
+  if (!skinLoaded(skin)) skin = DEFAULT_SKIN;
+  if (!skinLoaded(skin)) return orangeKart(color);
+  const k = buildRacer(skin, color);
   const lod = new THREE.LOD();
   lod.addLevel(k.model, 0);
   lod.addLevel(k.far, 55);
@@ -1779,7 +1791,7 @@ function racer(color: string): CarModel {
   body.add(lod);
   const root = new THREE.Group();
   root.add(body);
-  return { root, body, wheels: [], front: [], tail: null, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null], wheelR: 1, animate: k.animate };
+  return { root, body, wheels: [], front: [], tail: null, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null], wheelR: 1, animate: k.animate, height: k.height };
 }
 
 /** Fallback racer: the orange in a rocket office chair (kart.ts), turned to face +X, with a cheap far LOD. */
@@ -1794,7 +1806,7 @@ function orangeKart(color: string): CarModel {
   body.add(lod);
   const root = new THREE.Group();
   root.add(body);
-  return { root, body, wheels: k.wheels, front: k.front, tail: k.tail, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null], wheelR: 0.075 * 1.8, animate: k.animate };
+  return { root, body, wheels: k.wheels, front: k.front, tail: k.tail, label: null, prevH: 0, prevSpeed: 0, spin: 0, pitch: 0, roll: 0, skid: [null, null], wheelR: 0.075 * 1.8, animate: k.animate, height: 2.6 };
 }
 
 // ====================================================================== particles

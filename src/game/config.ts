@@ -118,10 +118,15 @@ export function publicConfig(c: GameConfig) {
     privy: c.privyAppId,
     guests: c.allowGuests,
     gate: c.gate ? { mint: c.gate.mint, minUsd: c.gate.minUsd } : null,
-    tickets: c.tickets ? { ...c.tickets, verifyUrl: undefined, verifyKey: undefined } : null,
+    tickets: c.tickets ? publicTickets(c.tickets) : null,
     points: c.points,
     betsCloseAt: c.betsCloseAt,
     leagueBets: !!c.supabase,
   };
 }
 export type PublicConfig = ReturnType<typeof publicConfig>;
+
+/** Ticket settings safe to send to browsers: without the server's RPC proxy address and key. */
+export function publicTickets(t: TicketConfig): TicketConfig {
+  return { ...t, verifyUrl: undefined, verifyKey: undefined };
+}

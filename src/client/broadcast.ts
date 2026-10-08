@@ -10,6 +10,7 @@ import { RaceRenderer, type CameraMode, type CarVisual } from './renderer';
 import { simulate, type LiveRecord } from './simClient';
 import { escapeHtml } from './codeViewer';
 import { icon, type IconName } from './icons';
+import { botSkin } from '../game/skins';
 import type { RaceInfo, StoredResult } from './data';
 
 export type PlayMode = 'live' | 'replay';
@@ -108,7 +109,7 @@ export class Broadcast {
     this.pushed3d = key;
     c.setTrack(this.track);
     c.setObstacles(this.ob ? { ...this.ob, down: this.ob.trees.map(() => false) } : null);
-    c.setCars((this.race?.entries ?? []).map((e) => ({ name: e.name, color: e.color })), -1);
+    c.setCars((this.race?.entries ?? []).map((e, i) => ({ name: e.name, color: e.color, skin: (e as { skin?: string }).skin ?? botSkin(i) })), -1);
     c.warmUp();
     this.lastEvT = -1;
   }

@@ -12,6 +12,8 @@ import { audio, get3d, load3d } from './view3d';
 import { drawMinimap, fmt } from './livegame';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
+import { driveSkin } from './garage';
+import { botSkin } from '../game/skins';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const BOTS = 5;
@@ -62,8 +64,8 @@ export class PracticeDrive {
       }
     })();
     this.entries = [
-      { id: 'you', name: 'You', color, kind: 'human', connected: true },
-      ...Array.from({ length: BOTS }, (_, b): LobbyEntry => ({ id: `bot:${b}`, name: `BOT ${'ABCDEFGH'[b]}`, color: PLAYER_COLORS.filter((c) => c !== color)[b], kind: 'bot', connected: true })),
+      { id: 'you', name: 'You', color, kind: 'human', connected: true, skin: driveSkin() },
+      ...Array.from({ length: BOTS }, (_, b): LobbyEntry => ({ id: `bot:${b}`, name: `BOT ${'ABCDEFGH'[b]}`, color: PLAYER_COLORS.filter((c) => c !== color)[b], kind: 'bot', connected: true, skin: botSkin(b + 1) })),
     ];
     this.sim = new RaceSim(null, {
       seed: this.seed,
@@ -82,7 +84,7 @@ export class PracticeDrive {
     if (!this.active) return;
     c.setTrack(this.track);
     c.setObstacles(generateObstacles(this.track));
-    c.setCars(this.entries.map((e) => ({ name: e.name, color: e.color })), 0);
+    c.setCars(this.entries.map((e) => ({ name: e.name, color: e.color, skin: e.skin })), 0);
     c.setCamMode('chase');
     c.warmUp();
     audio.start();

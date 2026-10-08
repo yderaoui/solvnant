@@ -24,6 +24,8 @@ export interface Me {
   raceBlock: string | null;
   dailyAt: number;
   tickets?: number; // race tickets bought with the game coin, not used yet
+  skins?: string[]; // racer skins this player owns (free ones included)
+  skin?: string; // the one they race with
 }
 
 const store = {

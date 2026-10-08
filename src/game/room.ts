@@ -18,6 +18,7 @@ import { COUNTDOWN_MS, MAX_RACE_SECONDS, SLOT_MS } from '../sim/schedule';
 import { readConfig, type GameConfig } from './config';
 import { verifySession } from './auth';
 import { liveSimEntries } from './liveEntries';
+import { DEFAULT_SKIN, botSkin, isSkin } from './skins';
 import {
   CAR_SNAP_STRIDE,
   MAX_PLAYERS,
@@ -186,7 +187,7 @@ export class GameRoom {
     const slot = this.slot;
     this.pending.add(uid);
     try {
-      const el = await this.hub<{ ok: boolean; reason: string | null; points: number }>('/internal/eligibility', { uid });
+      const el = await this.hub<{ ok: boolean; reason: string | null; points: number; skin?: string }>('/internal/eligibility', { uid });
       if (!el.ok) return this.err(conn, el.reason ?? 'You can’t race yet.');
       const P = this.cfg.points;
       const usedPriority = this.players.filter((p) => p.priority).length;
@@ -196,7 +197,7 @@ export class GameRoom {
       const taken = new Set([...this.players, ...this.waitlist].map((p) => p.color));
       let color = PLAYER_COLORS.includes(String(rawColor)) ? String(rawColor) : PLAYER_COLORS[0];
       if (taken.has(color)) color = PLAYER_COLORS.find((c) => !taken.has(c)) ?? color;
-      const entry: LobbyEntry = { id: uid, name: conn.name, color, kind: 'human', connected: true, priority };
+      const entry: LobbyEntry = { id: uid, name: conn.name, color, kind: 'human', connected: true, priority, skin: isSkin(el.skin) ? el.skin : DEFAULT_SKIN };
 
       // Who gives up a seat if the grid is full?
       let bump: LobbyEntry | undefined;
@@ -409,7 +410,7 @@ export class GameRoom {
     for (let b = 0; entries.length < Math.max(MIN_GRID, humans.length) && b < HOUSE_BOTS.length; b++) {
       const color = PLAYER_COLORS.find((c) => !used.has(c)) ?? '#c2c3c7';
       used.add(color);
-      entries.push({ id: `bot:${b}`, name: HOUSE_BOTS[b].name.replace('House Bot ', 'BOT '), color, kind: 'bot', connected: true });
+      entries.push({ id: `bot:${b}`, name: HOUSE_BOTS[b].name.replace('House Bot ', 'BOT '), color, kind: 'bot', connected: true, skin: botSkin(b + 1) });
     }
     for (const w of this.waitlist) for (const c of this.conns) if (c.id === w.id) this.err(c, 'No seat this time. You’re first in line for a newcomer seat next race.');
     this.waitlist = [];
@@ -490,7 +491,7 @@ export class GameRoom {
         max_time: this.maxRace,
         started_at: new Date(this.startAt).toISOString(),
         duration: sim.t,
-        entries: this.raceEntries.map((e, i) => ({ car: i, name: e.name, color: e.color, kind: e.kind, bot: e.kind === 'bot' ? Number(e.id.slice(4)) : null })),
+        entries: this.raceEntries.map((e, i) => ({ car: i, name: e.name, color: e.color, kind: e.kind, bot: e.kind === 'bot' ? Number(e.id.slice(4)) : null, skin: e.skin })),
         input_log: sim.inputLog,
         results: results.map((x) => ({ car: x.car, position: x.position, finished: x.finished, finish_time: x.finishTime, best_lap: x.bestLap, crashed: x.crashed })),
       }),

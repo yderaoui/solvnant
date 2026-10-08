@@ -43,11 +43,25 @@ async function payer(): Promise<{ address: string; send: (tx: import('@solana/we
 }
 
 export async function buyTicket(step: (text: string) => void): Promise<number> {
+  const r = await payCoins('/api/ticket/intent', {}, '/api/ticket/claim', 'tl-pending-ticket', step);
+  return (r as { tickets?: number }).tickets ?? 0;
+}
+
+/** Buy a racer skin with the game coin (same payment as a ticket, the skin's own price). */
+export async function buySkin(skin: string, step: (text: string) => void): Promise<void> {
+  await payCoins('/api/skin/intent', { skin }, '/api/skin/claim', 'tl-pending-skin', step);
+}
+
+/**
+ * Pay the treasury in the game coin and have the server credit it: `intentPath` returns the price and
+ * a one-time memo, `claimPath` checks the transaction on-chain. Resolves with the claim's answer.
+ */
+async function payCoins(intentPath: string, intentBody: object, claimPath: string, pendingKey: string, step: (text: string) => void): Promise<object> {
   if (!account.me) throw new Error('Sign in first.');
   step('Connecting your wallet…');
   const wallet = await payer();
   const publicKey = { toString: () => wallet.address };
-  const intent = await account.api<TicketConfig & { memo: string }>('/api/ticket/intent', {});
+  const intent = await account.api<TicketConfig & { memo: string }>(intentPath, intentBody);
   step('Preparing the payment…');
   // The Solana libraries expect Node's Buffer: give the browser one before loading them.
   const { Buffer } = await import('buffer');
@@ -82,53 +96,59 @@ export async function buyTicket(step: (text: string) => void): Promise<number> {
     throw new Error(/reject|cancel|denied/i.test(String((e as Error).message)) ? 'You cancelled the payment.' : `Wallet error: ${(e as Error).message}`);
   }
   step('Waiting for the network to confirm…');
-  remember(signature);
+  remember(pendingKey, signature);
   for (let i = 0; i < 30; i++) {
-    let r: { ok: boolean; pending?: boolean; tickets?: number };
+    let r: { ok: boolean; pending?: boolean };
     try {
-      r = await account.api<{ ok: boolean; pending?: boolean; tickets?: number }>('/api/ticket/claim', { signature });
+      r = await account.api<{ ok: boolean; pending?: boolean }>(claimPath, { signature });
     } catch (e) {
       const msg = (e as Error).message;
       if (/already used|memo|costs|failed on-chain|expired/i.test(msg)) throw e; // a real problem with this payment
       r = { ok: false, pending: true }; // network hiccup: keep trying
     }
     if (r.ok) {
-      remember(null);
+      remember(pendingKey, null);
       await account.refresh();
-      return r.tickets ?? 0;
+      return r;
     }
     await new Promise((res) => setTimeout(res, 2000));
   }
   throw new Error(`Payment sent but not confirmed yet. It will be credited when it confirms (transaction ${signature.slice(0, 8)}…).`);
 }
 
-function remember(sig: string | null) {
+function remember(key: string, sig: string | null) {
   try {
-    if (sig) localStorage.setItem('tl-pending-ticket', sig);
-    else localStorage.removeItem('tl-pending-ticket');
+    if (sig) localStorage.setItem(key, sig);
+    else localStorage.removeItem(key);
   } catch {
     /* ignore */
   }
 }
 
-/** A purchase whose confirmation we didn't see (tab closed, slow network): credit it now. */
+/** Purchases whose confirmation we didn't see (tab closed, slow network): credit them now. */
 export async function claimPendingTicket(): Promise<boolean> {
+  const a = await claimPending('tl-pending-ticket', '/api/ticket/claim');
+  const b = await claimPending('tl-pending-skin', '/api/skin/claim');
+  return a || b;
+}
+
+async function claimPending(key: string, path: string): Promise<boolean> {
   let sig: string | null = null;
   try {
-    sig = localStorage.getItem('tl-pending-ticket');
+    sig = localStorage.getItem(key);
   } catch {
     return false;
   }
   if (!sig || !account.me || !ticketsOn()) return false;
   try {
-    const r = await account.api<{ ok: boolean }>('/api/ticket/claim', { signature: sig });
+    const r = await account.api<{ ok: boolean }>(path, { signature: sig });
     if (r.ok) {
-      remember(null);
+      remember(key, null);
       await account.refresh();
       return true;
     }
   } catch {
-    remember(null); // expired or invalid: don't keep retrying
+    remember(key, null); // expired or invalid: don't keep retrying
   }
   return false;
 }

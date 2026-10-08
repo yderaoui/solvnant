@@ -279,7 +279,7 @@ export class LiveGame {
     if (room.phase !== 'lobby' && this.carsSeed !== room.seed + room.phase) {
       this.carsSeed = room.seed + room.phase;
       this.renderer.you = this.car ?? -1;
-      const cars = room.entries.map((e) => ({ name: e.name, color: e.color }));
+      const cars = room.entries.map((e) => ({ name: e.name, color: e.color, skin: e.skin }));
       this.renderer.setCars(cars);
       this.c3d?.setCars(cars, this.car ?? -1);
     }
@@ -652,7 +652,7 @@ export class LiveGame {
     this.pushed3d = key;
     if (this.track) c.setTrack(this.track);
     if (this.ob) c.setObstacles(this.ob);
-    c.setCars(this.room && this.room.phase !== 'lobby' ? this.room.entries.map((e) => ({ name: e.name, color: e.color })) : [], this.car ?? -1);
+    c.setCars(this.room && this.room.phase !== 'lobby' ? this.room.entries.map((e) => ({ name: e.name, color: e.color, skin: e.skin })) : [], this.car ?? -1);
     c.warmUp();
   }
 

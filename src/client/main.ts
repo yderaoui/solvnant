@@ -12,6 +12,7 @@ import { BetWidget } from './bets';
 import { loadDraft, practiceEntries, renderAgentPage } from './agent';
 import { LeagueLobby } from './leagueLobby';
 import { renderBuyPage } from './buy';
+import { renderGarage } from './garage';
 import { PracticeDrive } from './practice';
 import {
   db,
@@ -197,8 +198,8 @@ if (isLocalMode) $('mode-pill').hidden = false;
 let session = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 
-function show(view: 'stage' | 'leaderboard' | 'history' | 'agent' | 'buy') {
-  for (const v of ['stage', 'leaderboard', 'history', 'agent', 'buy']) $(`view-${v}`).hidden = v !== view;
+function show(view: 'stage' | 'leaderboard' | 'history' | 'agent' | 'buy' | 'garage') {
+  for (const v of ['stage', 'leaderboard', 'history', 'agent', 'buy', 'garage']) $(`view-${v}`).hidden = v !== view;
   for (const a of document.querySelectorAll<HTMLAnchorElement>('nav a')) {
     const href = a.getAttribute('href')!;
     const on = location.hash.startsWith(href) || (href === '#/live' && location.hash === '') || (href === '#/league' && location.hash.startsWith('#/replay'));
@@ -254,6 +255,9 @@ async function route() {
     case 'buy':
       show('buy');
       return renderBuyPage();
+    case 'garage':
+      show('garage');
+      return renderGarage();
     case 'agent':
       show('agent');
       return renderAgentPage();

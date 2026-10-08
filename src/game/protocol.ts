@@ -18,6 +18,7 @@ export interface LobbyEntry {
   kind: 'human' | 'bot';
   connected: boolean;
   priority?: boolean; // bought a priority pass: guaranteed seat, can't be bumped
+  skin?: string; // racer skin id (src/game/skins.ts)
 }
 
 export interface RecentWinner {

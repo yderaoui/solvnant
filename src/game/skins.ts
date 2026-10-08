@@ -42,6 +42,19 @@ export const SKINS: Skin[] = [
       [-0.33, 0.33, 0.2],
     ],
   },
+  {
+    id: 'rasmr',
+    name: 'Rasmr',
+    tagline: 'Motorized shopping cart, glass of red in hand',
+    price: 500,
+    file: 'cart',
+    yaw: Math.PI,
+    length: 3.3,
+    exhaust: [
+      [-0.49, 0.28, -0.1],
+      [-0.49, 0.28, 0.1],
+    ],
+  },
 ];
 
 export const DEFAULT_SKIN = SKINS[0].id;

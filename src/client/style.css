@@ -1096,3 +1096,19 @@ body[data-page='drive'] .drive-only { display: inline-flex !important; }
 @media (prefers-reduced-motion: reduce) { .intro *, .intro { animation: none !important; } .in-chart polyline { stroke-dashoffset: 0; } .in-chart span, .in-row img { opacity: 1; } }
 .tr-intro { align-self: flex-start; background: none; border: 0; padding: 0; color: var(--lime); font-weight: 700; font-size: 13px; cursor: pointer; }
 .tr-intro:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- sound panel */
+.snd-panel { position: fixed; z-index: 400; padding: var(--s4); display: flex; flex-direction: column; gap: 10px; background: linear-gradient(180deg, rgba(16, 20, 28, 0.98), rgba(8, 10, 14, 0.98)); border: var(--panel-border); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+.snd-head { display: flex; justify-content: space-between; align-items: center; }
+.snd-head b { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; }
+.snd-mute { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--line-strong); background: transparent; color: var(--text); font-weight: 700; font-size: 12px; cursor: pointer; }
+.snd-mute.on { color: #ff4d6d; border-color: rgba(255, 77, 109, 0.5); }
+.snd-row { display: grid; grid-template-columns: 96px 1fr 30px; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.snd-row input { width: 100%; accent-color: var(--lime); }
+.snd-row output { text-align: right; font-family: var(--mono); font-size: 12px; color: var(--text); }
+.snd-label { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+.snd-styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.snd-styles button { padding: 8px 4px; border-radius: var(--r-sm); border: 1px solid var(--line-strong); background: rgba(255, 255, 255, 0.03); color: var(--text); font-weight: 700; font-size: 12px; cursor: pointer; }
+.snd-styles button.on { border-color: var(--lime); background: rgba(164, 99, 255, 0.16); color: var(--lime-hi); }
+.snd-foot { display: flex; gap: 8px; margin-top: 4px; }
+.snd-foot .btn { flex: 1; justify-content: center; }

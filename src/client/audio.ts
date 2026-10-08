@@ -7,6 +7,23 @@
 
 const GEARS = [0, 45, 80, 115, 150, 185, 215, 260]; // km/h where each gear starts
 
+/** What players can adjust (Sound panel). Levels are 0..1; the defaults are the designed mix. */
+export interface SoundSettings {
+  volume: number;
+  engine: number;
+  crowd: number;
+  fx: number; // tyre squeal + crashes
+  style: EngineStyle;
+}
+export type EngineStyle = 'deep' | 'classic' | 'screamer';
+export const SOUND_DEFAULTS: SoundSettings = { volume: 0.8, engine: 0.8, crowd: 0.6, fx: 0.8, style: 'classic' };
+/** pitch: engine note multiplier; bright: how far the tone filter opens; drive: growl. */
+const STYLES: Record<EngineStyle, { pitch: number; bright: number; drive: number }> = {
+  deep: { pitch: 0.72, bright: 0.7, drive: 2.8 },
+  classic: { pitch: 1, bright: 1, drive: 2.2 },
+  screamer: { pitch: 1.75, bright: 1.9, drive: 3.4 },
+};
+
 /** Brown noise (deep rumble) or white noise, 2 s, looped by the players. */
 function noiseBuffer(ctx: AudioContext, brown: boolean): AudioBuffer {
   const b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -22,18 +39,26 @@ function noiseBuffer(ctx: AudioContext, brown: boolean): AudioBuffer {
   return b;
 }
 
-/** Soft clipping: a little growl without harsh distortion. */
-function softClip(ctx: AudioContext, drive: number): WaveShaperNode {
-  const ws = ctx.createWaveShaper();
+/** Soft clipping curve: a little growl without harsh distortion. */
+function clipCurve(drive: number): Float32Array<ArrayBuffer> {
   const n = 1024;
   const curve = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const x = (i / (n - 1)) * 2 - 1;
     curve[i] = Math.tanh(x * drive) / Math.tanh(drive);
   }
-  ws.curve = curve;
-  ws.oversample = '2x';
-  return ws;
+  return curve;
+}
+
+function sanitize(s: SoundSettings): SoundSettings {
+  const lvl = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : d);
+  return {
+    volume: lvl(s.volume, SOUND_DEFAULTS.volume),
+    engine: lvl(s.engine, SOUND_DEFAULTS.engine),
+    crowd: lvl(s.crowd, SOUND_DEFAULTS.crowd),
+    fx: lvl(s.fx, SOUND_DEFAULTS.fx),
+    style: s.style in STYLES ? s.style : 'classic',
+  };
 }
 
 export class GameAudio {
@@ -53,14 +78,35 @@ export class GameAudio {
   private gear = 0;
   private shiftDip = 0; // s left of the gear-change dip
   private lastImpact = 0;
+  private clip!: WaveShaperNode;
   muted = false;
+  settings: SoundSettings = { ...SOUND_DEFAULTS };
 
   constructor() {
     try {
       this.muted = localStorage.getItem('agp-muted') === '1';
+      const s = JSON.parse(localStorage.getItem('rt-sound') ?? 'null') as Partial<SoundSettings> | null;
+      if (s) this.settings = sanitize({ ...SOUND_DEFAULTS, ...s });
     } catch {
       /* ignore */
     }
+  }
+
+  /** Change some settings (from the Sound panel); saved for next time. */
+  configure(patch: Partial<SoundSettings>) {
+    this.settings = sanitize({ ...this.settings, ...patch });
+    try {
+      localStorage.setItem('rt-sound', JSON.stringify(this.settings));
+    } catch {
+      /* ignore */
+    }
+    if (!this.ctx) return;
+    this.glide(this.master.gain, this.masterLevel(), 0.05);
+    if (patch.style) this.clip.curve = clipCurve(STYLES[this.settings.style].drive);
+  }
+
+  private masterLevel() {
+    return this.muted ? 0 : this.settings.volume * 1.1;
   }
 
   get running() {
@@ -77,7 +123,7 @@ export class GameAudio {
     if (!Ctx) return;
     const ctx = (this.ctx = new Ctx({ latencyHint: 'interactive' }));
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.9;
+    this.master.gain.value = this.masterLevel();
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16;
     comp.knee.value = 12;
@@ -113,7 +159,10 @@ export class GameAudio {
     this.engFilter.Q.value = 0.7;
     this.engGain = ctx.createGain();
     this.engGain.gain.value = 0;
-    engMix.connect(softClip(ctx, 2.2)).connect(this.engFilter).connect(this.engGain).connect(this.master);
+    this.clip = ctx.createWaveShaper();
+    this.clip.curve = clipCurve(STYLES[this.settings.style].drive);
+    this.clip.oversample = '2x';
+    engMix.connect(this.clip).connect(this.engFilter).connect(this.engGain).connect(this.master);
 
     // exhaust / road rumble under the engine
     const rumble = ctx.createBufferSource();
@@ -181,7 +230,7 @@ export class GameAudio {
     } catch {
       /* ignore */
     }
-    if (this.ctx) this.glide(this.master.gain, m ? 0 : 0.9, 0.05);
+    if (this.ctx) this.glide(this.master.gain, this.masterLevel(), 0.05);
   }
 
   /** Per frame: the followed car's state. `near` 0..1 = how close we are to a crowd. */
@@ -208,19 +257,21 @@ export class GameAudio {
       hi = GEARS[g + 1];
     const frac = Math.min(1, (kmh - lo) / (hi - lo));
     const rpm = (g === 0 ? 1100 : 3000) + frac * (g === 0 ? 4800 : 3800) + throttle * 350;
-    const f = 30 + rpm * 0.017; // ~50 Hz idle .. ~160 Hz at the limiter
+    const st = STYLES[this.settings.style];
+    const eng = this.settings.engine * 1.25, crowdLvl = this.settings.crowd / 0.6, fx = this.settings.fx * 1.25;
+    const f = (30 + rpm * 0.017) * st.pitch; // ~50 Hz idle .. ~160 Hz at the limiter (classic)
     const shifting = this.shiftDip > 0;
     for (const o of this.engOsc) this.glide(o.frequency, f, shifting ? 0.09 : 0.05);
     this.glide(this.engSub.frequency, f / 2, shifting ? 0.09 : 0.05);
-    this.glide(this.engFilter.frequency, 380 + throttle * 1500 + frac * 500 + kmh * 2, 0.08);
+    this.glide(this.engFilter.frequency, (380 + throttle * 1500 + frac * 500 + kmh * 2) * st.bright, 0.08);
     const load = 0.06 + throttle * 0.06 + Math.min(1, kmh / 200) * 0.025;
-    this.glide(this.engGain.gain, (shifting ? load * 0.45 : load) * engineGain, shifting ? 0.02 : 0.07);
-    this.glide(this.rumbleGain.gain, Math.min(1, kmh / 120) * 0.16 * engineGain, 0.15);
+    this.glide(this.engGain.gain, (shifting ? load * 0.45 : load) * engineGain * eng, shifting ? 0.02 : 0.07);
+    this.glide(this.rumbleGain.gain, Math.min(1, kmh / 120) * 0.16 * engineGain * eng, 0.15);
     const sq = Math.max(0, Math.min(1, (slip - 2.5) / 6));
-    this.glide(this.skidGain.gain, sq * sq * 0.14 * engineGain, 0.06);
+    this.glide(this.skidGain.gain, sq * sq * 0.14 * engineGain * fx, 0.06);
     this.glide(this.skidFilter.frequency, 1700 + sq * 600 + Math.sin(ctx.currentTime * 13) * 120, 0.05);
     this.crowdBoost = Math.max(0, this.crowdBoost - dt * 0.22);
-    this.glide(this.crowdGain.gain, 0.04 + near * 0.12 + this.crowdBoost * 0.35, 0.25);
+    this.glide(this.crowdGain.gain, (0.04 + near * 0.12 + this.crowdBoost * 0.35) * crowdLvl, 0.25);
     this.glide(this.crowdFilter.frequency, 650 + this.crowdBoost * 500, 0.3);
   }
 
@@ -236,7 +287,8 @@ export class GameAudio {
     const t = ctx.currentTime;
     if (t - this.lastImpact < 0.09) return;
     this.lastImpact = t;
-    const s = Math.max(0.15, Math.min(1, strength));
+    const s = Math.max(0.15, Math.min(1, strength)) * this.settings.fx * 1.25;
+    if (s < 0.01) return;
     const src = ctx.createBufferSource();
     src.buffer = this.white;
     const f = ctx.createBiquadFilter();
@@ -261,6 +313,26 @@ export class GameAudio {
     o.connect(og).connect(this.master);
     o.start(t);
     o.stop(t + 0.4);
+  }
+
+  /** Sound panel "Test": a short drive through the gears, a squeal, a hit and a cheer. */
+  preview() {
+    this.start();
+    if (!this.ctx) return;
+    let t = 0;
+    const id = setInterval(() => {
+      t += 1 / 30;
+      const kmh = t < 2.2 ? 230 * Math.min(1, t / 2.2) ** 0.7 : Math.max(0, 230 - (t - 2.2) * 160);
+      this.update(kmh / 3.6, t < 2.2 ? 1 : 0, t > 1.6 && t < 2.1 ? 8 : 0, 0.4, 1 / 30);
+      if (Math.abs(t - 2.3) < 0.017) {
+        this.impact(0.7);
+        this.cheer(0.9);
+      }
+      if (t > 3.6) {
+        clearInterval(id);
+        this.update(0, 0, 0, 0, 1);
+      }
+    }, 1000 / 30);
   }
 
   stop() {

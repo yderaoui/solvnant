@@ -147,16 +147,12 @@ export class LiveGame {
       this.audio.start();
       this.setView(this.view === 'map' ? '3d' : 'map');
     };
-    $('mute-btn').addEventListener('click', () => {
-      if (this.active) this.toggleMute();
-    });
     $('join-next').onclick = () => this.toggleNext();
     try {
       this.backSelf = Math.max(0, Math.floor(Number(localStorage.getItem('tl-back') ?? 0)) || 0);
     } catch {
       /* ignore */
     }
-    this.paintMute();
     // Browsers only allow sound after a gesture: start it on the first click/key while live.
     const unlock = () => {
       if (this.active) this.audio.start();
@@ -165,18 +161,6 @@ export class LiveGame {
     window.addEventListener('keydown', unlock);
   }
 
-  private toggleMute() {
-    this.audio.start();
-    this.audio.setMuted(!this.audio.muted);
-    this.paintMute();
-  }
-
-  private paintMute() {
-    const b = $('mute-btn');
-    b.innerHTML = icon(this.audio.muted ? 'mute' : 'sound');
-    b.setAttribute('aria-pressed', String(this.audio.muted));
-    b.setAttribute('aria-label', this.audio.muted ? 'Unmute sound (M)' : 'Mute sound (M)');
-  }
 
   start() {
     this.active = true;
@@ -387,7 +371,6 @@ export class LiveGame {
     }
     if (!down) return;
     if (e.code === 'KeyC') this.cycleView();
-    if (e.code === 'KeyM') this.toggleMute();
     if (e.code === 'KeyV' && this.view === 'fan') this.c3d?.nextFanSpot();
     if (e.code === 'BracketRight' || e.code === 'BracketLeft') this.cycleSpectate(e.code === 'BracketRight' ? 1 : -1);
   }

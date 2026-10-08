@@ -2,7 +2,7 @@ import './style.css';
 import { RaceRenderer } from './renderer';
 import { Broadcast, fmtTime } from './broadcast';
 import { LiveGame } from './livegame';
-import { audio, get3d } from './view3d';
+import { get3d } from './view3d';
 import { initFanUi } from './seatPicker';
 import { CodeViewer, escapeHtml } from './codeViewer';
 import { hydrateIcons, icon } from './icons';
@@ -15,6 +15,7 @@ import { renderBuyPage } from './buy';
 import { renderGarage } from './garage';
 import { renderRacePage, takeTicketRun } from './ticketrace';
 import { introSeen, showIntro } from './intro';
+import { paintSoundButton, toggleMuteQuick, toggleSoundPanel } from './soundPanel';
 import { PracticeDrive } from './practice';
 import {
   db,
@@ -84,22 +85,14 @@ window.addEventListener('keydown', (e) => {
     const at = cams.findIndex((id) => $(id).classList.contains('active'));
     $(cams[(at + 1) % cams.length]).click();
   } else if (e.code === 'KeyV') get3d()?.nextFanSpot();
-  else if (e.code === 'KeyM') toggleMute();
 });
-function paintMute() {
-  const b = $('mute-btn');
-  b.innerHTML = icon(audio.muted ? 'mute' : 'sound');
-  b.setAttribute('aria-pressed', String(audio.muted));
-}
-function toggleMute() {
-  audio.start();
-  audio.setMuted(!audio.muted);
-  paintMute();
-}
-$('mute-btn').addEventListener('click', () => {
-  if (!live.active) toggleMute();
+// Sound: the speaker button opens the Sound panel; M mutes / unmutes on every page.
+$('mute-btn').addEventListener('click', () => toggleSoundPanel());
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target as HTMLElement)?.tagName;
+  if (e.code === 'KeyM' && !e.repeat && tag !== 'INPUT' && tag !== 'TEXTAREA') toggleMuteQuick();
 });
-paintMute();
+paintSoundButton();
 
 // Graphics quality (shared 3D view): Auto -> High -> Low
 const gfxLabel = (m: string) => `GFX ${m.toUpperCase()}`;

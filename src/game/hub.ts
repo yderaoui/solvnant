@@ -114,11 +114,16 @@ export class Hub {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS skin_choice (uid TEXT PRIMARY KEY, skin TEXT NOT NULL)`);
     // Every payment memo handed out, so any of them can be claimed later (not only the latest one).
     this.sql.exec(`CREATE TABLE IF NOT EXISTS pay_memos (memo TEXT PRIMARY KEY, uid TEXT NOT NULL, ts INTEGER NOT NULL)`);
-    try {
-      this.sql.exec('ALTER TABLE pay_memos ADD COLUMN price REAL'); // coins quoted for this purchase (USD pricing)
-    } catch {
-      /* already there */
-    }
+    for (const ddl of [
+      'ALTER TABLE pay_memos ADD COLUMN price REAL', // coins quoted for this purchase (USD pricing)
+      'ALTER TABLE pay_memos ADD COLUMN mint TEXT', // the coin it was quoted in
+      'ALTER TABLE lobbies ADD COLUMN mint TEXT', // the coin its seats were paid in
+    ])
+      try {
+        this.sql.exec(ddl);
+      } catch {
+        /* already there */
+      }
     // Automatic payouts, one transaction per settled lobby. status: pending -> sent -> paid (or failed /
     // manual). A new transaction is only built once the previous one can no longer land (its blockhash
     // expired without it showing up), so a winner is never paid twice.
@@ -371,7 +376,7 @@ export class Hub {
     if (coins === null) return fail(`Can't read the ${t.symbol} price right now. Try again in a minute.`);
     const memo = `RaceTrench ticket ${randomToken(9)}`;
     this.sql.exec('INSERT OR REPLACE INTO ticket_memos (uid, memo, ts) VALUES (?, ?, ?)', u.id, memo, Date.now());
-    this.sql.exec('INSERT OR IGNORE INTO pay_memos (memo, uid, ts, price) VALUES (?, ?, ?, ?)', memo, u.id, Date.now(), coins);
+    this.sql.exec('INSERT OR IGNORE INTO pay_memos (memo, uid, ts, price, mint) VALUES (?, ?, ?, ?, ?)', memo, u.id, Date.now(), coins, t.mint);
     return json({ memo, ...publicTickets(t), price: coins, usd: t.priceUsd ?? null });
   }
 
@@ -403,29 +408,25 @@ export class Hub {
     if (!paid) return { ok: false, pending: true };
     const memo = paid.memos.find((m) => /^RaceTrench (ticket|skin) /.test(m));
     if (!memo) return { ok: false, error: 'This payment is not a RaceTrench purchase.' };
-    const handed = this.sql.exec('SELECT uid, price FROM pay_memos WHERE memo = ?', memo).toArray()[0] as { uid: string; price: number | null } | undefined;
-    const quoted = handed?.price ?? null; // coins this purchase was quoted at (USD pricing)
-    const legacy =
-      this.sql.exec('SELECT 1 FROM ticket_memos WHERE uid = ? AND memo = ?', u.id, memo).toArray().length > 0 ||
-      this.sql.exec('SELECT 1 FROM skin_memos WHERE uid = ? AND memo = ?', u.id, memo).toArray().length > 0;
-    const knownWallet =
-      !!paid.wallet &&
-      (this.sql.exec('SELECT 1 FROM tickets WHERE uid = ? AND wallet = ? LIMIT 1', u.id, paid.wallet).toArray().length > 0 ||
-        this.sql.exec('SELECT 1 FROM skins WHERE uid = ? AND wallet = ? LIMIT 1', u.id, paid.wallet).toArray().length > 0);
-    const mine = handed ? handed.uid === u.id : legacy || knownWallet;
-    if (!mine) return { ok: false, error: 'This payment is not for this account (memo mismatch).' };
+    const handed = this.sql.exec('SELECT uid, price, mint FROM pay_memos WHERE memo = ?', memo).toArray()[0] as { uid: string; price: number | null; mint: string | null } | undefined;
+    // Only a memo handed to this player, quoted in THIS coin at a real price: memos from an earlier coin
+    // (or before quotes existed) can't buy anything now.
+    if (!handed || handed.uid !== u.id) return { ok: false, error: 'This payment is not for this account (memo mismatch).' };
+    if (handed.mint !== t.mint || !(Number(handed.price) > 0)) return { ok: false, error: 'This payment was for an earlier coin or price, it cannot be used now.' };
+    if (!(paid.amount > 0)) return { ok: false, error: `The treasury received no ${t.symbol} in that payment.` };
+    const quoted = Number(handed.price); // coins this purchase was quoted at
     const now = Date.now();
     const sk = /^RaceTrench skin ([a-z0-9]+) /.exec(memo);
     if (sk) {
       if (!isSkin(sk[1])) return { ok: false, error: 'Unknown racer in that payment.' };
       const skin = skinById(sk[1]);
-      const price = quoted ?? skinPrice(skin, t.price);
+      const price = quoted;
       if (paid.amount + 1e-9 < price) return { ok: false, error: `The treasury received ${paid.amount} coins, this costs ${price}.` };
       this.state.storage.transactionSync(() => {
         const owned = this.sql.exec('SELECT 1 FROM skins WHERE uid = ? AND skin = ?', u.id, skin.id).toArray().length > 0;
         if (owned) {
           // Paid twice for the same racer: count the extra payment as tickets instead of losing it.
-          const each = quoted ? quoted / 5 : t.price;
+          const each = quoted / 5;
           const n = Math.floor((paid.amount + 1e-9) / each);
           for (let k = 0; k < n; k++) this.sql.exec('INSERT OR IGNORE INTO tickets (sig, uid, wallet, amount, ts, mint) VALUES (?, ?, ?, ?, ?, ?)', k ? `${sig}#${k}` : sig, u.id, paid.wallet, each, now, t.mint);
         } else {
@@ -436,7 +437,7 @@ export class Hub {
       });
       return { ok: true, kind: 'skin', skin: skin.id };
     }
-    const ticketPrice = quoted ?? t.price;
+    const ticketPrice = quoted;
     if (paid.amount + 1e-9 < ticketPrice) return { ok: false, error: `The treasury received ${paid.amount} coins, this costs ${ticketPrice}.` };
     this.state.storage.transactionSync(() => {
       this.sql.exec('INSERT OR IGNORE INTO tickets (sig, uid, wallet, amount, ts, mint) VALUES (?, ?, ?, ?, ?, ?)', sig, u.id, paid.wallet, paid.amount, now, t.mint);
@@ -447,7 +448,9 @@ export class Hub {
 
   /** A lobby's pot: the coins actually paid for its seats. */
   private lobbyPot(id: string): number {
-    return Number(this.sql.exec('SELECT COALESCE(SUM(t.amount), 0) AS n FROM runs r JOIN tickets t ON t.sig = r.ticket WHERE r.lobby = ?', id).one().n);
+    return Number(
+      this.sql.exec('SELECT COALESCE(SUM(t.amount), 0) AS n FROM runs r JOIN tickets t ON t.sig = r.ticket JOIN lobbies l ON l.id = r.lobby WHERE r.lobby = ? AND t.mint = l.mint', id).one().n,
+    );
   }
 
   /** Coins for one ticket right now: the USD price at the live coin price (cached a minute), else the fixed price. */
@@ -539,12 +542,9 @@ export class Hub {
     try {
       out = await cosignPurchase(t, house, String(b.tx ?? ''), {
         priceOf: (memo) => {
-          const row = this.sql.exec('SELECT uid, price FROM pay_memos WHERE memo = ?', memo).toArray()[0] as { uid: string; price: number | null } | undefined;
-          if (!row || row.uid !== u.id) return null;
-          if (row.price) return row.price;
-          const sk = /^RaceTrench skin ([a-z0-9]+) /.exec(memo);
-          if (sk) return isSkin(sk[1]) ? skinPrice(skinById(sk[1]), t.price) : null;
-          return /^RaceTrench ticket /.test(memo) ? t.price : null;
+          const row = this.sql.exec('SELECT uid, price, mint FROM pay_memos WHERE memo = ?', memo).toArray()[0] as { uid: string; price: number | null; mint: string | null } | undefined;
+          if (!row || row.uid !== u.id || row.mint !== t.mint || !(Number(row.price) > 0)) return null;
+          return Number(row.price);
         },
       });
     } catch (e) {
@@ -620,18 +620,19 @@ export class Hub {
       // Oldest open lobby with a free seat that this player isn't in yet (no skill rating yet: first come).
       let lobby = this.sql
         .exec(
-          `SELECT l.id, l.seed, l.price FROM lobbies l WHERE l.status = 'open' AND l.created > ? AND l.price = ?
+          `SELECT l.id, l.seed, l.price FROM lobbies l WHERE l.status = 'open' AND l.created > ? AND l.price = ? AND l.mint = ?
              AND (SELECT COUNT(*) FROM runs r WHERE r.lobby = l.id) < ? AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.lobby = l.id AND r.uid = ?)
            ORDER BY l.created LIMIT 1`,
           now - SETTLE_AFTER_MS,
           t.priceUsd ?? t.price,
+          t.mint,
           SEATS,
           u.id,
         )
         .toArray()[0] as { id: string; seed: string; price: number } | undefined;
       if (!lobby) {
         lobby = { id: `lob_${randomToken(8)}`, seed: `lobby-${randomToken(9)}`, price: t.priceUsd ?? t.price };
-        this.sql.exec("INSERT INTO lobbies (id, seed, price, status, created) VALUES (?, ?, ?, 'open', ?)", lobby.id, lobby.seed, lobby.price, now);
+        this.sql.exec("INSERT INTO lobbies (id, seed, price, status, created, mint) VALUES (?, ?, ?, 'open', ?, ?)", lobby.id, lobby.seed, lobby.price, now, t.mint);
       }
       const run = `run_${randomToken(10)}`;
       const deadline = now + (COUNTDOWN_S + MAX_RACE_S + SUBMIT_SLACK_S) * 1000;
@@ -730,7 +731,7 @@ export class Hub {
         s.prize,
         s.burn,
         s.team,
-        w?.wallet ? 'pending' : 'manual',
+        w?.wallet && (this.sql.exec('SELECT mint FROM lobbies WHERE id = ?', id).one() as { mint: string | null }).mint === this.cfg.tickets?.mint ? 'pending' : 'manual',
         now,
       );
       void this.state.storage.setAlarm(now + 2000); // pay soon
@@ -811,7 +812,7 @@ export class Hub {
     const coins = await this.ticketCoins();
     if (coins === null) return fail(`Can't read the ${t.symbol} price right now. Try again in a minute.`);
     const price = skinPrice(skin, coins);
-    this.sql.exec('INSERT OR IGNORE INTO pay_memos (memo, uid, ts, price) VALUES (?, ?, ?, ?)', memo, u.id, Date.now(), price);
+    this.sql.exec('INSERT OR IGNORE INTO pay_memos (memo, uid, ts, price, mint) VALUES (?, ?, ?, ?, ?)', memo, u.id, Date.now(), price, t.mint);
     return json({ memo, ...publicTickets(t), price, usd: t.priceUsd ? skinPrice(skin, t.priceUsd) : null });
   }
 

@@ -2,7 +2,7 @@
 // the points ledger, betting markets (live races + AI League) and live-race prize pots.
 // Public routes live under /api/* (called by browsers with a session token); /internal/* routes
 // are only reachable from the live race room (the Worker never forwards /internal from outside).
-import { publicConfig, publicTickets, readConfig, type GameConfig } from './config';
+import { configStamp, publicConfig, publicTickets, readConfig, type GameConfig } from './config';
 import { bearer, randomToken, signSession, verifySession, type Session } from './auth';
 import { coinPriceUsd, coinsFor, isSolanaAddress, readPayment, tokenHolding, verifyWalletSignature, walletMessage } from './solana';
 import { poolOdds, prizeSplit, settlePool } from './economy';
@@ -24,6 +24,7 @@ interface DOState {
     setAlarm(ms: number): Promise<void>;
     getAlarm(): Promise<number | null>;
   };
+  abort?(reason?: string): void;
 }
 
 export interface UserRow {
@@ -63,12 +64,14 @@ export class Hub {
   private cfg: GameConfig;
   private sql: DOState['storage']['sql'];
   private lastActivity = 0;
+  private stamp: string;
 
   constructor(
     private state: DOState,
     env: Record<string, string | undefined>,
   ) {
     this.cfg = readConfig(env);
+    this.stamp = configStamp(env);
     this.sql = state.storage.sql;
     this.migrate();
   }
@@ -151,6 +154,12 @@ export class Hub {
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const p = url.pathname;
+    const live = req.headers.get('x-config-stamp');
+    if (live && live !== this.stamp) {
+      console.log('hub: settings changed since start, restarting');
+      this.state.abort?.('settings changed');
+      throw new Error('restarting with new settings');
+    }
     this.lastActivity = Date.now();
     void this.ensureAlarm();
     try {

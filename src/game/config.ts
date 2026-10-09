@@ -118,6 +118,20 @@ export function readConfig(env: Env): GameConfig {
   };
 }
 
+/**
+ * A short fingerprint of all the settings (vars and secrets). The Worker sends it with every request to
+ * the Hub; a Hub still running with older settings (Durable Objects are not always restarted on deploy)
+ * notices the difference and restarts itself.
+ */
+export function configStamp(env: Env): string {
+  let h = 2166136261;
+  for (const [k, v] of Object.entries(env).sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (typeof v !== 'string') continue;
+    for (const ch of `${k}=${v};`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  }
+  return h.toString(36);
+}
+
 /** What the browser may know about the setup (no secrets). */
 export function publicConfig(c: GameConfig) {
   return {

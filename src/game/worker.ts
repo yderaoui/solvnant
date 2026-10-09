@@ -5,7 +5,7 @@
 //   /auth/x/callback X sends people back here; we create the account and hand the browser a session
 export { GameRoom } from './room';
 export { Hub } from './hub';
-import { readConfig } from './config';
+import { configStamp, readConfig } from './config';
 import { pkceChallenge, randomToken, sign, signSession, verify, xAccountProblem, xAuthorizeUrl, xExchangeAndFetchUser } from './auth';
 
 interface DONamespace {
@@ -44,7 +44,21 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     if (url.pathname === '/ws') return env.ROOM.get(env.ROOM.idFromName('main')).fetch(request);
     if (url.pathname === '/health') return new Response('ok');
-    if (url.pathname.startsWith('/api/')) return withCors(await hubStub(env).fetch(request));
+    if (url.pathname.startsWith('/api/')) {
+      // tell the Hub which settings are live; if it was still running older ones it restarts (first try fails)
+      const stamp = configStamp(strEnv(env));
+      const body = request.method === 'GET' || request.method === 'HEAD' ? null : await request.arrayBuffer();
+      const send = () => {
+        const h = new Headers(request.headers);
+        h.set('x-config-stamp', stamp);
+        return hubStub(env).fetch(new Request(request.url, { method: request.method, headers: h, body }));
+      };
+      try {
+        return withCors(await send());
+      } catch {
+        return withCors(await send());
+      }
+    }
 
     // ---------------------------------------------------------------- Sign in with X
     if (url.pathname === '/auth/x/start') {

@@ -24,6 +24,16 @@ Revision: `coin_1sF8rStR3xEUU7iV`. Worker: `80661041-ebc0-4023-b4e2-951ad830ae30
 Frontend production deployment: `solvnant-i30euawbp-yousser-ayman.vercel.app`.
 Changing client copy alone does not open payments.
 
+**First real owner purchase is verified on mainnet.** The owner approved it through
+the normal site/Privy flow; Codex checked the transaction through Solana RPC.
+It finalized successfully and delivered **46,196.549711 test $RACE** to the player
+wallet above. Total wallet debit: **0.003865039 SOL**, including **0.000005 SOL**
+network fee and account setup. Remaining player balance: **0.184364944 SOL**.
+[Verified purchase](https://solscan.io/tx/3jvxAE6KE8ZiythF7qhDnmjHc4B9D79zoFWMa9G8nvctN8FrLNofvcgjkW6wr7coCLeNM2155DDvSsr7S7o99zC7).
+This verifies coin buying; paid tickets, prizes, refunds and withdrawals still need
+their mainnet tests after treasury funding. Fresh client X login and wallet persistence
+after sign-out/in also remain to check.
+
 1. Open **https://www.pumpkart.racing/#/buy** and sign in with your existing X account.
 2. Check your wallet matches the expected account. The owner's funded player wallet is
    `4tWo1pQfrtFbw94HW9NScGmmWNH2Y8u7D9DGxPC6AGpH`.
@@ -53,17 +63,17 @@ Changing client copy alone does not open payments.
 
 The published page was checked on desktop/mobile with the actual Privy X login
 window: PumpKart branding, Twitter option, no page errors and no CSP violations.
-This verifies that the window opens; completing X OAuth and signing a purchase still
-require the owner/client. No authenticated owner mainnet buy has been completed by Codex. Wallet signing must
-be approved by the owner/client. Quote speed varies with connection and Solana RPC;
+The owner has now approved one real mainnet buy, verified above. New wallet signing
+still requires the owner/client. Fresh client X login remains to test separately.
+Quote speed varies with connection and Solana RPC;
 transaction confirmation cannot be guaranteed instant.
 
 ## Then: paid tickets, races and withdrawals
 
-Paid races remain closed for this first test. The player had **0.188229983 SOL**
+Paid races remain closed after the successful coin test. The player had **0.184364944 SOL**
 at the latest read; the payout treasury had **0.00089088 SOL**.
 The owner initially chose coin buying first, then requested the full test. The
-latest balance read still shows no treasury top-up or approved owner purchase.
+latest balance read confirms the approved owner purchase but still shows no treasury top-up.
 
 For the next stage, fund the treasury's network/account-setup budget and have Codex
 verify the balance before explicitly opening paid tests. Public treasury address:
@@ -79,7 +89,8 @@ Do not send wallet keys, recovery phrases or admin secrets in chat.
 1. In the owner's wallet, send **0.02 SOL** to the public treasury above. Codex cannot
    approve this transfer in the owner's wallet. The funded balance must be at least
    0.02 SOL; the current balance is below that launch reserve.
-2. Complete the small normal coin buy above and give Codex its public transaction link.
+2. The small normal coin buy above is already completed and verified; do not repeat it
+   just to recover its transaction link. Next verify wallet persistence after sign-out/in.
 3. To open the full temporary-coin test, use `pause`, wait at least two minutes, then
    `prepare <TEST_CA> <TEST_TICKER> --test-paid` and `enable`. This keeps the test label.
    The server refuses enable if the payout wallet does not match the treasury, the

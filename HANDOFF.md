@@ -49,12 +49,17 @@ KOL shown as a racer.
   Browser fixtures passed at 320/375/768/1440 px, cancellation, stale prices and keeping
   approval intact across account refresh. No wallet transaction was submitted by them.
   Owner's player wallet: `4tWo1pQfrtFbw94HW9NScGmmWNH2Y8u7D9DGxPC6AGpH`, latest
-  balance 0.188229983 SOL. Treasury: `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`,
-  0.00089088 SOL. The owner now requested full testing; funding and wallet approval
-  still require their wallet clicks. They selected the same public treasury address
+  balance 0.184364944 SOL after a finalized purchase of 46,196.549711 temporary $RACE.
+  Total debit was 0.003865039 SOL including fees/account setup. Public receipt:
+  `3jvxAE6KE8ZiythF7qhDnmjHc4B9D79zoFWMa9G8nvctN8FrLNofvcgjkW6wr7coCLeNM2155DDvSsr7S7o99zC7`.
+  The owner signed in Privy; Codex verified mainnet RPC results and signed nothing.
+  Treasury: `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`, 0.00089088 SOL.
+  Full mainnet paid testing still requires treasury funding and further owner approvals.
+  They selected the same public treasury address
   for the team share; `TEAM_WALLET` is now configured. The read-only operational
   `check` reports no outstanding pots/payouts/tickets and an underfunded SOL reserve.
-  Owner mainnet purchase/confirmation and fresh X login remain to verify. The official
+  The first owner coin purchase is verified. Fresh client X login, wallet persistence
+  after sign-out/in and the mainnet paid flows remain to verify. The official
   client CA is pending. See COIN_LAUNCH.md for the exact player steps and switch procedure.
 
 - **Backend published (2026-10-11):** Worker version
@@ -67,7 +72,8 @@ KOL shown as a racer.
   The operations credential remains in gitignored `.devnet/coin-launch-admin.key`;
   never display it or read house/player private keys. Existing purchase recovery,
   submissions and withdrawals remain available. The WebSocket close fix remains deployed.
-  This opens coin buying only, not an official coin launch or a completed mainnet payment test.
+  This opens coin buying only. The first owner mainnet coin buy passed; full paid-flow
+  mainnet tests and the official coin launch remain pending.
 
 - **Frontend release (2026-10-11):** normal `/#/buy` flow shows amount presets, selected
   mint/route, receiving wallet, balance and an unsigned total including fees/account setup.
@@ -79,7 +85,8 @@ KOL shown as a racer.
   browser fixtures and a funded devnet integration round passed. Devnet verified five
   $1.25 entries, 20-test-coin prize, 3.75 burn, 1.25 team share, full 2-coin refund and
   sponsored 1-coin withdrawal to a new destination. No mainnet transaction was signed
-  or submitted by Codex. The owner/client must approve a real small buy and fresh X login.
+  or submitted by Codex. The owner approved one real small buy, now verified on-chain;
+  fresh client X login remains to test.
   The actual production Privy X login window opens with PumpKart branding and the
   Twitter option; published-page checks at 375/768/1440 px found no page errors or CSP
   violations. Completing OAuth and signing a purchase still require the owner/client.
@@ -92,7 +99,7 @@ KOL shown as a racer.
   receipt. A shared team/treasury devnet payout verified exactly 5% retained.
   `prepare ... --test-paid` opens a labeled full test only after `enable` checks
   the payout signer, team address, live USD price and 0.02 SOL starting reserve.
-  Privy?s signing hook resolves only when its receipt window closes. The success
+  Privy's signing hook resolves only when its receipt window closes. The success
   receipt now says "Approval signed" and tells the player to click Close promptly;
   signing alone does not broadcast. The thirty-second review timer is checked before
   wallet approval. After signing, checkout validates the unchanged message and signatures,
@@ -100,9 +107,8 @@ KOL shown as a racer.
   launch/account guards. A late Close no longer fails merely on review quote age.
   A funded devnet client lifecycle test delivered exactly 10,000 lamports after artificial
   quote expiry with one sign/broadcast; this was a disposable devnet SOL transfer, not
-  a PumpSwap/mainnet purchase. The owner supplied a signed-receipt screenshot and reports
-  Coins received, but mainnet RPC checks still show no test-coin ATA or new purchase
-  in the supplied wallet; a completed mainnet purchase is not verified yet.
+  a PumpSwap/mainnet purchase. After the fix the owner supplied the actual Coins received
+  page; mainnet RPC confirms the new test-coin account and finalized purchase above.
   Historical implementation notes below are not proof of mainnet completion.
 
 - **New domain connected: `pumpkart.racing` through Cloudflare.** The owner attached

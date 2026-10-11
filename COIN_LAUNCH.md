@@ -1,32 +1,43 @@
 # PumpKart coin launch
 
 The frontend is pushed to GitHub and live on `https://www.pumpkart.racing`.
-The updated Cloudflare game server has not been deployed, and no real coin buys have been tested.
+The updated Cloudflare game server is deployed with coin purchases paused. No real coin buys have been tested.
 Do the advance setup before announcing the coin. Never put wallet keys or operations secrets in chat or git.
 
-**Launch target: Sunday, 11 October 2026 at 12:00 noon, Africa/Casablanca.**
-This is a target, not an automatic scheduled deployment. Real X/Privy login,
+**Original launch target: Sunday, 11 October 2026 at 12:00 noon, Africa/Casablanca.**
+This was a target, not an automatic scheduled deployment. Full wallet-address persistence,
 temporary-coin testing and official-coin verification remain outstanding. Paid buying can
 open only after the release checks pass; the site can be released with buying paused.
 
 **Domain connected: `pumpkart.racing` (Cloudflare).** Main address: `https://www.pumpkart.racing`.
-Worker site settings are prepared for it; the Solana RPC browser-origin allowlist is published.
-The Worker update still needs deployment. The owner attached both hostnames to Vercel
+Worker site settings and the Solana RPC browser-origin allowlist are published.
+The owner attached both hostnames to Vercel
 and configured Cloudflare DNS; Vercel now shows Valid Configuration for both. Apex redirects
 to `www` (308), which serves Production. The owner has added both PumpKart HTTPS origins
-in Privy's Allowed Origins list. Confirm saving if prompted; real login/wallet checks
+in Privy's Allowed Origins list. Confirm saving if prompted; full wallet-persistence checks
 remain outstanding. The owner has applied the pink color and new PNG logo in Privy's
 UI components → Branding. Final name casing should be `PumpKart`.
 `https://www.pumpkart.racing/pumpkart-logo.png` is published and returns HTTP 200.
 The frontend also uses the PumpKart logo and `Sign in to PumpKart` header.
-The owner reached the signed-in account menu with X, but wallet-address visibility and
-the same address after signing out/in are not yet confirmed. The old `$RACE` symbol
+The owner's screenshots confirm X sign-in and wallet-address visibility, including the
+Copy button and SOL balance. The abbreviated address matches across screenshots;
+full copied-address persistence after signing out/in still needs confirmation. The old `$RACE` symbol
 still comes from server settings; do not treat it as the official PumpKart coin.
+
+**Backend deployed (2026-10-11):** Worker version `5188d8fb-9799-4fde-bbdb-b5097d402d32`.
+The operations credential `COIN_ADMIN_KEY` is configured; its value is not in git or this guide.
+An authenticated pause was persisted and `/api/config` confirms `status: paused`,
+`buyEnabled: false`. Health/configuration and spectator WebSocket checks passed;
+the Live room reports two laps and a 50-point entry fee. A real client received five
+race snapshots and disconnected cleanly (code 1000, 296 ms). Anonymous ticket, sponsor,
+friend-lobby, coin-preflight and admin requests return HTTP 401. The existing Privy
+app is unchanged. No race was joined and no wallet transaction was submitted by
+these release checks. See `PREDEPLOY_CHECK.md` for the verification limits.
 
 ## Simple checklist for the owner
 
-We are keeping **X login and Privy Solana wallets**. The code already includes them;
-their dashboard settings and real login still need checking on the new domain.
+We are keeping **X login and Privy Solana wallets**. X sign-in and wallet display work
+on the new domain; full address persistence and real coin transactions remain to verify.
 
 1. **Domain connected (completed).** In Vercel, open the existing `solvnant`
    project, then Settings → Domains. Add `pumpkart.racing` and `www.pumpkart.racing`. Copy the DNS
@@ -56,13 +67,13 @@ their dashboard settings and real login still need checking on the new domain.
    mobile layouts and refresh/reconnection. Only a completed test earns a pass.
 7. **Then ask the client to create the official coin.** Get the official CA and ticker;
    wait to announce public buying until the official-coin checks pass.
-8. **Launch with Codex.** Deploy the updated site and Worker together while purchases
-   are paused. Resolve any old paid races, payouts and unused tickets. Prepare and verify
+8. **Launch with Codex.** The updated site and Worker are already deployed with purchases
+   paused. Resolve any old paid races, payouts and unused tickets. Prepare and verify
    the official CA using the procedure below, then complete a small approved official-coin
    purchase/race/payout/withdrawal check before opening buying to players. The temporary
    coin's test database is not copied into production.
 
-**Next: confirm the wallet address, then deploy the updated Worker with buying paused.** No passwords, wallet keys
+**Next: supply the temporary pump.fun CA and approve a small test budget, then prepare isolated testing.** No passwords, wallet keys
 or account secrets are needed in chat.
 
 ## Advance setup

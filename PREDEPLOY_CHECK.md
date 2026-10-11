@@ -1,6 +1,8 @@
 # PumpKart predeployment check
 
-Checked locally on 2026-10-11. No production deployment, push or mainnet transfer was performed.
+Originally checked locally on 2026-10-11, without a production deployment, push or
+mainnet transfer during that audit. Subsequent publication is recorded in the release
+follow-up below.
 
 ## Fixes
 
@@ -48,3 +50,36 @@ The devnet tests used fixture pricing and advanced the unused-entry expiry local
 Deploy the site and Worker together. The official coin is still paused pending its contract address; confirm the official mint, token-program support and buy quote before enabling it. Verify real X/Privy login and wallet access on the production domain, then perform the existing small owner-approved mainnet payment/payout/withdrawal check. These checks cannot be replaced by devnet or local guest tests.
 
 Local diagnostic scripts, profiles and logs are in the gitignored `scratch/predeploy-*` files. The funded test runner is `scratch/check-custom-stakes-devnet.ts`. No secret values are included in this report.
+
+## Release follow-up (2026-10-11)
+
+The frontend is published on `https://www.pumpkart.racing`. Wallet loading was subsequently
+bounded, the address/copy button now appears before balance requests, retry keeps the
+menu open, and failed RPC reads no longer display a false zero. The complete suite now
+has **121 passing tests in 17 files**, and the production build passes. A browser check
+verified slow-RPC address display, balance timeout, wallet retry and paused/legacy menu
+purchase locking. Owner screenshots confirm real X sign-in and wallet display; the
+full address after signing out/in still needs owner confirmation.
+
+The game Worker is published as version `5188d8fb-9799-4fde-bbdb-b5097d402d32`.
+The operations credential is configured securely outside git and an authenticated
+pause is persisted. Live `/health` and `/api/config` return HTTP 200; configuration
+reports coin purchases paused and coin buying disabled, preserves the existing Privy
+app, omits secret fields, permits browser CORS and uses `Cache-Control: no-store`.
+Anonymous coin-preflight, ticket-intent, friend-lobby-create, sponsor and coin-admin
+requests return HTTP 401. A spectator WebSocket returned room data and pong; the room
+reports two laps and a 50-point entry fee. Production verification also found an
+incomplete WebSocket close handshake under the older compatibility date. Enabling
+`web_socket_auto_reply_to_close` fixed it without changing the compatibility date;
+see [Cloudflare's flag documentation](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#websocket-auto-reply-to-close).
+The final live check received five snapshots and closed normally (code 1000, 296 ms).
+No race was joined and no wallet transaction
+was submitted during these deployment checks.
+
+Production authenticated paid actions have not been tested by these checks. Their
+paused/stale-revision behavior was covered by the existing automated and local/devnet
+tests. Isolated temporary pump.fun coin testing, a funded approved mainnet check and
+official-coin verification remain outstanding. The production mint remains the old
+coin while purchases are paused; it has not been designated as the official coin.
+
+Deployment logs and live-check results are gitignored in `scratch/backend-release-*`.

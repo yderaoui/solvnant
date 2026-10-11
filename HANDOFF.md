@@ -35,12 +35,31 @@ KOL shown as a racer.
 
 ## 2. Current state (read this first)
 
+- **Backend published (2026-10-11):** Worker version
+  `5188d8fb-9799-4fde-bbdb-b5097d402d32` is live at the existing Worker URL.
+  `COIN_ADMIN_KEY` was added without displaying or committing its value; the operations
+  credential is held in gitignored `.devnet/coin-launch-admin.key` for trusted local use.
+  An authenticated pause is persisted. Public configuration reports `status: paused`
+  and `buyEnabled: false`; the old mint is retained for existing records, not enabled
+  as the official PumpKart coin. Health/configuration, CORS/no-cache and anonymous
+  payment/admin rejection checks passed. The spectator WebSocket returned room data
+  and pong; Live reports two laps and a 50-point entry fee. Cloudflare's
+  `web_socket_auto_reply_to_close` flag completes close handshakes without changing
+  the existing compatibility date. A live spectator received five snapshots and
+  closed normally (code 1000, 296 ms), instead of remaining stuck in CLOSING.
+  No race was joined or
+  on-chain transaction submitted by deployment checks. X login and wallet display
+  are confirmed by owner screenshots; full copied-address persistence still needs
+  confirmation. Isolated temporary-coin/mainnet checks remain outstanding and need
+  a CA and an owner-approved spending budget. Do not put a random test coin into
+  the public production configuration.
+
 - **Frontend published (2026-10-11):** project work is pushed to GitHub `main`; Vercel
   serves the updated PumpKart site, including the direct Watch AI League navigation.
-  The Cloudflare Worker update is still not deployed. Historical "local" notes below
+  The Cloudflare Worker update is now deployed with purchases paused. Historical "local" notes below
   describe when changes were implemented; they are not proof of a backend deployment.
-  The owner reached the signed-in account menu with X. Real wallet-address visibility
-  and persistence after signing out/in still need confirmation. Wallet display now
+  The owner reached the signed-in account menu with X and the wallet is visible.
+  Full address persistence after signing out/in still needs confirmation. Wallet display now
   shows the address before balance requests, bounds startup and balance waits, offers
   retry, and guards stale menu updates. Failed RPC reads do not display a false zero.
   Account-menu ticket buying stays disabled for paused or legacy launch configuration.
@@ -50,11 +69,11 @@ KOL shown as a racer.
   both hostnames to Vercel and configured DNS; both now show Valid Configuration. Apex
   redirects (308) to `www`, which serves Production. Local `SITE_URL` matches
   `https://www.pumpkart.racing`; the Solana RPC browser-origin allowlist accepts both.
-  The frontend changes are published; Worker site settings still await deployment.
+  The frontend changes and Worker site settings are published.
   The owner has added both HTTPS origins to the existing Privy app and applied the pink
   color and PumpKart logo. Final name casing should be `PumpKart`.
   `https://www.pumpkart.racing/pumpkart-logo.png` returns HTTP 200.
-  Real wallet checks remain outstanding.
+  The remaining wallet check is full copied-address persistence after signing out/in.
 
 - **Local predeployment stability audit (2026-10-11):** see `PREDEPLOY_CHECK.md` for
   measurements, coverage and remaining release checks. Hidden Track Lab rendering and

@@ -105,8 +105,14 @@ KOL shown as a racer.
   seat, no run at verification. Receipt:
   `3BQbYqKeH7q89HYDQuz7Hrgs2LxuDAJfGoEMseo8B25wfXN63DCtfmDzt3sUpZcJJ1t5pLo2HwDC3ce6b6AYtRyv`.
   Exactly 4222972973 raw units reached the treasury; it paid 0.00001 SOL network fee
-  and player SOL debit was zero. Remaining player coins: 41,973.576738. Still need
-  real runs, the other players and mainnet payout/burn/team/refund/withdrawal checks.
+  and player SOL debit was zero. Remaining player coins: 41,973.576738. A later
+  read-only server check accepted the owner's 67.15-second finish, finished true,
+  racing false and no replay rejection note. One participant remains in the open
+  lobby. Its deadline is October 11 23:18:01 UTC / October 12 00:18:01 Casablanca;
+  fewer than four participants means a full 4,222.972973-coin refund, no burn/team cut.
+  At 23:02 UTC there is no refund transaction yet. Still need the automatic mainnet
+  refund, withdrawal and real multi-player payout/burn/team checks. Do not mistake
+  provisional first place or the potential prize field for a paid win.
   Authenticated `coin-launch.mjs check <LOBBY_CODE>` is read-only: locked price,
   seats, payment signatures, payout/refunds, no settlement or signing. Deployment
   initially left a resident Hub on earlier code. SERVER_RELEASE now forces the

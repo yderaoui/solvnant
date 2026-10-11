@@ -120,8 +120,17 @@ at this check. Mainnet transaction
 `3BQbYqKeH7q89HYDQuz7Hrgs2LxuDAJfGoEMseo8B25wfXN63DCtfmDzt3sUpZcJJ1t5pLo2HwDC3ce6b6AYtRyv`
 succeeded: exactly those coins reached the treasury, the treasury paid **0.00001 SOL**
 network fee, and player SOL debit was **zero**. Player test-coin balance afterwards:
-**41,973.576738**. This verifies the sponsored entry/claim flow; race completion,
-five-player mainnet settlement, burn/team split, refund and withdrawal are still pending.
+**41,973.576738**. This verifies the sponsored entry/claim flow.
+
+**First real paid run verified:** a later read-only server check recorded the owner's
+**67.15-second** finish in `6ANT7755`, with `finished: true`, `racing: false` and no
+replay rejection note. The lobby still has one participant and is open. Its normal
+deadline is **2026-10-11 23:18:01 UTC / October 12, 00:18:01 Casablanca**. With fewer
+than four participants, the expected outcome is a full **4,222.972973 test $RACE**
+refund to the original payer, with no burn or team cut. The displayed first place and
+potential prize are provisional, not a paid win. No refund transaction exists at
+the 23:02 UTC check; automatic refund, withdrawal and multi-player mainnet settlement
+still need on-chain confirmation. No settlement was forced or fake player added.
 
 Use five real accounts in a low-entry friend lobby. All five must pay the same locked
 coin amount chosen from the creator's USD entry. Verify each receipt, race submission,

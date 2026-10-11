@@ -1,0 +1,16 @@
+# Deploy only the app sources and public assets. Local settings, wallet fixtures,
+# scratch captures, caches and source artwork must stay on this computer.
+/*
+!/api/
+!/api/**
+!/src/
+!/src/**
+!/public/
+!/public/**
+!/index.html
+!/private-coin-check.html
+!/package.json
+!/package-lock.json
+!/tsconfig.json
+!/vite.config.ts
+!/vercel.json

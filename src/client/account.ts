@@ -53,6 +53,19 @@ class Account {
   /** True once we've asked the server who we are (or failed to). */
   ready = false;
   private listeners = new Set<() => void>();
+  private refreshingConfig = false;
+
+  async refreshConfig() {
+    if (this.refreshingConfig) return;
+    this.refreshingConfig = true;
+    try {
+      const next = await this.api<PublicConfig>('/api/config');
+      const changed = this.cfg?.coinLaunch?.revision !== next.coinLaunch?.revision;
+      this.cfg = next;
+      if (changed) { this.emit(); await this.refresh(); }
+    } catch { /* Actions still require a successful server preflight. */ }
+    finally { this.refreshingConfig = false; }
+  }
 
   onChange(fn: () => void): () => void {
     this.listeners.add(fn);
@@ -166,6 +179,8 @@ let toastFn: ((t: string) => void) | null = null;
 let preloaded = false;
 
 export function initAccountUi(toast: (t: string) => void) {
+  setInterval(() => { if (!document.hidden) void account.refreshConfig(); }, 30_000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void account.refreshConfig(); });
   toastFn = toast;
   const host = $('account');
   const paint = () => {
@@ -189,7 +204,7 @@ export function initAccountUi(toast: (t: string) => void) {
     }
     host.innerHTML = `<button class="acct-chip" id="acct-chip" aria-haspopup="dialog" aria-expanded="false">
         ${avatarHtml(me)}<span class="acct-who"><b>${escapeHtml(me.handle ? '@' + me.handle : me.name)}</b><small>${me.kind === 'guest' ? 'guest' : me.kind === 'privy' ? 'signed in' : 'X account'}</small></span>
-        <span class="acct-pts"><b id="acct-points">${fmtPts(me.points)}</b><small>PTS</small></span></button>`;
+        <span class="acct-pts"><b id="acct-points">${account.cfg?.tickets ? me.tickets ?? 0 : fmtPts(me.points)}</b><small>${account.cfg?.tickets ? 'TICKETS' : 'PTS'}</small></span></button>`;
     $('acct-chip').onclick = () => toggleMenu(toast);
   };
   account.onChange(() => {
@@ -259,7 +274,7 @@ function renderMenu(toast: (t: string) => void) {
     : '';
   el.innerHTML = `
     <div class="acct-head">${avatarHtml(me)}<div><b>${escapeHtml(me.name)}</b><small>${me.handle ? '@' + escapeHtml(me.handle) : me.kind === 'privy' ? 'Signed in with Privy' : 'Guest account'}</small></div></div>
-    <div class="acct-balance"><span>Balance</span><b>${fmtPts(me.points)} <small>PTS</small></b></div>
+    <div class="acct-balance"><span>Free-play points</span><b>${fmtPts(me.points)} <small>PTS</small></b></div>
     <p class="muted small">Points are play money: no cash value, nothing to withdraw.</p>
     <button class="btn btn-lime small" id="am-daily" ${dailyIn > 0 ? 'disabled' : ''}>${icon('zap', 14)}${dailyIn > 0 ? `Daily bonus in ${Math.ceil(dailyIn / 3600_000)} h` : `Claim daily +${cfg.points.daily}`}</button>
     ${race}
@@ -270,7 +285,7 @@ function renderMenu(toast: (t: string) => void) {
             <div class="acct-row"><button class="btn small btn-lime" id="am-buyticket">${icon('zap', 14)}Buy a ticket</button>
             ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost" id="am-faucet">Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}</div>
             <p class="muted small" id="am-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>
-          ${cfg.privy ? `<section><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">Payments come from this wallet, and prizes arrive here.</p>
+          ${cfg.privy ? `<section><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">Send the game coin here to buy tickets. Race prizes arrive in this wallet too.</p>
             <details class="am-withdraw"><summary>Withdraw ${escapeHtml(cfg.tickets?.symbol ?? '')}</summary>
               <input id="am-wd-to" placeholder="Send to (Solana address)" autocomplete="off" spellcheck="false" />
               <div class="acct-row"><input id="am-wd-amt" type="number" min="0" step="any" placeholder="Amount" /><button class="btn small btn-ghost" id="am-wd-max">Max</button></div>
@@ -334,8 +349,9 @@ function renderMenu(toast: (t: string) => void) {
   document.getElementById('am-buyticket')?.addEventListener('click', async () => {
     const step = document.getElementById('am-buystep')!;
     try {
-      const { buyTicket } = await import('./tickets');
-      const n = await buyTicket((t) => (step.textContent = t));
+      closeMenu();
+      const { ticketCheckout } = await import('./ticketCheckout');
+      const n = await ticketCheckout();
       toast(`Ticket bought: you have ${n}`);
     } catch (e) {
       step.textContent = (e as Error).message;

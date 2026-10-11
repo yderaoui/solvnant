@@ -44,6 +44,7 @@ const MAX_ATTEMPTS = 60;
 const sq = (v: number) => v * v;
 
 export function generateTrack(seed: string): Track {
+  if (seed.startsWith('tokyo:')) return tokyoTrack(seed);
   const rng = Rng.fromString('track:' + seed);
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const t = tryGenerate(seed, rng);
@@ -397,3 +398,14 @@ export function sampleTrack(track: Track, s: number) {
     index: i,
   };
 }
+
+
+/** Authored boulevards and a technical south sector, shared by every race renderer. */
+function tokyoTrack(seed: string): Track {
+  const controls: Vec[] = [[80,80],[350,80],[640,80],[720,160],[720,390],[650,470],[490,470],[420,360],[300,360],[220,470],[80,470],[20,390],[20,160]];
+  const { points, length, spacing } = resampleClosed(catmullRomClosed(controls, 40), TRACK_RULES.spacing);
+  return finalize(seed, points, points.map(() => 20), spacing, length);
+}
+
+export const BOT_RACE_LAPS = 2;
+export const isCityTrack = (track: Track) => track.seed.startsWith('tokyo:');

@@ -1,7 +1,8 @@
 // Data access. Uses Supabase when configured; otherwise "local mode": every viewer computes the
 // same house-bot race from the slot number, so the site is always alive (and still in sync).
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { Entry, InputLogEntry } from '../sim/race';
+import { SIM_VERSION, type Entry, type InputLogEntry } from '../sim/race';
+import { BOT_RACE_LAPS } from '../sim/track';
 import { liveSimEntries, type LiveGridEntry } from '../game/liveEntries';
 import { CAR_COLORS, HOUSE_BOTS, fallbackDriverCode } from '../sim/fallbackDriver';
 import { raceStartAt } from '../sim/schedule';
@@ -144,10 +145,10 @@ export function localRace(slot: number): RaceInfo {
   return {
     id: null,
     slot,
-    seed: `local-${slot}`,
-    laps: null,
+    seed: `${slot % 3 === 0 ? 'tokyo:' : ''}local-${slot}`,
+    laps: BOT_RACE_LAPS,
     startAt: raceStartAt(slot),
-    simVersion: null,
+    simVersion: SIM_VERSION,
     entries: houseEntries(),
     results: null,
     local: true,

@@ -10,7 +10,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { loadQuickJS } from '../sim/quickjs';
 import { runRace, SIM_VERSION, type Entry } from '../sim/race';
-import { generateTrack, lapsFor } from '../sim/track';
+import { generateTrack, BOT_RACE_LAPS } from '../sim/track';
 import { CAR_COLORS, HOUSE_BOTS, fallbackDriverCode } from '../sim/fallbackDriver';
 import { MAX_RACE_SECONDS, raceStartAt, slotAt } from '../sim/schedule';
 import { generateDriverCode, listFreeModels, pickModels, RateLimitError, type ModelInfo } from './openrouter';
@@ -68,7 +68,7 @@ async function main() {
   }
   log(`${slots.length} slot(s) to schedule`);
   if (!slots.length) return;
-  const seeds = slots.map((s) => `gp${s}-${randomBytes(3).toString('hex')}`);
+  const seeds = slots.map((s) => `${s % 3 === 0 ? 'tokyo:' : ''}gp${s}-${randomBytes(3).toString('hex')}`);
 
   // 2. Roster of models + their cached driver code
   let roster: ModelInfo[] = [];
@@ -86,7 +86,7 @@ async function main() {
   // Refresh stale drivers (missing first, then oldest), a few per run.
   if (orKey && roster.length) {
     const firstTrack = generateTrack(seeds[0]);
-    const firstLaps = lapsFor(firstTrack);
+    const firstLaps = BOT_RACE_LAPS;
     const stale = roster
       .map((m) => {
         const rows = drivers.get(m.id) ?? [];
@@ -164,8 +164,7 @@ async function main() {
       });
     }
 
-    const track = generateTrack(seed);
-    const laps = lapsFor(track);
+    const laps = BOT_RACE_LAPS;
     const t0 = performance.now();
     const rec = runRace(qjs, { seed, entries, laps, maxTime: MAX_RACE_SECONDS, obstacles: true });
     const startAt = raceStartAt(slot);

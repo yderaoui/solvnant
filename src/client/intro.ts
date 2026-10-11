@@ -1,9 +1,10 @@
-// The intro: the RaceTrench lore in five quick cards. Plays once on a first visit (skippable), and
+// The intro: the PumpKart lore in five quick cards. Plays once on a first visit (skippable), and
 // again from the Race page. Space / Enter / click = next, Esc = skip.
 import { SKINS } from '../game/skins';
+import { icon } from './icons';
+import { racerPortrait } from './portraits';
 
 const SEEN = 'rt-intro-seen';
-const PIC = (file: string) => `${import.meta.env.BASE_URL}assets/characters/${file}.webp`;
 
 interface Card {
   kicker: string;
@@ -16,7 +17,7 @@ const racers = (ids: string[]) =>
   `<div class="in-row">${ids
     .map((id, i) => {
       const s = SKINS.find((k) => k.id === id);
-      return s ? `<img src="${PIC(s.file)}" alt="${s.name}" style="--d:${i * 0.12}s" />` : '';
+      return s ? `<img src="${racerPortrait(s.file)}" alt="${s.name}" style="--d:${i * 0.12}s" />` : '';
     })
     .join('')}</div>`;
 
@@ -31,18 +32,18 @@ const CARDS: Card[] = [
     kicker: 'THE BOTTLES RAN DRY',
     title: 'No more champagne.',
     text: 'They sold the chains. They sold the cars. Orangie even sold the tacos. Bottle service is a distant memory.',
-    art: `<div class="in-bottle" aria-hidden="true"><span>🍾</span><b>EMPTY</b></div>`,
+    art: `<div class="in-bottle" aria-hidden="true"><span><svg width="80" height="120" viewBox="0 0 80 120" fill="none"><path d="M32 6h16v30l12 20v50a8 8 0 0 1-8 8H28a8 8 0 0 1-8-8V56l12-20V6Z" stroke="var(--info)" stroke-width="2"/><path d="M30 6h20M32 18h16M20 72h40M20 94h40" stroke="var(--info)" stroke-width="2"/></svg></span><b>EMPTY</b></div>`,
   },
   {
     kicker: 'THEN, A RUMOR ON THE TIMELINE',
     title: 'The Magic Ledger.',
-    text: 'Somewhere at the end of the Trench lies a wallet that never runs dry. Its seed phrase is painted on the finish line.',
+    text: 'Somewhere at the end of the circuit lies a wallet that never runs dry. Its seed phrase is painted on the finish line.',
     art: `<div class="in-ledger" aria-hidden="true"><div class="in-glow"></div><div class="in-book">LEDGER</div></div>`,
   },
   {
     kicker: 'ONE RULE',
     title: 'First across the line signs.',
-    text: 'Five racers. One track. The winner takes the whole pot. Everyone else goes home thirsty.',
+    text: 'Five racers. One track. The fastest run wins 80% of the pot. Everyone else goes home thirsty.',
     art: `<div class="in-flag" aria-hidden="true"></div>`,
   },
   {
@@ -75,7 +76,7 @@ export function showIntro() {
   el.className = 'intro';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
-  el.setAttribute('aria-label', 'RaceTrench intro');
+  el.setAttribute('aria-label', 'PumpKart intro');
   document.body.appendChild(el);
   let i = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -102,11 +103,11 @@ export function showIntro() {
         <div class="in-kicker">${c.kicker}</div>
         <h2 class="in-title">${c.title}</h2>
         <p class="in-text">${c.text}</p>
-        ${last ? `<button class="btn btn-lime in-cta" data-next>RACE FOR THE LEDGER</button>` : ''}
+        ${last ? `<button class="btn btn-lime in-cta" data-next>Go to races</button>` : ''}
       </div>
       <div class="in-dots">${CARDS.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>
       <button class="in-skip" data-skip>${last ? 'Close' : 'Skip intro'}</button>
-      ${last ? '' : `<button class="in-next" data-next aria-label="Next">›</button>`}`;
+      ${last ? '' : `<button class="in-next" data-next aria-label="Next">${icon('overtake', 24)}</button>`}`;
     if (!last) timer = setTimeout(() => go(i + 1), 5200);
   };
   const onKey = (e: KeyboardEvent) => {

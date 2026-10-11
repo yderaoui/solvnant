@@ -70,7 +70,7 @@ export function trackForDriver(track: Track, laps: number): DriverTrack {
 
 /** The spec sent to models. Keep in sync with the types above and physics constants. */
 export const DRIVER_SPEC = `
-# AI Grand Prix: driver API
+# PumpKart: driver API
 
 Write ONE JavaScript function: \`function drive(state) { ... return { throttle, steer, brake }; }\`
 It is called 20 times per second for your car during a top-down 2D race against up to 9 other cars.

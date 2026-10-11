@@ -275,6 +275,28 @@ export class GameAudio {
     this.glide(this.crowdFilter.frequency, 650 + this.crowdBoost * 500, 0.3);
   }
 
+  /** Short finish fanfare through the existing master volume; never starts audio on its own. */
+  victory(): (() => void) | undefined {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || this.muted || this.settings.volume <= 0) return;
+    const notes: [number, number, number][] = [[523.25, 0, .16], [659.25, .16, .16], [783.99, .32, .18], [1046.5, .52, .7], [659.25, .52, .7], [783.99, .52, .7]];
+    const voices = notes.map(([frequency, delay, duration]) => {
+      const oscillator = ctx.createOscillator(), gain = ctx.createGain();
+      oscillator.type = 'triangle';
+      oscillator.frequency.value = frequency;
+      const start = ctx.currentTime + delay;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(.055, start + .015);
+      gain.gain.exponentialRampToValueAtTime(.001, start + duration);
+      oscillator.connect(gain).connect(this.master);
+      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
+      oscillator.start(start); oscillator.stop(start + duration + .03);
+      return oscillator;
+    });
+    this.cheer(1);
+    return () => voices.forEach(voice => { try { voice.stop(); } catch { /* Already finished. */ } });
+  }
+
   /** Crowd reaction (0..1): overtakes, crashes near the fans, the finish. */
   cheer(level: number) {
     this.crowdBoost = Math.min(1, Math.max(this.crowdBoost, level));

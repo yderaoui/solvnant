@@ -9,10 +9,14 @@ import { fmt } from './livegame';
 import { PLAYER_COLORS } from '../game/protocol';
 import type { TicketRun } from './practice';
 import { showIntro } from './intro';
+import { friendLobbyHtml, mountFriendLobbies, friendHref } from './friendLobbies';
+import { celebrateSettledWin } from './winnerCelebration';
+import { racerPortrait } from './portraits';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 interface Seat {
+  ready?: boolean;
   name: string;
   color: string;
   you: boolean;
@@ -24,7 +28,7 @@ interface Seat {
 }
 interface LobbyView {
   payout?: { status: string; sig: string | null } | null;
-  lobby: { id: string; status: string; settleBy: number; seats: number; maxSeats: number; pot: number; prize: number; youWon: boolean };
+  lobby: { id: string; code?: string | null; status: string; settleBy: number; seats: number; maxSeats: number; pot: number; prize: number; youWon: boolean };
   seats: Seat[];
 }
 interface Mine {
@@ -46,8 +50,13 @@ export function takeTicketRun(): (() => Promise<TicketRun>) | null {
 }
 
 let hooked = false;
+let renderVersion = 0;
 
 export async function renderRacePage() {
+  const version = ++renderVersion;
+  const friendRoute = location.hash.startsWith('#/race/friends/');
+  const hero = document.querySelector<HTMLElement>('.race-hero');
+  if (hero) hero.hidden = friendRoute;
   if (!hooked) {
     hooked = true;
     account.onChange(() => {
@@ -58,22 +67,48 @@ export async function renderRacePage() {
   const t = account.cfg?.tickets;
   const sym = escapeHtml(t?.symbol ?? '$TRACK');
   if (!t) {
-    el.innerHTML = `<p class="garage-note">${icon('alert', 14)}Ticketed races are not switched on for this server.</p>`;
+    el.innerHTML = `<section class="card race-unavailable">
+      <div class="race-unavailable-icon">${icon('flag', 28)}</div>
+      <div><h2>${account.ready ? 'Warm up on the track.' : 'Getting the grid ready.'}</h2>
+        <p class="muted">${account.ready ? 'Ticketed races are unavailable on this server. You can still take any racer for a free test drive.' : 'Connecting to the game server. You can take a free test drive while you wait.'}</p></div>
+      <a class="btn btn-lime" href="#/drive">${icon('pad', 16)}Test drive${icon('overtake', 16)}</a>
+    </section>`;
+    return;
+  }
+  if (friendRoute) {
+    el.innerHTML = friendLobbyHtml();
+    mountFriendLobbies(raceNow);
+    return;
+  }
+  if (account.cfg?.coinLaunch?.status !== 'live') {
+    el.innerHTML = `<section class="card"><h2>The official coin is launching soon.</h2><p class="muted">Coin purchases and paid race entry are paused. Practice for free while we get the grid ready.</p><a class="btn btn-lime" href="#/drive">Practice for free</a></section>${friendLobbyHtml()}`;
+    mountFriendLobbies(raceNow);
     return;
   }
   const how = `
-    <button class="tr-intro" id="tr-intro">▶ Why are they racing? Watch the intro</button>
     <ol class="tr-how">
-      <li><b>Buy a ticket</b><span>${escapeHtml(priceLabel(t))} each, paid in ${sym}</span></li>
-      <li><b>Race the ghosts</b><span>The recorded runs of the players already in your lobby. No bots, no waiting.</span></li>
-      <li><b>Fastest wins it all</b><span>The lobby settles at 5 players, or at 4 after 30 minutes. 3 or fewer: tickets refunded.</span></li>
-    </ol>`;
+      <li><b>Sign in with X</b><span>Your game wallet is created for you.</span></li>
+      <li><b>Buy 1 ticket for ${escapeHtml(priceLabel(t))}</b><span>Pay with ${sym} from your game wallet. Review the amount before approving.</span></li>
+      <li><b>Start racing</b><span>Race on the same track as real players. The fastest completed run wins.</span></li>
+    </ol>
+    <details class="tr-rules"><summary>Race rules &amp; prizes</summary>
+      <p>Up to 5 real players. You race against recordings of earlier runs, so you can start without waiting. No bots in paid races.</p>
+      <p>The winner receives 80% of the coins paid into the pot. 15% is burned and 5% goes to the team.</p>
+      <p>Results are final once all 5 players finish, or after 30 minutes with at least 4 players. With 3 or fewer players, tickets are returned. Settlement waits for active runs to finish.</p>
+      <p>Leaving a started race counts as not finishing. Paid cars are cosmetic and do not improve your performance.</p>
+      <button class="tr-intro" id="tr-intro">${icon('play', 14)}Watch the story</button>
+    </details>`;
   if (!account.me) {
-    el.innerHTML = `<div class="tr-grid"><section class="card tr-main">${pot(t, sym)}${how}
-      <button class="btn btn-lime tr-go" id="tr-signin">${icon('flag', 16)}SIGN IN WITH X TO RACE</button>
-      <a class="btn btn-ghost tr-alt" href="#/drive">${icon('pad', 14)}Test drive first, free</a></section></div>`;
+    el.innerHTML = `${friendLobbyHtml()}<div class="tr-grid"><section class="card tr-main">${pot(t, sym)}${how}
+      <button class="btn btn-lime tr-go" id="tr-signin">${icon('flag', 16)}Sign in with X${icon('overtake', 16)}</button>
+      <a class="btn btn-ghost tr-alt" href="#/drive">${icon('pad', 14)}Practice for free</a></section>
+      <aside class="card tr-showcase"><span class="hero-label">Find your racer</span>
+        <img src="${racerPortrait('rowdy')}" alt="Rowdy in a black supercar" width="960" height="720" loading="lazy" />
+        <h2>Make an entrance.</h2><p class="muted">Test drive every racer. Pick the one that feels like you.</p>
+        <a class="hero-link" href="#/garage">Explore the garage${icon('overtake', 16)}</a></aside></div>`;
     $('tr-signin').onclick = () => showAuthModal();
     $('tr-intro').onclick = () => showIntro();
+    mountFriendLobbies(raceNow);
     return;
   }
   let mine: Mine;
@@ -83,9 +118,10 @@ export async function renderRacePage() {
     el.innerHTML = `<p class="garage-note">${icon('alert', 14)}${escapeHtml((e as Error).message)}</p>`;
     return;
   }
-  if ($('view-race').hidden) return;
+  if ($('view-race').hidden || version !== renderVersion) return;
   const devnet = t.cluster === 'devnet';
   el.innerHTML = `
+    ${friendLobbyHtml()}
     <div class="tr-grid">
       <section class="card tr-main">
         ${pot(t, sym)}
@@ -93,21 +129,23 @@ export async function renderRacePage() {
         <div class="lb-ticket"><span><b>Your tickets: <span id="tr-tix">${mine.tickets}</span></b><small>${escapeHtml(priceLabel(t))} each${t.priceUsd ? `, paid in ${sym} at the live price` : ''}${devnet ? ' · test coins, no real value' : ''}</small></span>
           <button class="btn small" id="tr-buy">${icon('zap', 14)}Buy ticket</button></div>
         ${devnet ? `<button class="btn small btn-ghost lb-faucet" id="tr-faucet">${icon('zap', 14)}Get free test ${sym}</button>` : ''}
-        <p class="muted small" id="tr-step"></p>
-        <button class="btn btn-lime tr-go" id="tr-go" ${mine.tickets ? '' : 'disabled'}>${icon('flag', 16)}RACE NOW <small>uses 1 ticket</small></button>
-        <p class="muted small tr-note">Once you start, the run counts: leaving mid-race is a DNF.</p>
+        <p class="muted small" id="tr-step" role="status" aria-live="polite"></p>
+        <button class="btn btn-lime tr-go" id="tr-go" >${icon('flag', 16)}${mine.tickets ? 'Start race <small>uses 1 ticket</small>' : `Buy 1 ticket for ${escapeHtml(priceLabel(t))}`} </button>
+        <p class="muted small tr-note">Once you start, the run counts: leaving mid-race counts as not finishing.</p>
       </section>
       <section class="card tr-side">
-        ${mine.owed ? `<div class="tr-owed">${icon('trophy', 18)}<span><b>${mine.owed.toLocaleString('en-US')} ${sym} won</b><small>Paid out onchain once the prize escrow is live.</small></span></div>` : ''}
-        <h3>Your races</h3>
-        ${mine.lobbies.length ? mine.lobbies.map((l) => lobbyCard(l, sym)).join('') : `<p class="muted small">No races yet. Your lobbies show up here.</p>`}
+        ${mine.owed ? `<div class="tr-owed">${icon('trophy', 18)}<span><b>${mine.owed.toLocaleString('en-US')} ${sym} won</b><small>Check the payout status beside your race below.</small></span></div>` : ''}
+        <h3>Your races</h3><a class="btn btn-ghost small" href="#/drive">Practice for free</a>
+        ${mine.lobbies.length ? mine.lobbies.map((l) => lobbyCard(l, sym)).join('') : `<p class="muted small">Your results will appear here after your first race. Try a free practice run whenever you like.</p>`}
       </section>
     </div>`;
-  $('tr-go').onclick = () => raceNow();
+  $('tr-go').onclick = () => mine.tickets ? raceNow() : void buy();
   $('tr-intro').onclick = () => showIntro();
   $('tr-buy').onclick = () => void buy();
   const f = document.getElementById('tr-faucet');
   if (f) f.onclick = () => void faucet();
+  mountFriendLobbies(raceNow);
+  mine.lobbies.forEach(celebrateSettledWin);
 }
 
 function pot(t: { price: number; priceUsd?: number }, sym: string) {
@@ -115,9 +153,9 @@ function pot(t: { price: number; priceUsd?: number }, sym: string) {
   const n = (v: number) => v.toLocaleString('en-US');
   const big = t.priceUsd ? `$${n(full * 0.8)} <small>in ${sym}</small>` : `${n(full * 0.8)} <small>${sym}</small>`;
   return `<div class="tr-pot">
-    <div class="tr-kicker">5 PLAYERS · ONE TRACK · WINNER TAKES ALL</div>
-    <div class="tr-big">${big}</div>
-    <div class="muted small">to the winner of a full lobby (80% of ${t.priceUsd ? '$' : ''}${n(full)}${t.priceUsd ? '' : ' ' + sym}). 15% is burned, 5% goes to the team.</div>
+    <div class="tr-kicker">1 TICKET = 1 RACE</div>
+    <div class="tr-big">${big}</div><b>Winner's prize at a full 5-player lobby</b>
+    <div class="muted small">${t.priceUsd ? "Shown at ticket purchase value; the coin's market value can change." : '80% of the coins paid into a full lobby.'}</div>
   </div>`;
 }
 
@@ -146,14 +184,14 @@ function lobbyCard(v: LobbyView, sym: string) {
   const best = v.seats.find((s) => s.finished)?.finishTime ?? null;
   const rows = v.seats
     .map((s, i) => {
-      const time = s.racing ? 'racing…' : s.finished ? (i === 0 || best === null ? fmt(s.finishTime!, 2) : `+${(s.finishTime! - best).toFixed(2)}s`) : 'DNF';
+      const time = s.ready ? 'paid · ready' : s.racing ? 'racing…' : s.finished ? (i === 0 || best === null ? fmt(s.finishTime!, 2) : `+${(s.finishTime! - best).toFixed(2)}s`) : 'DNF';
       return `<li class="${s.you ? 'me' : ''}"><span class="p">${i + 1}</span><span class="dot" style="--c:${s.color}"></span><span class="n">${s.you ? 'You' : escapeHtml(s.name)}</span><span class="g">${time}</span></li>`;
     })
     .join('');
-  return `<div class="tr-lobby"><div class="tr-lobby-top">${chip}<span class="muted small">pot ${L.pot.toLocaleString('en-US')} ${sym}</span></div><ol>${rows}</ol></div>`;
+  return `<div class="tr-lobby">${L.code ? `<a class="hero-link" href="${friendHref(L.code)}">Friend lobby · ${escapeHtml(L.code)}</a>` : ''}<div class="tr-lobby-top">${chip}<span class="muted small">pot ${L.pot.toLocaleString('en-US')} ${sym}</span></div><ol>${rows}</ol></div>`;
 }
 
-function raceNow() {
+function raceNow(code?: string) {
   const color = (() => {
     try {
       return localStorage.getItem('agp-color') ?? PLAYER_COLORS[0];
@@ -161,7 +199,13 @@ function raceNow() {
       return PLAYER_COLORS[0];
     }
   })();
-  pending = () => account.api<TicketRun>('/api/lobby/join', { color });
+  pending = async () => {
+    try { return await account.api<TicketRun>('/api/lobby/join', { color, coinRevision: account.cfg?.coinLaunch?.revision, ...(code ? { code } : {}) }); }
+    catch (e) {
+      if (code) { toast((e as Error).message); location.hash = friendHref(code); }
+      throw e;
+    }
+  };
   location.hash = '#/run';
 }
 
@@ -170,8 +214,8 @@ async function buy() {
   const btn = $<HTMLButtonElement>('tr-buy');
   btn.disabled = true;
   try {
-    const { buyTicket } = await import('./tickets');
-    const n = await buyTicket((t) => (step.textContent = t));
+    const { ticketCheckout } = await import('./ticketCheckout');
+    const n = await ticketCheckout();
     step.textContent = '';
     toast(`Ticket bought: you have ${n}`);
     void renderRacePage();

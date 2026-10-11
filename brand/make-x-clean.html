@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>PumpKart clean X identity</title>
+<style>body{margin:0;background:#0a0014}canvas{display:block;margin-bottom:24px}</style>
+<canvas id="pfp" width="400" height="400"></canvas>
+<canvas id="banner" width="1500" height="500"></canvas>
+<script type="module">
+const bg='#0a0014',pink='#ff006e';
+const p=document.querySelector('#pfp').getContext('2d');
+p.fillStyle=bg;p.fillRect(0,0,400,400);
+p.save();p.translate(203,200);p.scale(.92,.92);p.translate(-213,-210);p.transform(1,0,-.2493,1,51.1,0);
+const shape=new Path2D('M108 100 H252 C309 100 334 129 334 170 C334 212 303 240 252 240 H182 V320 H108 Z M182 156 V184 H246 C261 184 270 179 270 170 C270 161 261 156 246 156 Z');
+p.fillStyle=pink;p.fill(shape,'evenodd');p.clip(shape,'evenodd');p.fillStyle=bg;p.fillRect(130,100,9,230);p.fillRect(147,100,4,230);p.restore();
+const logo=new Image();logo.src='/pumpkart-logo.png';await logo.decode();
+const source=document.createElement('canvas');source.width=logo.width;source.height=logo.height;
+const sc=source.getContext('2d');sc.drawImage(logo,0,0);
+const pixels=sc.getImageData(0,0,source.width,source.height).data;
+let left=source.width,top=source.height,right=0,bottom=0;
+for(let y=0;y<source.height;y++)for(let x=0;x<source.width;x++)if(pixels[(y*source.width+x)*4+3]>20){left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y)}
+const b=document.querySelector('#banner').getContext('2d');b.fillStyle=bg;b.fillRect(0,0,1500,500);
+const w=750,h=(bottom-top+1)*w/(right-left+1);
+b.drawImage(logo,left,top,right-left+1,bottom-top+1,525,185,w,h);
+b.fillStyle='#f4f1f7';b.font='26px Arial';b.fillText('Trade the chart. Race the track.',530,185+h+58);
+b.fillStyle=pink;b.fillRect(530,185+h+87,64,4);
+document.title='ready';
+</script>
+</html>

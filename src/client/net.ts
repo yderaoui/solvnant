@@ -20,6 +20,7 @@ export function clientId(): string {
 export class GameConnection {
   private ws: WebSocket | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closedByUs = false;
   readonly id = clientId();
   /** Session token (signed in), sent with every hello. */
@@ -62,7 +63,10 @@ export class GameConnection {
       this.connected = false;
       this.onStatus(false);
       if (this.pingTimer) clearInterval(this.pingTimer);
-      if (!this.closedByUs) setTimeout(() => this.connect(), 1500);
+      if (!this.closedByUs) this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        if (!this.closedByUs && this.ws === ws) this.connect();
+      }, 1500);
     };
   }
 
@@ -78,6 +82,8 @@ export class GameConnection {
   }
 
   private drop() {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     const ws = this.ws;
     this.ws = null;
     this.connected = false;

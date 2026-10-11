@@ -124,7 +124,7 @@ export async function generateDriverCode(
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': process.env.SITE_URL || 'https://github.com/',
-      'X-Title': 'AI Grand Prix',
+      'X-Title': 'PumpKart',
     },
     body: JSON.stringify({
       model,

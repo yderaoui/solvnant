@@ -57,7 +57,7 @@ export function mountPrivy(appId: string, chain: SolanaChain, onState: (s: Privy
       appId={appId}
       config={{
         loginMethods: ['twitter'], // X only (the client's call): no email, Google or outside wallets
-        appearance: { theme: 'dark', accentColor: '#9945ff', walletChainType: 'solana-only', landingHeader: 'Sign in to RaceTrench' },
+        appearance: { theme: 'dark', accentColor: '#ff006e', walletChainType: 'solana-only', logo: `${import.meta.env.BASE_URL}pumpkart-logo.png`, landingHeader: 'Sign in to PumpKart' },
         embeddedWallets: { solana: { createOnLogin: 'users-without-wallets' } },
         solana: {
           rpcs: {

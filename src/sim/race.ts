@@ -8,11 +8,11 @@ import { generateTrack, lapsFor, sampleTrack, type Track } from './track';
 import { PHYS, collide, locate, speedOf, stepCar, type Car, type Input } from './physics';
 import { DriverSandbox } from './sandbox';
 import { trackForDriver, type DriverState, type DriverTrack } from './driverApi';
-import { nativeBotDrive, type BotMemory } from './nativeBot';
-import type { FallbackParams } from './fallbackDriver';
+import { legacyBotDrive, nativeBotDrive, type BotMemory } from './nativeBot';
+import { HOUSE_BOTS, type FallbackParams } from './fallbackDriver';
 import { collideObstacles, generateObstacles, type Obstacles } from './obstacles';
 
-export const SIM_VERSION = '3'; // bump whenever race results could change for the same inputs
+export const SIM_VERSION = '4'; // bump whenever race results could change for the same inputs
 /** Races stored with this sim version or later are run with obstacles (trees + crowd fences). */
 export const OBSTACLES_SINCE = 3;
 export const FRAME_RATE = 30;
@@ -39,6 +39,8 @@ export interface RaceConfig {
   seed: string;
   entries: Entry[];
   laps?: number;
+  /** Stored replays keep their original native bot controller. */
+  simVersion?: string;
   maxTime?: number; // seconds
   /** Replay: human inputs recorded during a live race. */
   inputLog?: InputLogEntry[];
@@ -157,7 +159,7 @@ export class RaceSim {
     });
     for (const c of this.cars) locate(c, track);
     this.obstacles = config.obstacles ? generateObstacles(track) : null;
-    config.entries.forEach((e, i) => (this.cars[i].reverse = e.source === 'human'));
+    config.entries.forEach((e, i) => (this.cars[i].reverse = e.source === 'human' || (e.source === 'bot' || e.source === 'llm' || e.source === 'house' || e.source === 'fallback') && Number(config.simVersion ?? SIM_VERSION) >= 4));
 
     this.driverTrack = trackForDriver(track, laps);
     const trackJson = JSON.stringify(this.driverTrack);
@@ -185,7 +187,7 @@ export class RaceSim {
     this.prevOrder = standings(this.cars);
     this.events.push({ t: 0, type: 'start', car: -1, text: 'Lights out!' });
     this.meta = {
-      simVersion: SIM_VERSION,
+      simVersion: config.simVersion ?? SIM_VERSION,
       seed: config.seed,
       laps,
       trackLength: L,
@@ -263,7 +265,7 @@ export class RaceSim {
         if (entry.source === 'human') continue;
         const state = buildState(i, cars, order, track, this.t, laps);
         if (entry.source === 'bot') {
-          const out = nativeBotDrive(state, this.driverTrack, entry.botParams!, this.botMem[i]);
+          const out = (Number(this.config.simVersion ?? SIM_VERSION) < 4 ? legacyBotDrive : nativeBotDrive)(state, this.driverTrack, entry.botParams!, this.botMem[i]);
           inputs[i] = { throttle: out.throttle * (c.finished ? 0.35 : 1), steer: out.steer, brake: out.brake };
           continue;
         }
@@ -276,6 +278,26 @@ export class RaceSim {
           c.crashTime = this.t;
           events.push({ t: this.t, type: 'crash', car: i, text: `${this.name(i)} crashed: ${c.crashReason}` });
           continue;
+        }
+        // New AI League races get recovery assistance; stored races and user agents keep their code.
+        if (entry.source === 'llm' && Number(this.config.simVersion ?? SIM_VERSION) >= 4) {
+          const safe = nativeBotDrive(state, this.driverTrack, HOUSE_BOTS[i % HOUSE_BOTS.length].params, this.botMem[i]);
+          // Project the proposed steering one second ahead, before a bad command leaves the road.
+          const travel = Math.max(0, state.me.vLong);
+          const yaw = travel * clamp(num(out.steer), -1, 1) * PHYS.maxSteer / (1 + travel / 45) / PHYS.wheelbase;
+          const ahead = sampleTrack(track, c.s + travel);
+          const predictedX = c.x + cos(c.h + yaw * 0.5) * travel;
+          const predictedY = c.y + sin(c.h + yaw * 0.5) * travel;
+          const predictedLateral = -sin(ahead.heading) * (predictedX - ahead.x) + cos(ahead.heading) * (predictedY - ahead.y);
+          const unsafe = Math.abs(predictedLateral) > ahead.halfWidth - 2 || Math.abs(wrapAngle(c.h + yaw - ahead.heading)) > 0.45;
+          if (unsafe || c.offTrack || Math.abs(state.me.headingError) > 0.55 || Math.abs(c.lateral) > c.halfWidth - 2) {
+            out.steer = safe.steer;
+            out.throttle = Math.min(num(out.throttle), safe.throttle);
+            out.brake = Math.max(num(out.brake), safe.brake);
+            // A stranded driver needs forward motion to turn back toward the circuit.
+            if (state.me.speed < 5) { out.throttle = safe.throttle; out.brake = 0; }
+          }
+          if (safe.brake > 0) { out.throttle = 0; out.brake = Math.max(num(out.brake), safe.brake); }
         }
         inputs[i] = {
           throttle: num(out.throttle) * (c.finished ? 0.35 : 1),

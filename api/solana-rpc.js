@@ -10,11 +10,11 @@ const UPSTREAM = {
 
 // What the players' browsers (and Privy's wallet) may ask for: reading balances and sending a signed payment.
 const BROWSER_METHODS = new Set([
-  'getAccountInfo', 'getBalance', 'getTokenAccountBalance', 'getLatestBlockhash', 'getMinimumBalanceForRentExemption',
+  'getAccountInfo', 'getMultipleAccounts', 'getBalance', 'getTokenAccountBalance', 'getLatestBlockhash', 'getMinimumBalanceForRentExemption',
   'getSignatureStatuses', 'getFeeForMessage', 'getRecentPrioritizationFees', 'sendTransaction', 'simulateTransaction',
   'getEpochInfo', 'getSlot', 'getBlockHeight', 'getGenesisHash', 'getVersion', 'getSignaturesForAddress', 'getTokenAccountsByOwner',
 ]);
-const ORIGINS = ['https://www.racetrench.com', 'https://racetrench.com', 'https://solvnant.vercel.app', 'http://localhost:5173'];
+const ORIGINS = ['https://pumpkart.racing', 'https://www.pumpkart.racing', 'https://www.racetrench.com', 'https://racetrench.com', 'https://solvnant.vercel.app', 'http://localhost:5173'];
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;

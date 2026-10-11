@@ -4,6 +4,7 @@
 // No smart contract involved: it's a plain SPL token transfer the player approves in their wallet.
 import { account } from "./account";
 import type { TicketConfig } from "../game/config";
+import { hasPurchaseMemo } from "../game/purchaseMemo";
 
 interface SolanaProvider {
   isPhantom?: boolean;
@@ -42,7 +43,7 @@ interface Payer {
   signOnly?: (tx: import("@solana/web3.js").Transaction) => Promise<Uint8Array>;
 }
 
-async function payer(): Promise<Payer> {
+export async function payer(): Promise<Payer> {
   const { privyOn, privyWallet } = await import("./privy/client");
   if (privyOn()) {
     const w = await privyWallet();
@@ -99,14 +100,22 @@ async function payer(): Promise<Payer> {
   };
 }
 
-export async function buyTicket(step: (text: string) => void): Promise<number> {
+export type PaymentReview = (quote: TicketConfig & { usd?: number | null }, address: string, sponsored: boolean) => Promise<void>;
+
+export async function buyTicket(step: (text: string) => void, review?: PaymentReview, code?: string): Promise<number> {
   const r = await payCoins(
     "/api/ticket/intent",
-    {},
+    code ? { code } : {},
     "/api/ticket/claim",
     "tl-pending-ticket",
     step,
+    review,
   );
+  if (code) {
+    const entry = r as { entryReady?: boolean; refunded?: boolean };
+    if (!entry.entryReady) throw new Error(entry.refunded ? 'This entry could not be accepted. A full coin refund is queued to the wallet that paid.' : 'Open your friend lobby to check your entry.');
+    return 1;
+  }
   return (r as { tickets?: number }).tickets ?? 0;
 }
 
@@ -134,15 +143,23 @@ async function payCoins(
   claimPath: string,
   pendingKey: string,
   step: (text: string) => void,
+  review?: PaymentReview,
 ): Promise<object> {
   if (!account.me) throw new Error("Sign in first.");
   step("Connecting your wallet…");
   const wallet = await payer();
   const publicKey = { toString: () => wallet.address };
-  const intent = await account.api<TicketConfig & { memo: string }>(
+  const intent = await account.api<TicketConfig & { memo: string; code?: string; entryUnits?: string }>(
     intentPath,
-    intentBody,
+    { ...intentBody, coinRevision: account.cfg?.coinLaunch?.revision },
   );
+  const expectedCode = (intentBody as { code?: string }).code;
+  if (expectedCode && (intent.code !== expectedCode || !/^\d+$/.test(intent.entryUnits ?? '') || BigInt(intent.entryUnits!) <= 0n)) {
+    throw new Error('This game server needs the friend-lobby update. No payment was made.');
+  }
+  if (review) await review(intent, wallet.address, !!(account.cfg as { sponsor?: string | null } | null)?.sponsor && !!wallet.signOnly);
+  const coinRevision = (intent as TicketConfig & { coinRevision?: string }).coinRevision;
+  await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose: 'ticket', memo: intent.memo });
   step("Preparing the payment…");
   // The Solana libraries expect Node's Buffer: give the browser one before loading them.
   const { Buffer } = await import("buffer");
@@ -164,7 +181,8 @@ async function payCoins(
     .decimals;
   const from = spl.getAssociatedTokenAddressSync(mint, owner, false, programId);
   const to = spl.getAssociatedTokenAddressSync(mint, treasury, true, programId);
-  const units = BigInt(Math.floor(intent.price * 10 ** decimals + 1e-6)); // same rounding as the server
+  const exactUnits = (intent as TicketConfig & { entryUnits?: string }).entryUnits;
+  const units = exactUnits ? BigInt(exactUnits) : BigInt(Math.floor(intent.price * 10 ** decimals + 1e-6));
   // Sponsored gas: the game's house wallet pays the network fee, so players need no SOL.
   const sponsorAddr =
     (account.cfg as { sponsor?: string | null } | null)?.sponsor ?? null;
@@ -234,6 +252,7 @@ async function payCoins(
   );
   tx.feePayer = sponsor ?? owner;
   tx.recentBlockhash = (await conn.getLatestBlockhash("confirmed")).blockhash;
+  await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose: 'ticket', memo: intent.memo });
   step(`Approve ${intent.price.toLocaleString('en-US')} ${intent.symbol}${(intent as { usd?: number | null }).usd ? ` (≈ $${(intent as { usd?: number }).usd})` : ''} in your wallet…`);
   if (sponsor) {
     let signedTx: Uint8Array;
@@ -250,12 +269,13 @@ async function payCoins(
     step("Sending (the game pays the network fee)…");
     const { signature } = await account.api<{ signature: string }>(
       "/api/pay/sponsor",
-      { tx: Buffer.from(signedTx).toString("base64") },
+      { tx: Buffer.from(signedTx).toString("base64"), coinRevision },
     );
     return await confirm(signature);
   }
   let signature: string;
   let known: string | null = null;
+  await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose: 'ticket', memo: intent.memo });
   try {
     signature = await wallet.send(tx, conn, (sig) => {
       known = sig;
@@ -382,7 +402,7 @@ export async function getTestCoins(
 
 /**
  * Payments that reached the treasury but were never credited (the page closed, or the wallet reported
- * an error after sending): list this wallet's recent RaceTrench payments and let the server credit them.
+ * an error after sending): list this wallet's recent purchases and let the server credit them.
  * Resolves with what was recovered.
  */
 export async function recoverPayments(): Promise<{
@@ -421,7 +441,7 @@ export async function recoverPayments(): Promise<{
     .filter(
       (x) =>
         !x.err &&
-        x.memo?.includes("RaceTrench ") &&
+        hasPurchaseMemo(x.memo) &&
         (x.blockTime ?? 0) > weekAgo,
     )
     .map((x) => x.signature);

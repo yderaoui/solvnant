@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&family=Space+Mono:wght@400&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #222; }
+  canvas { display: block; margin: 0 0 20px; }
+</style>
+</head>
+<body>
+<canvas id="pfp" width="400" height="400"></canvas>
+<canvas id="banner" width="1500" height="500"></canvas>
+<script type="module">
+// PumpKart identity: magenta italic P with racing stripes; banner = a real circuit from
+// the game's track generator as fine lane lines, a dotted checkered flag, italic wordmark.
+// Open through the dev server (it imports the game's track generator): /brand/make2.html
+import { generateTrack } from '/src/sim/track.ts';
+
+const MAGENTA = '#ff006e'; // PumpKart magenta
+const CYAN = '#00ffff'; // cyan circuit accent
+const BG = '#0a0014';
+
+// Italic P with two racing stripes through the stem
+function mark(ctx, cx, cy, size) {
+  const s = size / 400;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  ctx.translate(-200, -205);
+  const k = Math.tan((14 * Math.PI) / 180);
+  ctx.transform(1, 0, -k, 1, k * 205, 0); // italic
+  // Geometric P: stem and bowl with an open counter
+  const T = new Path2D('M108 100 H252 C309 100 334 129 334 170 C334 212 303 240 252 240 H182 V320 H108 Z M182 156 V184 H246 C261 184 270 179 270 170 C270 161 261 156 246 156 Z');
+  const g = ctx.createLinearGradient(108, 100, 334, 320);
+  g.addColorStop(0, '#ff006e');
+  g.addColorStop(1, MAGENTA);
+  ctx.fillStyle = g;
+  ctx.fill(T, 'evenodd');
+  // livery: two thin stripes running down the stem, clipped to the P
+  ctx.save();
+  ctx.clip(T, 'evenodd');
+  ctx.fillStyle = BG;
+  ctx.fillRect(130, 100, 9, 230);
+  ctx.fillRect(147, 100, 4, 230);
+  ctx.restore();
+  ctx.restore();
+}
+
+// dotted checkered flag: a checker grid whose squares are drawn as dots, fading with x
+function checkerDots(ctx, x0, y0, w, h, cell, fadeFrom, fadeTo) {
+  const dot = cell / 4.6;
+  for (let y = y0; y < y0 + h; y += cell / 2) {
+    for (let x = x0; x < x0 + w; x += cell / 2) {
+      const cx = Math.floor((x - x0) / cell), cy = Math.floor((y - y0) / cell);
+      if ((cx + cy) % 2) continue;
+      const f = Math.max(0, Math.min(1, (x - fadeFrom) / (fadeTo - fadeFrom)));
+      if (f <= 0.02) continue;
+      ctx.globalAlpha = 0.75 * f * f;
+      ctx.beginPath();
+      ctx.arc(x + cell / 4, y + cell / 4, dot * (0.35 + 0.65 * f), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// a circuit from the game, as N parallel lane lines
+function circuit(ctx, seed, cx, cy, scale, rot, lanes, color) {
+  const t = generateTrack(seed);
+  const b = t.bounds;
+  const mx = (b.minX + b.maxX) / 2, my = (b.minY + b.maxY) / 2;
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  ctx.strokeStyle = color;
+  for (let l = 0; l < lanes; l++) {
+    const off = (l - (lanes - 1) / 2) * 7; // metres between lanes
+    ctx.globalAlpha = l === Math.floor(lanes / 2) ? 0.32 : 0.1;
+    ctx.lineWidth = l === Math.floor(lanes / 2) ? 2 : 1.2;
+    ctx.beginPath();
+    t.points.forEach((p, i) => {
+      const h = t.headings[i];
+      let x = p[0] - mx - Math.sin(h) * off, y = p[1] - my + Math.cos(h) * off;
+      const X = cx + (x * cos - y * sin) * scale, Y = cy + (x * sin + y * cos) * scale;
+      i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // start/finish: a cyan tick on the racing line
+  const p0 = t.points[0], h0 = t.headings[0];
+  const x = p0[0] - mx, y = p0[1] - my;
+  const X = cx + (x * cos - y * sin) * scale, Y = cy + (x * sin + y * cos) * scale;
+  ctx.save();
+  ctx.translate(X, Y);
+  ctx.rotate(h0 + rot + Math.PI / 2);
+  ctx.fillStyle = CYAN;
+  ctx.fillRect(-34, -3.5, 68, 7);
+  ctx.restore();
+}
+
+await document.fonts.load('900 120px Orbitron');
+await document.fonts.load('400 20px "Space Mono"');
+
+// ---- profile picture
+const p = document.getElementById('pfp').getContext('2d');
+p.fillStyle = BG;
+p.fillRect(0, 0, 400, 400);
+mark(p, 206, 198, 300); // optical centre
+
+// ---- banner
+const b = document.getElementById('banner').getContext('2d');
+b.fillStyle = BG;
+b.fillRect(0, 0, 1500, 500);
+circuit(b, 'pumpkart-brand-7', 1160, 270, 0.95, 0.35, 5, '#ff006e');
+b.fillStyle = '#ff006e';
+checkerDots(b, 1140, 0, 360, 500, 20, 1180, 1500);
+// The P mark forms the first letter: [P]UMP KART
+b.font = '900 128px Orbitron';
+const ump = 'UMP', kart = 'KART';
+const wUmp = b.measureText(ump).width;
+const x0 = 150, base = 285;
+// the mark's P spans y 100..320 of 400 units: scale it to the font's cap height (~0.72em) and sit it on the baseline
+const cap = 128 * 0.72, markSize = (cap / 220) * 400;
+const markWidth = (226 / 400) * markSize; // P width in px
+mark(b, x0 + markWidth / 2 + 6, base - cap / 2 - 1, markSize);
+const xText = x0 + markWidth + 20; // room after the mark
+b.textBaseline = 'alphabetic';
+b.fillStyle = '#ffffff';
+b.fillText(ump, xText, base);
+b.fillStyle = MAGENTA;
+b.fillText(kart, xText + wUmp + 4, base);
+b.font = '400 20px "Space Mono"';
+b.fillStyle = '#b4a8bf';
+b.letterSpacing = '9px';
+b.fillText('RACE  ·  BET  ·  EARN', x0 + 8, 336);
+document.title = 'ready';
+
+</script>
+</body>
+</html>

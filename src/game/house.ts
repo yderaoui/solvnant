@@ -5,7 +5,7 @@
 //
 // Keep only what's needed in it (pots in flight + a little SOL): a server that holds a key can be
 // attacked. Sponsored transactions are checked instruction by instruction before the house co-signs,
-// so it can only ever pay the fee of an exact RaceTrench payment into its own coin account.
+// so it can only ever pay the fee of an exact PumpKart payment into its own coin account.
 import {
   AccountRole,
   address,
@@ -150,6 +150,7 @@ const memoIx = (text: string) => ix(PROGRAMS.memo, [], new TextEncoder().encode(
 
 // ---------------------------------------------------------------------------------- payouts
 export interface PayoutPlan {
+  rawUnits?: { prize: string; burn: string; team: string };
   winner: string; // wallet
   prize: number; // coins
   burn: number;
@@ -165,13 +166,13 @@ export async function buildPayout(cfg: TicketConfig, house: House, plan: PayoutP
   const winnerAta = await ataOf(plan.winner, cfg.mint, m.program);
   const ixs: Instruction[] = [
     createAtaIdempotent(house.signer, winnerAta, plan.winner, cfg.mint, m.program),
-    transferChecked(m.program, houseAta, cfg.mint, winnerAta, house.signer, units(plan.prize, m.decimals), m.decimals),
+    transferChecked(m.program, houseAta, cfg.mint, winnerAta, house.signer, plan.rawUnits ? BigInt(plan.rawUnits.prize) : units(plan.prize, m.decimals), m.decimals),
   ];
-  if (plan.burn > 0) ixs.push(burnChecked(m.program, houseAta, cfg.mint, house.signer, units(plan.burn, m.decimals), m.decimals));
+  if (plan.burn > 0) ixs.push(burnChecked(m.program, houseAta, cfg.mint, house.signer, plan.rawUnits ? BigInt(plan.rawUnits.burn) : units(plan.burn, m.decimals), m.decimals));
   if (plan.team > 0 && plan.teamWallet) {
     const teamAta = await ataOf(plan.teamWallet, cfg.mint, m.program);
     ixs.push(createAtaIdempotent(house.signer, teamAta, plan.teamWallet, cfg.mint, m.program));
-    ixs.push(transferChecked(m.program, houseAta, cfg.mint, teamAta, house.signer, units(plan.team, m.decimals), m.decimals));
+    ixs.push(transferChecked(m.program, houseAta, cfg.mint, teamAta, house.signer, plan.rawUnits ? BigInt(plan.rawUnits.team) : units(plan.team, m.decimals), m.decimals));
   }
   ixs.push(memoIx(plan.note));
   const { value: bh } = await rpc<{ value: { blockhash: string; lastValidBlockHeight: number } }>(cfg, 'getLatestBlockhash', [{ commitment: 'confirmed' }]);
@@ -205,11 +206,12 @@ export async function blockHeight(cfg: TicketConfig): Promise<number> {
 export interface SponsorCheck {
   /** The memo's price in coins if it was handed to this player (else null: refuse). */
   priceOf: (memo: string) => number | null;
+  unitsOf?: (memo: string) => string | null;
 }
 
 /**
  * A player's purchase, signed by the player with the house as fee payer. Check that it is exactly a
- * RaceTrench payment into the house's coin account, then co-sign it. Returns the wire transaction and
+ * PumpKart payment into the house's coin account, then co-sign it. Returns the wire transaction and
  * its id. Throws (readable) if anything is off.
  */
 export async function cosignPurchase(cfg: TicketConfig, house: House, wireBase64: string, check: SponsorCheck) {
@@ -262,7 +264,8 @@ export async function cosignPurchase(cfg: TicketConfig, house: House, wireBase64
   if (transfers !== 1 || memos !== 1) throw bad('one transfer and one memo');
   const price = check.priceOf(memo);
   if (price === null) throw bad('memo');
-  if (amount !== units(price, m.decimals)) throw bad('amount');
+  const exact = check.unitsOf?.(memo);
+  if (amount !== (exact ? BigInt(exact) : units(price, m.decimals))) throw bad('amount');
   if (!tx.signatures[player as Address]) throw bad('not signed by you');
   const sig = await signBytes(house.signer.keyPair.privateKey, tx.messageBytes);
   const signed = { ...tx, signatures: { ...tx.signatures, [house.address]: sig } };

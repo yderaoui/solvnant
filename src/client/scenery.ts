@@ -6,14 +6,14 @@ import { Container, Graphics, Text } from 'pixi.js';
 import { Rng } from '../sim/rng';
 import type { Track } from '../sim/track';
 
-// RaceTrench night palette: dark woodland, floodlit asphalt, Solana purple accents.
+// PumpKart night palette: dark woodland, floodlit asphalt, neon circuit accents.
 export const SCENE_COLORS = {
   ground: 0x081a0e,
   groundPatch: 0x0c2314,
   verge: 0x123321,
   asphalt: 0x2b2f36,
   edge: 0xf2f5f8,
-  runoff: 0x9945ff,
+  runoff: 0xff006e,
   stand: 0x1a2030,
   standRoof: 0x262d40,
   tree: 0x0e2c17,
@@ -21,12 +21,12 @@ export const SCENE_COLORS = {
   water: 0x0b2a3d,
   waterHi: 0x1b6a8e,
   light: 0xffe2a0,
-  sector: [0x9945ff, 0x14f195, 0x22d3ee],
+  sector: [0xff006e, 0x14f195, 0x00ffff],
   red: 0xe3122d,
 };
 
 /** Text style for map badges (the renderer switches this to a pixel font in pixel mode). */
-export const sceneryStyle = { font: '"Exo 2", Barlow, sans-serif', textRes: 2, fontSize: 12 };
+export const sceneryStyle = { font: '"Orbitron", sans-serif', textRes: 2, fontSize: 12 };
 
 const CROWD = [0xf5f5f5, 0xffd60a, 0xff3b3b, 0x3b82ff, 0x8cff2e, 0xff3dbb, 0xa259ff, 0xff8a1f, 0xd4d4d8, 0x22d3ee];
 

@@ -11,7 +11,10 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import type { Track } from '../sim/track';
+import { isCityTrack, type Track } from '../sim/track';
+import { buildTokyoCity } from './tokyoCity';
+import { FinishFlags } from './finishLine';
+import { finishFeedback } from './finishFeedback';
 import { PHYS } from '../sim/physics';
 import { FLAG, type RaceEvent } from '../sim/race';
 import { Rng } from '../sim/rng';
@@ -20,6 +23,8 @@ import type { CarVisual } from './renderer';
 import { buildKart } from './kart';
 import { buildRacer, loadSkin, skinLoaded } from './racer3d';
 import { DEFAULT_SKIN } from '../game/skins';
+import { disposeRacerMaterials, isOwnedRacerMaterial, ownRacerMaterial } from './renderResources';
+import { shadersReady } from './shaderReady';
 import { CARD_H, CARD_W, MAX_IMPACTS, MAX_CARS_UNIFORM, VARIANTS, bakeAtlas, cardMaterial, crowdUniforms, humanGeometry, humanMaterial, lookAttributes, type CrowdUniforms } from './crowd3d';
 
 const ASSET = (p: string) => `${import.meta.env.BASE_URL}assets/${p}`;
@@ -101,6 +106,7 @@ export class Chase3D {
   readonly canvas: HTMLCanvasElement;
   private gl: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
+  private nightSky: THREE.Texture | null = null;
   private camera = new THREE.PerspectiveCamera(60, 1, 0.3, 3000);
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
@@ -113,6 +119,7 @@ export class Chase3D {
   private camLook = new THREE.Vector3();
   private snap = true;
   private time = 0;
+  private finishFlags: FinishFlags | null = null;
   private shake = 0;
   private focusIdx = -1;
   private track: Track | null = null;
@@ -178,6 +185,15 @@ export class Chase3D {
     this.gl.debug.checkShaderErrors = import.meta.env.DEV;
     this.canvas = this.gl.domElement;
     this.canvas.className = 'chase3d';
+    this.canvas.addEventListener('webglcontextlost', () => {
+      window.dispatchEvent(new Event('tl-3d-unavailable'));
+    });
+    this.canvas.addEventListener('webglcontextrestored', () => {
+      this.graphicsFailed = false;
+      this.passesWarm = false;
+      this.snap = true;
+      void this.warmUp();
+    });
     this.canvas.style.display = 'none';
     host.appendChild(this.canvas);
     this.fade.className = 'swap-fade';
@@ -219,6 +235,7 @@ export class Chase3D {
           this.scene.environment = t;
           this.scene.environmentIntensity = 0.9;
           this.scene.background = t;
+          this.nightSky = t;
           this.scene.backgroundIntensity = 0.55;
           done();
         },
@@ -252,6 +269,8 @@ export class Chase3D {
   get visible() {
     return this.canvas.style.display !== 'none';
   }
+  private graphicsFailed = false;
+  get available() { return !this.graphicsFailed && !this.gl.getContext().isContextLost(); }
 
   setVisible(v: boolean) {
     if (v === this.visible) return;
@@ -450,12 +469,17 @@ export class Chase3D {
 
   private buildWorld(track: Track) {
     this.track = track;
+    finishFeedback.reset();
+    this.finishFlags = null;
     disposeTree(this.world);
     this.world.clear();
     this.setObstacles(null);
     this.skids.clear();
     this.snap = true;
     const T = this.T;
+    const city = isCityTrack(track);
+    this.scene.background = city ? new THREE.Color(0x080414) : this.nightSky ?? new THREE.Color(0x070b14);
+    this.scene.fog = new THREE.Fog(city ? 0x130921 : 0x0b1220, city ? 220 : 140, 900);
     const N = track.points.length;
     const P = track.points,
       H = track.headings,
@@ -486,7 +510,7 @@ export class Chase3D {
       cz = (b.minY + b.maxY) / 2;
 
     // Ground (grass)
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(5000, 5000), T.grass);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(5000, 5000), city ? new THREE.MeshStandardMaterial({ color: 0x181820, roughness: 0.9 }) : T.grass);
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(cx, -0.03, cz);
     ground.receiveShadow = true;
@@ -506,13 +530,15 @@ export class Chase3D {
       else add(band(idx, (i) => -W[i] / 2 - 9, (i) => -W[i] / 2 - 1.4, 0.015, 8), T.gravel);
     }
     // Start/finish line + gantry
-    const checker = new THREE.Mesh(new THREE.PlaneGeometry(2.4, W[0]), new THREE.MeshStandardMaterial({ map: checkerTexture(), roughness: 0.8, color: 0xa8a8a8 }));
+    const checker = new THREE.Mesh(new THREE.PlaneGeometry(2.4, W[0]), new THREE.MeshBasicMaterial({ map: checkerTexture(W[0]), toneMapped: false }));
     checker.rotation.order = 'YXZ';
     checker.rotation.set(-Math.PI / 2, -H[0], 0);
     checker.position.set(P[0][0], 0.035, P[0][1]);
     checker.receiveShadow = true;
     this.world.add(checker);
     this.world.add(gantry(P[0], H[0], W[0]));
+    this.finishFlags = new FinishFlags(P[0], H[0], W[0]);
+    this.world.add(this.finishFlags.group);
 
     // Armco + concrete along the physical wall, posts, tyre walls on the outside of corners
     for (const s of [-1, 1]) {
@@ -565,7 +591,7 @@ export class Chase3D {
     straights.sort((x, y) => y.n - x.n);
     this.standPeople = [];
     this.standAreas = [];
-    for (const st of straights.slice(0, 4)) {
+    for (const st of straights.slice(0, city ? 0 : 4)) {
       const m = (st.a + Math.floor(st.n / 2)) % N;
       const len = Math.min(st.n * sp * 0.7, 140);
       const nx = -Math.sin(H[m]),
@@ -603,7 +629,7 @@ export class Chase3D {
     }
 
     // Distant forest outside the walls (decorative, static)
-    this.world.add(forest(track, rng, T));
+    this.world.add(city ? buildTokyoCity(track) : forest(track, rng, T));
     this.areas = [...this.standAreas];
     this.seat = { a: -1, u: 0, v: 0 };
     this.rebuildCrowd();
@@ -834,18 +860,30 @@ export class Chase3D {
   }
 
   // ==================================================================== cars
+  /** Prepare selected racers under the loading screen; a slow asset must not block a race forever. */
+  async prepareSkins(ids: string[]): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.all([...new Set(ids)].map(loadSkin)),
+        new Promise<void>(resolve => { timer = setTimeout(resolve, 6000); }),
+      ]);
+    } finally { clearTimeout(timer); }
+  }
+
   setCars(entries: { name: string; color: string; skin?: string; ghost?: boolean }[], you: number) {
     // Skins not downloaded yet: race with the default one for now, swap them in when they arrive.
     const missing = [...new Set(entries.map((e) => e.skin ?? DEFAULT_SKIN))].filter((id) => !skinLoaded(id));
     if (missing.length) {
       const token = (this.carsToken = {});
-      void Promise.all(missing.map(loadSkin)).then(() => {
-        if (this.carsToken === token) this.setCars(entries, you);
+      void Promise.all(missing.map(loadSkin)).then(loaded => {
+        if (this.carsToken === token && loaded.some(Boolean)) this.setCars(entries, you);
       });
     } else this.carsToken = null;
     for (const c of this.cars) {
       c.label?.material.map?.dispose();
       c.label?.material.dispose();
+      disposeRacerMaterials(c.root);
       this.carGroup.remove(c.root);
     }
     this.cars = entries.map((e, i) => {
@@ -896,7 +934,10 @@ export class Chase3D {
       if (mine) this.shake = Math.max(this.shake, 0.35);
       this.excite = Math.max(this.excite, 0.3);
     } else if (ev.type === 'overtake') this.excite = Math.max(this.excite, 0.45);
-    else if (ev.type === 'finish' || ev.type === 'final_lap') this.excite = 1;
+    else if (ev.type === 'finish' || ev.type === 'final_lap') {
+      this.excite = 1;
+      if (ev.type === 'finish') this.finishFlags?.wave(this.time);
+    }
   }
 
   /** First person from a spectator area: walk (WASD), look (drag), zoom (wheel), or let it follow. */
@@ -1099,7 +1140,17 @@ export class Chase3D {
    * the first frames don't freeze. Compiles the variants actually used: drawn into the composer's
    * render target (linear colour), hidden things included (near fans, fallen trees), plus a car.
    */
-  async warmUp(): Promise<void> {
+  private warming: Promise<void> | null = null;
+  warmUp(): Promise<void> {
+    if (this.warming) return this.warming;
+    this.warming = this.prepareShaders().catch(() => {
+      this.graphicsFailed = true;
+      window.dispatchEvent(new Event('tl-3d-unavailable'));
+    }).finally(() => { this.warming = null; });
+    return this.warming;
+  }
+
+  private async prepareShaders(): Promise<void> {
     const gl = this.gl;
     const hidden: THREE.Object3D[] = [];
     this.scene.traverse((o) => {
@@ -1112,16 +1163,20 @@ export class Chase3D {
     if (extra) this.scene.add(extra);
     const prev = gl.getRenderTarget();
     gl.setRenderTarget(this.composer.renderTarget1);
-    let compiling: Promise<unknown> = Promise.resolve();
     try {
-      compiling = gl.compileAsync(this.scene, this.camera); // the programs are created right here, synchronously
-    } catch {
-      /* compile on first use instead */
+      gl.compile(this.scene, this.camera);
+    } catch (error) {
+      if (extra) disposeRacerMaterials(extra);
+      throw error;
+    } finally {
+      gl.setRenderTarget(prev);
+      for (const o of hidden) o.visible = false;
+      if (extra) this.scene.remove(extra);
     }
-    gl.setRenderTarget(prev);
-    for (const o of hidden) o.visible = false;
-    if (extra) this.scene.remove(extra);
-    await compiling.catch(() => {});
+    let ready = false;
+    try { ready = await shadersReady(gl.getContext(), () => gl.info.programs ?? []); }
+    finally { if (extra) disposeRacerMaterials(extra); }
+    if (!ready) throw new Error('3D shader preparation timed out.');
     if (this.passesWarm) return;
     // Post-processing isn't part of the scene: compile the bloom shaders the same way...
     const fx = new THREE.Scene();
@@ -1129,15 +1184,17 @@ export class Chase3D {
     const b = this.bloom;
     for (const m of [b.materialHighPassFilter, ...b.separableBlurMaterials, b.compositeMaterial, b.blendMaterial]) fx.add(new THREE.Mesh(quad, m));
     gl.setRenderTarget(this.composer.renderTarget1);
-    let passes: Promise<unknown> = Promise.resolve();
     try {
-      passes = gl.compileAsync(fx, this.camera);
-    } catch {
-      /* first use instead */
+      gl.compile(fx, this.camera);
+    } catch (error) {
+      quad.dispose();
+      throw error;
+    } finally {
+      gl.setRenderTarget(prev);
     }
-    gl.setRenderTarget(prev);
-    await passes.catch(() => {});
-    quad.dispose();
+    try { ready = await shadersReady(gl.getContext(), () => gl.info.programs ?? []); }
+    finally { quad.dispose(); }
+    if (!ready) throw new Error('3D effects preparation timed out.');
     // ...then draw one frame while the view is still hidden: builds the output pass and uploads the
     // textures now, during loading, rather than on the first visible frame.
     if (!this.visible) this.composer.render(0);
@@ -1160,7 +1217,7 @@ export class Chase3D {
 
   // ==================================================================== frame
   render(cars: CarVisual[], focus: number, dt: number) {
-    if (!this.visible || this.swap) return; // mid-swap: the dark layer covers the last frame
+    if (!this.available || !this.visible || this.swap) return; // mid-swap: the dark layer covers the last frame
     // Behind the full-screen lobby cards nobody sees the difference: draw every other frame.
     const bc = document.body.classList;
     if ((bc.contains('in-lobby') || bc.contains('league-lobby')) && this.swapFrames === 0) {
@@ -1175,6 +1232,8 @@ export class Chase3D {
       this.fade.classList.remove('on');
     }
     this.time += dt;
+    if (finishFeedback.observe(cars, focus)) this.finishFlags?.wave(this.time);
+    this.finishFlags?.update(this.time);
     this.adaptQuality();
     this.focusIdx = focus;
     this.excite = Math.max(0, this.excite - dt * 0.18);
@@ -1800,7 +1859,7 @@ function ghostly(root: THREE.Object3D) {
       if (m.blending === THREE.AdditiveBlending) return m; // flames stay as they are
       let g = done.get(m);
       if (!g) {
-        g = m.customProgramCacheKey() === 'racer-rig-1' ? m : m.clone(); // rigged materials are already per racer
+        g = isOwnedRacerMaterial(m) ? m : ownRacerMaterial(m.clone());
         g.transparent = true;
         g.opacity = 0.42;
         g.depthWrite = false;
@@ -2094,9 +2153,9 @@ function chainlinkTexture() {
 
 function adTexture() {
   const ads = [
-    ['RACETRENCH', '#06080b', '#a463ff'],
-    ['RACE · BET · EARN', '#9945ff', '#ffffff'],
-    ['AI GRAND PRIX', '#101826', '#22d3ee'],
+    ['PUMPKART', '#06080b', '#ff006e'],
+    ['RACE · BET · EARN', '#ff006e', '#ffffff'],
+    ['PUMPKART RACING', '#101826', '#00ffff'],
     ['NIGHT SERIES', '#3a0f4f', '#ff3dbb'],
   ];
   return canvasTex(1024, 128, (c) => {
@@ -2105,7 +2164,7 @@ function adTexture() {
       c.fillStyle = bg;
       c.fillRect(x, 0, 256, 128);
       c.fillStyle = fg;
-      c.font = 'italic 800 42px "Exo 2", sans-serif';
+      c.font = '800 42px "Orbitron", sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(text, x + 128, 66, 236);
@@ -2114,12 +2173,13 @@ function adTexture() {
   });
 }
 
-function checkerTexture() {
-  return canvasTex(64, 256, (c) => {
-    for (let y = 0; y < 16; y++)
-      for (let x = 0; x < 4; x++) {
-        c.fillStyle = (x + y) % 2 ? '#111' : '#f4f4f4';
-        c.fillRect(x * 16, y * 16, 16, 16);
+function checkerTexture(width: number) {
+  const columns = Math.max(2, Math.round(width / 1.2));
+  return canvasTex(64, columns * 32, (c) => {
+    for (let y = 0; y < columns; y++)
+      for (let x = 0; x < 2; x++) {
+        c.fillStyle = (x + y) % 2 ? '#080808' : '#ffffff';
+        c.fillRect(x * 32, y * 32, 32, 32);
       }
   }, false);
 }
@@ -2138,18 +2198,19 @@ function bannerTexture() {
   return canvasTex(512, 64, (c) => {
     c.fillStyle = '#07090c';
     c.fillRect(0, 0, 512, 64);
-    c.fillStyle = '#9945ff';
+    c.fillStyle = '#ff006e';
     c.fillRect(0, 0, 512, 4);
     c.fillRect(0, 60, 512, 4);
-    c.font = 'italic 800 38px "Exo 2", sans-serif';
+    c.font = '800 38px "Orbitron", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillStyle = '#ffffff';
-    c.textAlign = 'right';
-    c.fillText('RACE', 222, 34);
-    c.fillStyle = '#a463ff';
-    c.textAlign = 'left';
-    c.fillText('TRENCH', 226, 34);
+    c.textAlign = 'center';
+    c.fillText('START / FINISH', 256, 34);
+    for (const offset of [8, 440]) for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) {
+      c.fillStyle = (x + y) % 2 ? '#080808' : '#ffffff';
+      c.fillRect(offset + x * 16, 8 + y * 16, 16, 16);
+    }
   }, false);
 }
 
@@ -2160,22 +2221,22 @@ function screenTexture() {
     g.addColorStop(1, '#3a0f4f');
     c.fillStyle = g;
     c.fillRect(0, 0, 256, 128);
-    c.strokeStyle = '#9945ff';
+    c.strokeStyle = '#ff006e';
     c.lineWidth = 6;
     c.strokeRect(3, 3, 250, 122);
-    c.font = 'italic 800 34px "Exo 2", sans-serif';
+    c.font = '800 34px "Orbitron", sans-serif';
     c.textAlign = 'center';
     c.fillStyle = '#ffffff';
     c.fillText('LIVE', 128, 60);
-    c.fillStyle = '#c39bff';
-    c.font = '600 18px "Barlow", sans-serif';
-    c.fillText('RACETRENCH', 128, 92);
+    c.fillStyle = '#00ffff';
+    c.font = '600 18px "Space Mono", monospace';
+    c.fillText('PUMPKART', 128, 92);
   }, false);
 }
 
 function labelSprite(name: string, color: string): THREE.Sprite {
   const tex = canvasTex(256, 64, (c) => {
-    c.font = '700 26px "Barlow", sans-serif';
+    c.font = '700 26px "Space Mono", monospace';
     const w = Math.min(240, c.measureText(name).width + 34);
     const x0 = 128 - w / 2;
     c.fillStyle = 'rgba(6,9,12,0.85)';
@@ -2196,14 +2257,19 @@ function labelSprite(name: string, color: string): THREE.Sprite {
 
 /** Free a group's geometry and its own materials; the shared session materials are kept. */
 function disposeTree(root: THREE.Object3D) {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  const textures = new Set<THREE.Texture>();
   root.traverse((o) => {
     const m = o as THREE.Mesh;
-    m.geometry?.dispose();
+    if ((m as THREE.InstancedMesh).isInstancedMesh) (m as THREE.InstancedMesh).dispose();
+    if (m.geometry && !geometries.has(m.geometry)) { geometries.add(m.geometry); m.geometry.dispose(); }
     const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
     for (const mat of mats) {
-      if (sharedMats.has(mat)) continue;
+      if (sharedMats.has(mat) || materials.has(mat)) continue;
+      materials.add(mat);
       const map = (mat as THREE.MeshStandardMaterial).map;
-      if (map && (map as THREE.CanvasTexture).isCanvasTexture) map.dispose();
+      if (map && (map as THREE.CanvasTexture).isCanvasTexture && !textures.has(map)) { textures.add(map); map.dispose(); }
       mat.dispose();
     }
   });

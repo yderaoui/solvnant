@@ -1,7 +1,8 @@
 // Coin tickets: the on-chain payment check (RPC responses mocked in the shape Solana returns).
 import { describe, expect, it } from 'vitest';
-import { verifyTicketPayment } from '../src/game/solana';
+import { verifyTicketPayment, readPayment } from '../src/game/solana';
 import type { TicketConfig } from '../src/game/config';
+import { hasPurchaseMemo, isPurchaseMemo, skinFromMemo } from '../src/game/purchaseMemo';
 
 const cfg: TicketConfig = {
   cluster: 'devnet',
@@ -13,7 +14,7 @@ const cfg: TicketConfig = {
   symbol: '$TRACK',
 };
 const SIG = '5'.repeat(88);
-const MEMO = 'RaceTrench ticket abc123';
+const MEMO = 'PumpKart ticket abc123';
 const PLAYER = 'PlayerCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
 
 function tx(o: { memo?: string; received?: number; mint?: string; owner?: string; err?: unknown } = {}) {
@@ -31,6 +32,13 @@ function tx(o: { memo?: string; received?: number; mint?: string; owner?: string
 const rpc = (result: unknown) => (async () => new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result }))) as unknown as typeof fetch;
 
 describe('coin ticket payments', () => {
+  it('reads an exact one-unit payment even when large treasury balances lose UI-number precision', async () => {
+    const response = tx();
+    const pre = response.meta.preTokenBalances[0], post = response.meta.postTokenBalances[0];
+    pre.uiTokenAmount = { uiAmount: 9000000000000, amount: '9000000000000000000' } as typeof pre.uiTokenAmount;
+    post.uiTokenAmount = { uiAmount: 9000000000000, amount: '9000000000000000001' } as typeof post.uiTokenAmount;
+    expect(await readPayment(cfg, SIG, rpc(response))).toMatchObject({ amount: 0.000001, units: '1', wallet: PLAYER });
+  });
   it('accepts a payment of the price to the treasury with our memo', async () => {
     expect(await verifyTicketPayment(cfg, SIG, MEMO, rpc(tx()))).toEqual({ wallet: PLAYER, amount: 100 });
   });
@@ -41,7 +49,7 @@ describe('coin ticket payments', () => {
     expect(await verifyTicketPayment(cfg, SIG, MEMO, rpc(null))).toBeNull();
   });
   it('rejects a payment made for another purchase (memo)', async () => {
-    await expect(verifyTicketPayment(cfg, SIG, MEMO, rpc(tx({ memo: 'RaceTrench ticket other' })))).rejects.toThrow(/memo/);
+    await expect(verifyTicketPayment(cfg, SIG, MEMO, rpc(tx({ memo: 'PumpKart ticket other' })))).rejects.toThrow(/memo/);
   });
   it('rejects too little', async () => {
     await expect(verifyTicketPayment(cfg, SIG, MEMO, rpc(tx({ received: 99 })))).rejects.toThrow(/costs 100/);
@@ -67,5 +75,29 @@ describe('coin ticket payments', () => {
   });
   it('rejects something that is not a signature', async () => {
     await expect(verifyTicketPayment(cfg, 'not-a-sig', MEMO, rpc(tx()))).rejects.toThrow(/signature/);
+  });
+});
+
+describe('purchase recovery after the PumpKart rebrand', () => {
+  it.each(['PumpKart', 'RaceTrench'])('recovers ticket and skin memos issued by %s', async (brand) => {
+    const ticket = `${brand} ticket abc123`;
+    const skin = `${brand} skin tjr def456`;
+    expect(isPurchaseMemo(ticket)).toBe(true);
+    expect(isPurchaseMemo(skin)).toBe(true);
+    expect(skinFromMemo(skin)).toBe('tjr');
+    expect(skinFromMemo(ticket)).toBeNull();
+    expect(hasPurchaseMemo(`[${ticket.length}] ${ticket}`)).toBe(true);
+    expect(hasPurchaseMemo(`[${skin.length}] ${skin}`)).toBe(true);
+    expect(await verifyTicketPayment(cfg, SIG, ticket, rpc(tx({ memo: ticket })))).toEqual({ wallet: PLAYER, amount: 100 });
+    await expect(verifyTicketPayment(cfg, SIG, ticket, rpc(tx({ memo: `${brand} ticket somebody-else` })))).rejects.toThrow(/memo/);
+  });
+
+  it('does not treat payouts, another brand, or an absent memo as a purchase', () => {
+    for (const memo of ['PumpKart payout lobby1', 'RaceTrench payout lobby1', 'OtherGame ticket abc123']) {
+      expect(isPurchaseMemo(memo)).toBe(false);
+      expect(hasPurchaseMemo(memo)).toBe(false);
+      expect(skinFromMemo(memo)).toBeNull();
+    }
+    expect(hasPurchaseMemo(null)).toBe(false);
   });
 });

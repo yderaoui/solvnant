@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <title>PumpKart</title>
+  <defs>
+    <linearGradient id="g" x1="108" y1="100" x2="334" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff006e"/><stop offset="1" stop-color="#00ffff"/>
+    </linearGradient>
+    <clipPath id="p"><path clip-rule="evenodd" d="M108 100 H252 C309 100 334 129 334 170 C334 212 303 240 252 240 H182 V320 H108 Z M182 156 V184 H246 C261 184 270 179 270 170 C270 161 261 156 246 156 Z"/></clipPath>
+  </defs>
+  <rect width="400" height="400" rx="70" fill="#0a0014"/>
+  <g transform="translate(206 198) scale(0.8) translate(-200 -205) matrix(1 0 -0.2493 1 51.1 0)">
+    <path fill="url(#g)" fill-rule="evenodd" d="M108 100 H252 C309 100 334 129 334 170 C334 212 303 240 252 240 H182 V320 H108 Z M182 156 V184 H246 C261 184 270 179 270 170 C270 161 261 156 246 156 Z"/>
+    <g clip-path="url(#p)" fill="#0a0014"><rect x="130" y="100" width="9" height="230"/><rect x="147" y="100" width="4" height="230"/></g>
+  </g>
+</svg>

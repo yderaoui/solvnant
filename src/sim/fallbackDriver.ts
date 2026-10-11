@@ -1,3 +1,4 @@
+import { botController } from './nativeBot';
 // Hand-written driver used when a model fails, and for "house" cars.
 // It runs in the same sandbox as model code (it's just a string), so it follows the same rules.
 
@@ -14,55 +15,10 @@ export interface FallbackParams {
 export const DEFAULT_FALLBACK: FallbackParams = { look: 1, grip: 11, brake: 11, gain: 2.0, pass: 0.2, maxSpeed: 20 };
 
 export function fallbackDriverCode(p: FallbackParams = DEFAULT_FALLBACK): string {
-  return `// Fallback driver: pure-pursuit steering + curvature-based speed planning.
-const P = ${JSON.stringify(p)};
-let laneOffset = 0;
-
-function drive(state) {
-  const T = TRACK, n = T.points.length, me = state.me;
-
-  // 1. Overtaking: if someone slower is close ahead in our lane, pick the side with more room.
-  let desired = 0;
-  for (const c of state.cars) {
-    if (c.gap > 2 && c.gap < 22 && Math.abs(c.lateral - me.lateral) < 3 && (c.speed < me.speed + 1 || c.stopped)) {
-      const room = me.halfWidth - 2;
-      desired = c.lateral > 0 ? -room * P.pass : room * P.pass;
-      break;
-    }
-  }
-  laneOffset += (desired - laneOffset) * 0.08;
-
-  // 2. Steering: aim at a point ahead on the (offset) centerline.
-  const look = 9 + me.speed * 0.42 * P.look;
-  const k = Math.max(2, Math.round(look / T.spacing));
-  const ti = (me.trackIndex + k) % n;
-  const th = T.headings[ti];
-  const tx = T.points[ti][0] - Math.sin(th) * laneOffset;
-  const ty = T.points[ti][1] + Math.cos(th) * laneOffset;
-  let ang = Math.atan2(ty - me.y, tx - me.x) - me.heading;
-  while (ang > Math.PI) ang -= 2 * Math.PI;
-  while (ang < -Math.PI) ang += 2 * Math.PI;
-  const steer = Math.max(-1, Math.min(1, ang * P.gain - me.vLat * 0.03));
-
-  // 3. Speed: slowest speed we must reach for any curve inside our braking distance.
-  let target = P.maxSpeed || 70;
-  const horizon = Math.ceil((me.speed * me.speed / (2 * P.brake) + 40) / T.spacing);
-  for (let j = 0; j < horizon; j++) {
-    const i = (me.trackIndex + j) % n;
-    const c = Math.abs(T.curvature[i]) + 1e-4;
-    const vmax = Math.sqrt(P.grip / c);
-    const allowed = Math.sqrt(vmax * vmax + 2 * P.brake * j * T.spacing);
-    if (allowed < target) target = allowed;
-  }
-  if (me.offTrack) target = Math.min(target, 22);
-
-  let throttle = 1, brake = 0;
-  const diff = me.speed - target;
-  if (diff > 0.5) { throttle = 0; brake = Math.min(1, diff / 5); }
-  else if (diff > -1.5) throttle = 0.6;
-  return { throttle, steer, brake };
-}
-`;
+  return `function __name(fn) { return fn; } // esbuild may emit this name helper in Node scripts.
+const P = ${JSON.stringify(p)}, mem = { laneOffset: 0 };
+const controller = ${botController.toString()};
+function drive(state) { return controller(state, TRACK, P, mem, Math); }`;
 }
 
 /** House cars use slightly different personalities so they don't drive as a train. */

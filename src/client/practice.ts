@@ -1,13 +1,13 @@
 // Test drive: drive a real race on your own, before signing in or buying anything. Everything runs in
 // the browser with the same physics, obstacles and bots as live races (RaceSim + house bots), drawn in
 // the shared 3D view with the live driver HUD. Nothing is sent to the server or saved.
-import { generateTrack, lapsFor, type Track } from '../sim/track';
+import { generateTrack, type Track } from '../sim/track';
 import { FLAG, RaceSim, type RaceEvent } from '../sim/race';
 import { PHYS, type Input } from '../sim/physics';
 import { generateObstacles } from '../sim/obstacles';
 import { liveSimEntries } from '../game/liveEntries';
 import { PLAYER_COLORS, type LobbyEntry } from '../game/protocol';
-import type { CarVisual } from './renderer';
+import type { CarVisual, RaceRenderer } from './renderer';
 import { audio, get3d, load3d } from './view3d';
 import { drawMinimap, fmt } from './livegame';
 import { escapeHtml } from './codeViewer';
@@ -16,9 +16,11 @@ import { driveSkin, mySkin, setTrySkin } from './garage';
 import { account } from './account';
 import { soloConfig } from '../game/lobbies';
 import { payoutNote } from './ticketrace';
+import { celebrateWin, celebrateSettledWin } from './winnerCelebration';
 import type { Car } from '../sim/physics';
 import type { InputLogEntry } from '../sim/race';
 import { SKINS, botSkin, skinById } from '../game/skins';
+import { racerPortrait } from './portraits';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const BOTS = 5;
@@ -26,6 +28,7 @@ const COUNTDOWN = 3; // s
 
 /** A seat in a ticketed ghost lobby, as /api/lobby/join hands it out. */
 export interface TicketRun {
+  code?: string | null;
   run: string;
   lobby: string;
   seed: string;
@@ -36,6 +39,7 @@ export interface TicketRun {
 }
 
 interface SeatView {
+  ready?: boolean;
   name: string;
   color: string;
   you: boolean;
@@ -47,7 +51,7 @@ interface SeatView {
 }
 interface LobbyView {
   payout?: { status: string; sig: string | null } | null;
-  lobby: { status: string; settleBy: number; seats: number; maxSeats: number; pot: number; prize: number; youWon: boolean };
+  lobby: { status: string; settleBy: number; seats: number; maxSeats: number; pot: number; prize: number; youWon: boolean; entry?: {usd:number;coins:number} | null };
   seats: SeatView[];
   rejected?: string | null;
 }
@@ -83,6 +87,8 @@ export class PracticeDrive {
   private lastLap = 0;
   private raf = 0;
   private seed = '';
+  private practiceLaps = 2;
+  private practiceTrack = 'tokyo';
   private finished = false;
   private picking = false; // the racer picker is open: the race is paused
   /** Ticketed race: your run is a solo sim; each ghost is its own sim replaying a recorded run. */
@@ -90,8 +96,12 @@ export class PracticeDrive {
   private ghostSims: RaceSim[] = [];
   private submitted = false;
   private pausedAt = 0;
+  private generation = 0;
+  private resultTimer: ReturnType<typeof setTimeout> | undefined;
+  private mapOnly = false;
+  private mapSeed = '';
 
-  constructor() {
+  constructor(private renderer: RaceRenderer) {
     window.addEventListener('keydown', (e) => this.onKey(e, true));
     window.addEventListener('keyup', (e) => this.onKey(e, false));
     window.addEventListener('blur', () => this.keys.clear());
@@ -104,30 +114,57 @@ export class PracticeDrive {
   }
 
   async start(seed?: string, seat?: TicketRun | (() => Promise<TicketRun>)) {
+    const generation = ++this.generation;
+    const current = () => this.active && generation === this.generation;
+    cancelAnimationFrame(this.raf);
+    clearTimeout(this.resultTimer);
+    this.sim?.dispose();
+    this.sim = null;
+    for (const ghost of this.ghostSims) ghost.dispose();
+    this.ghostSims = [];
+    this.ticket = null;
+    this.keys.clear();
+    this.mapOnly = false;
+    this.mapSeed = '';
+    this.startAt = Infinity;
+    const ready3d = async () => {
+      try { const view = await load3d($('stage-canvas')); return view.available ? view : null; }
+      catch {
+        if (current()) { this.mapOnly = true; window.dispatchEvent(new Event('tl-3d-unavailable')); }
+        return null;
+      }
+    };
     this.active = true;
     this.picking = false;
+    if (!seat && !seed) {
+      this.finished = false;
+      document.body.classList.add('is-live', 'is-racing', 'view-3d');
+      await this.chooseRace();
+      if (!current()) return;
+    }
     let ticket = typeof seat === 'function' ? undefined : seat;
     if (typeof seat === 'function') {
       // Ticketed race: load the 3D view first, then take the seat. The server's clock starts at the seat,
       // so the countdown has to follow right away.
       document.body.classList.add('is-live', 'is-racing', 'view-3d');
       this.center(`<div class="card loading" role="status"><div class="spinner"></div><div>Finding you a lobby…</div></div>`);
-      await load3d($('stage-canvas'));
-      if (!this.active) return;
+      const view = await ready3d();
+      if (view) await view.prepareSkins([mySkin()]);
+      if (!current()) return;
       try {
         ticket = await seat();
       } catch (e) {
-        if (this.active)
+        if (current())
           this.center(`<div class="card results" role="alert"><div class="res-head">${icon('alert', 26)}No race this time</div><p class="muted">${escapeHtml((e as Error).message)}</p><div class="res-foot"><a class="btn btn-lime" href="#/race">Back to races</a></div></div>`);
         return;
       }
-      if (!this.active) return; // left while joining: the seat counts as a DNF at its deadline
+      if (!current()) return; // left while joining: the seat counts as a DNF at its deadline
     }
     this.ticket = ticket ?? null;
     this.submitted = false;
     if (ticket) seed = ticket.seed;
     $('go-flash').classList.remove('held');
-    this.seed = seed ?? `drive-${Math.floor(Math.random() * 1e9).toString(36)}`;
+    this.seed = seed ?? `${this.practiceTrack === 'tokyo' ? 'tokyo:' : ''}drive-${Math.floor(Math.random() * 1e9).toString(36)}`;
     document.body.classList.add('is-live', 'is-racing', 'view-3d');
     $('cam-chase').classList.add('active');
     this.center(`<div class="card loading" role="status"><div class="spinner"></div><div>Getting your car ready…</div></div>`);
@@ -155,8 +192,8 @@ export class PracticeDrive {
       this.sim = new RaceSim(null, {
         seed: this.seed,
         entries: liveSimEntries(this.entries.map((e) => ({ name: e.name, color: e.color, kind: e.kind, bot: e.kind === 'bot' ? Number(e.id.slice(4)) : null }))),
-        laps: lapsFor(this.track),
-        maxTime: 230,
+        laps: this.practiceLaps,
+        maxTime: this.practiceLaps * 180,
         obstacles: true,
       });
       this.ghostSims = [];
@@ -167,13 +204,28 @@ export class PracticeDrive {
     this.lastLap = 0;
     this.bestLap = null;
     this.finished = false;
-    const c = await load3d($('stage-canvas'));
-    if (!this.active) return;
-    c.setTrack(this.track);
-    c.setObstacles(generateObstacles(this.track));
-    c.setCars(this.entries.map((e) => ({ name: e.name, color: e.color, skin: e.skin, ghost: e.id.startsWith('ghost:') })), 0);
-    c.setCamMode('chase');
-    c.warmUp();
+    const c = this.mapOnly ? null : await ready3d();
+    if (!current()) return;
+    if (c) {
+      c.setVisible(false);
+      await c.prepareSkins(this.entries.flatMap(e => e.skin ? [e.skin] : []));
+      if (!current()) return;
+      c.setTrack(this.track);
+      c.setObstacles(generateObstacles(this.track));
+      c.setCars(this.entries.map((e) => ({ name: e.name, color: e.color, skin: e.skin, ghost: e.id.startsWith('ghost:') })), 0);
+      c.setCamMode('chase');
+      await c.warmUp();
+      if (!current()) return;
+      if (!c.available) this.mapOnly = true;
+    } else this.mapOnly = true;
+    $('cam-overview').onclick = () => { this.mapOnly = true; this.paintView(); };
+    $('cam-chase').onclick = async () => {
+      const view = await ready3d();
+      if (!current()) return;
+      this.mapOnly = !view;
+      this.paintView();
+    };
+    this.paintView();
     audio.start();
     this.center('');
     this.startAt = performance.now() + COUNTDOWN * 1000;
@@ -182,10 +234,65 @@ export class PracticeDrive {
     this.raf = requestAnimationFrame(() => this.frame());
   }
 
+  private chooseRace(): Promise<void> {
+    const courseArt = (seed: string) => {
+      const track = generateTrack(seed);
+      const { minX, minY, maxX, maxY } = track.bounds;
+      const points = track.points.map(([x, y]) => `${12 + (x - minX) / (maxX - minX) * 156},${12 + (y - minY) / (maxY - minY) * 76}`).join(' ');
+      return `<svg class="race-course-art" viewBox="0 0 180 100" aria-hidden="true"><polyline points="${points} ${points.split(' ')[0]}" /></svg>`;
+    };
+    this.center(`<form class="card race-setup" id="practice-setup" aria-label="Set up your practice race">
+      <div class="race-setup-heading"><span class="race-setup-badge">${icon('pad', 14)}Free practice</span><a class="icon-btn" href="#/race" aria-label="Close practice setup">${icon('x', 18)}</a></div>
+      <h2>Your track.<br><em>Your race.</em></h2>
+      <p class="muted">Pick your circuit. Race five bots. No ticket needed.</p>
+      <fieldset class="race-track-options"><legend>Choose a track</legend>
+        <label class="race-choice race-track-card race-track-city">
+          <input type="radio" name="practice-track" value="tokyo" required />
+          <span class="race-choice-check">${icon('check', 14)}</span>
+          <span class="race-track-art">${courseArt('tokyo:preview')}</span>
+          <strong>Tokyo Afterdark</strong><small>Neon city circuit</small>
+        </label>
+        <label class="race-choice race-track-card race-track-circuit">
+          <input type="radio" name="practice-track" value="circuit" required />
+          <span class="race-choice-check">${icon('check', 14)}</span>
+          <span class="race-track-art">${courseArt('practice-preview')}</span>
+          <strong>Grand Prix</strong><small>New layout each race</small>
+        </label>
+      </fieldset>
+      <fieldset class="race-lap-options"><legend>How many laps?</legend>
+        ${[[1, 'Quick run'], [2, 'Standard'], [3, 'Full race']].map(([laps, label]) => `<label class="race-choice race-lap-card"><input type="radio" name="practice-laps" value="${laps}" required /><strong>${laps}<span>${laps === 1 ? 'lap' : 'laps'}</span></strong><small>${label}</small></label>`).join('')}
+      </fieldset>
+      <div class="race-setup-footer"><p id="practice-summary" aria-live="polite"></p><button type="submit" class="btn btn-lime" id="practice-start">${icon('flag', 18)}<span>Start race</span>${icon('overtake', 18)}</button></div>
+    </form>`);
+    const form = $('practice-setup') as HTMLFormElement;
+    const trackRadio = form.querySelector<HTMLInputElement>(`[name="practice-track"][value="${this.practiceTrack}"]`)!;
+    trackRadio.checked = true;
+    form.querySelector<HTMLInputElement>(`[name="practice-laps"][value="${this.practiceLaps}"]`)!.checked = true;
+    const paintChoice = () => {
+      const laps = Number(form.querySelector<HTMLInputElement>('[name="practice-laps"]:checked')!.value);
+      $('practice-summary').textContent = `${laps} ${laps === 1 ? 'lap' : 'laps'} against 5 bots`;
+      $('practice-start').querySelector('span')!.textContent = `Start ${laps}-lap race`;
+    };
+    form.onchange = paintChoice;
+    paintChoice();
+    trackRadio.focus({ preventScroll: true });
+    return new Promise(resolve => {
+      form.onsubmit = event => {
+        event.preventDefault();
+        this.practiceTrack = form.querySelector<HTMLInputElement>('[name="practice-track"]:checked')!.value === 'tokyo' ? 'tokyo' : 'circuit';
+        this.practiceLaps = Math.max(1, Math.min(3, Number(form.querySelector<HTMLInputElement>('[name="practice-laps"]:checked')!.value) || 2));
+        $('practice-start').setAttribute('disabled', '');
+        resolve();
+      };
+    });
+  }
+
   stop() {
     // Leaving a ticketed race mid-way: hand in what was driven (it counts as not finished).
     if (this.ticket && !this.submitted && this.sim && performance.now() >= this.startAt) void this.submit();
     this.active = false;
+    ++this.generation;
+    clearTimeout(this.resultTimer);
     cancelAnimationFrame(this.raf);
     this.keys.clear();
     document.body.classList.remove('is-live', 'is-racing', 'view-3d');
@@ -198,10 +305,21 @@ export class PracticeDrive {
     this.sim = null;
     for (const g of this.ghostSims) g.dispose();
     this.ghostSims = [];
+    this.ticket = null;
+    this.renderer.you = -1;
+  }
+
+  private paintView() {
+    document.body.classList.toggle('view-3d', !this.mapOnly);
+    for (const id of ['cam-chase', 'cam-overview']) {
+      const on = (id === 'cam-overview') === this.mapOnly;
+      $(id).classList.toggle('active', on);
+      $(id).setAttribute('aria-pressed', String(on));
+    }
   }
 
   private onKey(e: KeyboardEvent, down: boolean) {
-    if (!this.active) return;
+    if (!this.active || !this.sim) return;
     const tag = (e.target as HTMLElement)?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     const map: Record<string, string> = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
@@ -262,9 +380,24 @@ export class PracticeDrive {
     const c3 = get3d();
     for (const ev of sim.events.slice(this.shownEvents)) this.react(ev);
     this.shownEvents = sim.events.length;
-    if (c3) {
+    if (c3 && c3.available && !this.mapOnly) {
       c3.setVisible(true);
       c3.render(v, 0, dt);
+    } else {
+      if (!this.mapOnly) { this.mapOnly = true; this.paintView(); }
+      c3?.setVisible(false);
+      if (this.mapSeed !== this.seed) {
+        this.mapSeed = this.seed;
+        this.renderer.you = 0;
+        this.renderer.mode = 'car';
+        this.renderer.focus = 0;
+        this.renderer.setTrack(this.track);
+        this.renderer.setObstacles(generateObstacles(this.track));
+        this.renderer.setCars(this.entries);
+      }
+      this.renderer.app.stage.visible = true;
+      this.renderer.render(v, orderCars(cars), dt, !this.finished);
+      this.renderer.app.render();
     }
     const me = v[0];
     audio.update(me.speed, input.throttle, me.slip, c3 ? c3.crowdNear(v, 0) : 0, dt);
@@ -278,7 +411,8 @@ export class PracticeDrive {
     }
     if ((cars[0].finished || sim.done) && !this.finished) {
       this.finished = true;
-      setTimeout(() => this.active && this.results(), 1200);
+      const generation = this.generation;
+      this.resultTimer = setTimeout(() => this.active && generation === this.generation && this.results(), 1200);
     }
   }
 
@@ -375,6 +509,7 @@ export class PracticeDrive {
     this.bindRacers();
     $('pd-again').onclick = () => void this.start(this.seed);
     $('pd-new').onclick = () => void this.start();
+    if (mine.position === 1 && mine.finished) celebrateWin(`practice:${crypto.randomUUID()}`, 'Practice winner', undefined, undefined, { finishTime: mine.finishTime, laps: this.sim!.meta.laps });
   }
 
   /** Ticketed race over (or left): send the inputs; the server re-runs them and ranks the lobby. */
@@ -382,16 +517,17 @@ export class PracticeDrive {
     const t = this.ticket;
     if (!t || this.submitted || !this.sim) return;
     this.submitted = true;
+    const generation = this.generation;
     const log = this.sim.inputLog.map((e) => [...e]);
     if (this.active) this.center(`<div class="card loading" role="status"><div class="spinner"></div><div>Checking your run…</div></div>`);
     let view: LobbyView;
     try {
       view = await account.api<LobbyView>('/api/lobby/submit', { run: t.run, log });
     } catch (e) {
-      if (this.active) this.center(`<div class="card results"><div class="res-head">${icon('alert', 26)}Couldn't send your run</div><p class="muted">${escapeHtml((e as Error).message)}</p><div class="res-foot"><a class="btn btn-lime" href="#/race">Back to races</a></div></div>`);
+      if (this.active && generation === this.generation) this.center(`<div class="card results"><div class="res-head">${icon('alert', 26)}Couldn't send your run</div><p class="muted">${escapeHtml((e as Error).message)}</p><div class="res-foot"><a class="btn btn-lime" href="#/race">Back to races</a></div></div>`);
       return;
     }
-    if (!this.active) return;
+    if (!this.active || generation !== this.generation || this.ticket?.run !== t.run) return;
     const L = view.lobby;
     const mine = view.seats.findIndex((s) => s.you);
     const me = view.seats[mine];
@@ -399,7 +535,7 @@ export class PracticeDrive {
     const best = fin[0]?.finishTime ?? null;
     const rows = view.seats
       .map((s, i) => {
-        const time = s.racing ? 'racing…' : s.finished ? (i === 0 ? fmt(s.finishTime!, 2) : best !== null ? `+${(s.finishTime! - best).toFixed(2)}s` : fmt(s.finishTime!, 2)) : s.progress > 0 && !s.note ? `${s.progress} m` : 'DNF';
+        const time = s.ready ? 'paid · ready' : s.racing ? 'racing…' : s.finished ? (i === 0 ? fmt(s.finishTime!, 2) : best !== null ? `+${(s.finishTime! - best).toFixed(2)}s` : fmt(s.finishTime!, 2)) : s.progress > 0 && !s.note ? `${s.progress} m` : 'DNF';
         return `<tr class="${s.you ? 'me' : ''}"><td class="pos">${i + 1}</td><td><span class="who"><span class="av" style="--c:${s.color}">${s.you ? 'Y' : icon('users', 14)}</span>${s.you ? 'You' : escapeHtml(s.name)}</span></td><td class="num">${time}</td></tr>`;
       })
       .join('');
@@ -416,8 +552,8 @@ export class PracticeDrive {
       L.status === 'settled'
         ? `Settled: ${L.seats} players, ${L.prize.toLocaleString('en-US')} ${escapeHtml(sym)} to the winner.`
         : L.status === 'refunded'
-          ? 'Not enough players: everyone got their ticket back.'
-          : `${L.seats}/${L.maxSeats} seats taken. Pot ${L.pot.toLocaleString('en-US')} ${escapeHtml(sym)} so far. Settles when full, or at ${new Date(L.settleBy).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} with 4+ players (3 or fewer: tickets refunded).`;
+          ? L.entry ? 'Not enough runs: full coin refunds are sent to the wallets that paid.' : 'Not enough players: everyone got their ticket back.'
+          : `${L.seats}/${L.maxSeats} seats taken. Pot ${L.pot.toLocaleString('en-US')} ${escapeHtml(sym)} so far. Settles when full, or at ${new Date(L.settleBy).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} with 4+ recorded runs (3 or fewer: ${L.entry ? 'entry coins' : 'tickets'} refunded).`;
     this.center(`
       <div class="card results" role="dialog" aria-label="Your run">
         <div class="res-kicker">TICKETED RACE · WINNER TAKES ALL</div>
@@ -426,16 +562,17 @@ export class PracticeDrive {
         <table><thead><tr><th>P</th><th>Driver</th><th>Time</th></tr></thead><tbody>${rows}</tbody></table>
         <p class="muted small">${status}</p>
         <div class="res-foot">
-          <a class="btn btn-lime" href="#/race">${icon('flag', 14)}RACE AGAIN</a>
+          <a class="btn btn-lime" href="${t.code ? `#/race/friends/${encodeURIComponent(t.code)}` : '#/race'}">${icon('flag', 14)}${t.code ? 'Back to friend lobby' : 'RACE AGAIN'}</a>
         </div>
       </div>`);
+    celebrateSettledWin({ ...view, lobby: { ...L, id: t.lobby } });
   }
 
   private racerRow(): string {
     const cur = driveSkin();
     return `<div class="pd-racers">${SKINS.map(
       (s) =>
-        `<button class="pd-racer${s.id === cur ? ' on' : ''}" data-racer="${s.id}" aria-pressed="${s.id === cur}" title="${escapeHtml(s.name)}${s.price ? '' : ' (free)'}"><img src="${import.meta.env.BASE_URL}assets/characters/${s.file}.webp" alt="" loading="lazy" /><span>${escapeHtml(s.name)}</span></button>`,
+        `<button class="pd-racer${s.id === cur ? ' on' : ''}" data-racer="${s.id}" aria-pressed="${s.id === cur}" title="${escapeHtml(s.name)}${s.price ? '' : ' (free)'}"><img src="${racerPortrait(s.file)}" alt="" loading="lazy" /><span>${escapeHtml(s.name)}</span></button>`,
     ).join('')}</div>`;
   }
 

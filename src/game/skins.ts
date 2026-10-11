@@ -2,14 +2,14 @@
 // the browser (models, garage). The first skin is free; the others are bought once with the game coin.
 //
 // Adding one: optimise the GLB into public/assets/characters/<file>.glb + <file>-far.glb (see
-// characters/README.md), add an entry here, and render a thumbnail (public/assets/characters/<file>.webp).
+// characters/README.md), add an entry here, and create a portrait (public/assets/characters/portraits/<file>.webp).
 
 export interface Skin {
   id: string;
   name: string;
   tagline: string;
   price: number; // in the game coin; 0 = free for everyone
-  file: string; // public/assets/characters/<file>.glb (+ -far.glb, .webp thumbnail)
+  file: string; // public/assets/characters/<file>.glb (+ -far.glb); portraits/<file>.webp artwork
   yaw: number; // turns the model to face +X (the way cars drive)
   length: number; // m, nose to tail once scaled
   exhaust: [number, number, number][]; // flame spots, model units, after the yaw (x back = negative)
@@ -171,6 +171,34 @@ export const SKINS: Skin[] = [
       [-0.49, 0.15, 0.15],
     ],
     rig: { head: [-0.15, 0.53, 0, 0.075], neck: 0.455, body: [-0.15, 0.3, 0.12, 0.2], wheels: [[-0.285, 0.095, 0.095], [0.26, 0.095, 0.095]] },
+  },
+  {
+    id: 'cooker',
+    name: 'CookerFlips',
+    tagline: 'Pink heart kart, full throttle',
+    price: 500,
+    file: 'cooker',
+    yaw: Math.PI / 2,
+    length: 3.25,
+    exhaust: [
+      [-0.45, 0.16, -0.15],
+      [-0.45, 0.16, 0.15],
+    ],
+    rig: { head: [0.015, 0.575, 0, 0.125], neck: 0.46, body: [-0.07, 0.29, 0.15, 0.17], wheels: [[-0.30, 0.11, 0.115], [0.29, 0.11, 0.115]] },
+  },
+  {
+    id: 'banks',
+    name: 'FaZe Banks',
+    tagline: 'Brick-built racer, cash on the hood',
+    price: 500,
+    file: 'banks',
+    yaw: Math.PI / 2,
+    length: 3.4,
+    exhaust: [
+      [-0.47, 0.13, -0.14],
+      [-0.47, 0.13, 0.14],
+    ],
+    rig: { head: [-0.02, 0.43, 0, 0.075], neck: 0.36, body: [-0.07, 0.195, 0.15, 0.17], wheels: [[-0.31, 0.082, 0.082], [0.30, 0.082, 0.082]] },
   },
 ];
 

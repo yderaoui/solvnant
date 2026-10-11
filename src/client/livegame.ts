@@ -11,10 +11,10 @@ import type { CarVisual, RaceRenderer } from './renderer';
 import { audio, get3d, load3d } from './view3d';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
-import { account, fmtPts, priceLabel, showAuthModal } from './account';
+import { celebrateWin } from './winnerCelebration';
+import { account, fmtPts, showAuthModal } from './account';
 import { BetWidget } from './bets';
 import { toast } from './toast';
-import { buyTicket, claimPendingTicket, getTestCoins } from './tickets';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -167,7 +167,6 @@ export class LiveGame {
     document.body.classList.add('is-live');
     this.bindCamButtons();
     this.renderer.onCarClick = (i) => this.spectateCar(i);
-    void claimPendingTicket().then((ok) => ok && toast('Your earlier ticket payment is now credited'));
     this.conn.token = account.token;
     this.conn.connect(); // fresh socket: the server answers with the current lobby/race straight away
     if (this.room) this.applyRoom(this.room, true);
@@ -517,7 +516,8 @@ export class LiveGame {
 
     const { cars, order } = this.sampleCars(now);
     // In the lobby (no cars yet) the 3D view flies over the circuit behind the join card.
-    const use3d = (this.view === '3d' || this.view === 'fan') && !!this.c3d && this.pushed3d !== '';
+    if (this.c3d && !this.c3d.available && (this.view === '3d' || this.view === 'fan')) this.setView('map');
+    const use3d = (this.view === '3d' || this.view === 'fan') && !!this.c3d?.available && this.pushed3d !== '';
     this.c3d?.setVisible(use3d);
     $('load3d').hidden = !((this.view === '3d' || this.view === 'fan') && !use3d);
     this.renderer.app.stage.visible = !use3d;
@@ -628,15 +628,22 @@ export class LiveGame {
   /** Load the shared 3D view if needed and give it our track, obstacles and cars. */
   private pushed3d = '';
   private async ensure3d(): Promise<void> {
-    const c = await load3d($('stage-canvas'));
-    if (!this.active) return;
-    const key = `${this.trackSeed}|${this.carsSeed}`;
-    if (this.pushed3d === key) return;
-    this.pushed3d = key;
-    if (this.track) c.setTrack(this.track);
-    if (this.ob) c.setObstacles(this.ob);
-    c.setCars(this.room && this.room.phase !== 'lobby' ? this.room.entries.map((e) => ({ name: e.name, color: e.color, skin: e.skin })) : [], this.car ?? -1);
-    c.warmUp();
+    try {
+      const c = await load3d($('stage-canvas'));
+      if (!this.active) return;
+      if (!c.available) { this.setView('map'); return; }
+      const key = `${this.trackSeed}|${this.carsSeed}`;
+      if (this.pushed3d === key) return;
+      this.pushed3d = key;
+      if (this.track) c.setTrack(this.track);
+      if (this.ob) c.setObstacles(this.ob);
+      c.setCars(this.room && this.room.phase !== 'lobby' ? this.room.entries.map((e) => ({ name: e.name, color: e.color, skin: e.skin })) : [], this.car ?? -1);
+      void c.warmUp();
+    } catch {
+      if (!this.active) return;
+      this.setView('map');
+      window.dispatchEvent(new Event('tl-3d-unavailable'));
+    }
   }
 
   private cycleView() {
@@ -856,17 +863,10 @@ export class LiveGame {
            <label class="lb-prio"><input type="checkbox" id="lb-prio" ${this.priority ? 'checked' : ''}/><span><b>Priority pass: skip the queue</b> +${fmtPts(room.priorityFee)} pts<small id="lb-prio-left">Guaranteed seat, can’t be bumped</small></span></label>
            <label class="lb-back"><span><b>Back yourself</b><small>Bet on your own win at lights out</small></span>
              <select id="lb-back" aria-label="Points to bet on yourself">${[0, 50, 100, 250, 500].map((v) => `<option value="${v}" ${v === this.backSelf ? 'selected' : ''}>${v ? `${v} pts` : 'Off'}</option>`).join('')}</select></label>
-           ${
-             cfg?.tickets
-               ? `<div class="lb-ticket"><span><b>Race ticket</b><small>${escapeHtml(priceLabel(cfg.tickets))} · you have <b id="lb-tix">${me.tickets ?? 0}</b></small></span>
-                    <button class="btn small" id="lb-buy">${icon('zap', 14)}Buy ticket</button></div>
-                  ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost lb-faucet" id="lb-faucet">${icon('zap', 14)}Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}
-                  <p class="muted small" id="lb-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network: tickets use devnet test coins (no real value).' : ''}</p>`
-               : ''
-           }
+           <p class="muted small">Live events use play points. No coin payment or race ticket is needed.</p>
            <a class="lb-warmup" href="#/drive">${icon('pad', 14)}Warm up with a test drive</a>
            <p id="lb-err" class="err" role="alert"></p>
-           <button class="btn btn-lime btn-big" id="lb-go">JOIN RACE <small id="lb-cost">${cfg?.tickets ? '1 ticket + ' : ''}${fmtPts(fee + (this.priority ? room.priorityFee : 0))} PTS</small></button>`;
+           <button class="btn btn-lime btn-big" id="lb-go">JOIN RACE <small id="lb-cost">${fmtPts(fee + (this.priority ? room.priorityFee : 0))} PTS</small></button>`;
     setCenter(`
       <div class="lobby" role="dialog" aria-label="Race lobby">
         <section class="lcard join-card">
@@ -909,11 +909,11 @@ export class LiveGame {
           <div class="lcard">
             <h3>RACE RULES</h3>
             <ul class="rules">
-              ${cfg?.tickets ? `<li>${icon('zap', 16)}Entry: 1 race ticket (${escapeHtml(priceLabel(cfg.tickets))}), given back if you leave before lights out</li>` : ''}
+              <li>${icon('zap', 16)}Entry: ${fmtPts(fee)} play points, returned if you leave before lights out</li>
               <li>${icon('follow', 16)}Max 10 players per race</li>
               <li>${icon('replay', 16)}Last round's racers give up their seat when the grid is full</li>
               <li>${icon('flag', 16)}One entry per account${cfg?.x ? ' (X login keeps bots out)' : ''}</li>
-              <li>${icon('zap', 16)}No X account? Hold $${cfg?.gate?.minUsd ?? 20}+ of $TRACK &nbsp;<a href="#/buy">Buy $TRACK</a></li>
+              ${cfg?.gate ? `<li>${icon('zap', 16)}Wallet access requires holding $${cfg.gate.minUsd}+ of the qualifying token.</li>` : ''}
               <li>${icon('trophy', 16)}Priority pass: a guaranteed seat that can't be bumped</li>
             </ul>
           </div>
@@ -924,34 +924,6 @@ export class LiveGame {
     document.getElementById('lb-go')?.addEventListener('click', () => {
       this.audio.start();
       this.join();
-    });
-    document.getElementById('lb-faucet')?.addEventListener('click', async () => {
-      const step = $('lb-buystep');
-      const btn = $<HTMLButtonElement>('lb-faucet');
-      btn.disabled = true;
-      try {
-        step.textContent = await getTestCoins((t) => (step.textContent = t));
-      } catch (e) {
-        step.textContent = (e as Error).message;
-      } finally {
-        btn.disabled = false;
-      }
-    });
-    document.getElementById('lb-buy')?.addEventListener('click', async () => {
-      const step = $('lb-buystep');
-      const btn = $<HTMLButtonElement>('lb-buy');
-      btn.disabled = true;
-      try {
-        const n = await buyTicket((t) => (step.textContent = t));
-        step.textContent = '';
-        const tix = document.getElementById('lb-tix');
-        if (tix) tix.textContent = String(n);
-        toast(`Ticket bought: you have ${n}`);
-      } catch (e) {
-        step.textContent = (e as Error).message;
-      } finally {
-        btn.disabled = false;
-      }
     });
     const back = document.getElementById('lb-back') as HTMLSelectElement | null;
     if (back)
@@ -967,7 +939,7 @@ export class LiveGame {
     if (prio)
       prio.onchange = () => {
         this.priority = prio.checked;
-        $('lb-cost').textContent = `${account.cfg?.tickets ? '1 ticket + ' : ''}${fmtPts(room.entryFee + (this.priority ? room.priorityFee : 0))} PTS`;
+        $('lb-cost').textContent = `${fmtPts(room.entryFee + (this.priority ? room.priorityFee : 0))} PTS`;
       };
     $('lb-leave').onclick = () => this.conn.send({ t: 'leave' });
   }
@@ -1052,6 +1024,7 @@ export class LiveGame {
       </div>`);
     $('res-join').onclick = () => this.toggleNext();
     this.paintJoinNext();
+    if (mine?.position === 1 && mine.finished) celebrateWin(`live:${room.slot}:${room.entries[mine.car]?.id}`, 'Live event winner', undefined, undefined, { finishTime: mine.finishTime, laps: room.laps });
   }
 }
 
@@ -1098,7 +1071,7 @@ export function drawMinimap(cv: HTMLCanvasElement, track: Track, cars: CarVisual
   ctx.lineWidth = 3.5;
   ctx.stroke();
   const p0 = track.points[0];
-  ctx.fillStyle = '#a463ff';
+  ctx.fillStyle = '#ff006e';
   ctx.fillRect(p0[0] * s + ox - 2, p0[1] * s + oy - 6, 4, 12);
   cars.forEach((c, i) => {
     if (!c || i === focus) return;
@@ -1109,7 +1082,7 @@ export function drawMinimap(cv: HTMLCanvasElement, track: Track, cars: CarVisual
   });
   const f = cars[focus];
   if (f) {
-    ctx.fillStyle = entries[focus]?.color ?? '#a463ff';
+    ctx.fillStyle = entries[focus]?.color ?? '#ff006e';
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2.5;
     ctx.beginPath();

@@ -90,13 +90,20 @@ export class Broadcast {
 
   /** Switch to a 3D camera (loads three.js on first use). */
   setCamera3d(mode: '3d' | 'fan') {
+    const token = this.loadToken;
     this.view3d = mode;
     if (this.race) this.prefer = mode;
     audio.start();
     this.paintCams();
     void load3d($('stage-canvas')).then((c) => {
+      if (!this.active || token !== this.loadToken || this.view3d !== mode) return;
       this.push3d();
       c.setCamMode(mode === 'fan' ? 'fan' : 'chase');
+    }).catch(() => {
+      if (!this.active || token !== this.loadToken) return;
+      this.view3d = 'none';
+      this.paintCams();
+      window.dispatchEvent(new Event('tl-3d-unavailable'));
     });
   }
 
@@ -213,7 +220,7 @@ export class Broadcast {
     this.center(`<div class="card loading" role="status"><div class="spinner"></div><div>Loading AI drivers into the sandbox…</div></div>`);
 
     const record = await simulate(
-      { seed: race.seed, entries: race.entries, laps: race.laps ?? undefined, maxTime: race.live?.maxTime ?? MAX_RACE_SECONDS, obstacles, inputLog: race.live?.inputLog },
+      { seed: race.seed, simVersion: race.simVersion ?? '3', entries: race.entries, laps: race.laps ?? undefined, maxTime: race.live?.maxTime ?? MAX_RACE_SECONDS, obstacles, inputLog: race.live?.inputLog },
       (r) => {
         if (token !== this.loadToken) return;
         $<HTMLInputElement>('replay-seek').max = String(r.duration);
@@ -316,7 +323,9 @@ export class Broadcast {
     const dtWall = Math.min(0.1, (now - this.lastWall) / 1000);
     this.lastWall = now;
     const rec = this.record;
-    const c3 = this.view3d !== 'none' ? get3d() : null;
+    const candidate = this.view3d !== 'none' ? get3d() : null;
+    const c3 = candidate?.available ? candidate : null;
+    if (candidate && !candidate.available) { this.view3d = 'none'; this.paintCams(); }
     $('load3d').hidden = !(this.view3d !== 'none' && !(c3 && this.pushed3d));
     if (!rec || !this.race || rec.frameCount === 0) {
       // Track Lab, or still loading (a race that has no frames yet): the 3D view flies over the empty circuit

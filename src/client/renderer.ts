@@ -1,10 +1,11 @@
 // PixiJS renderer: track, cars, labels, tire smoke and a broadcast camera.
 // CSP-safe mode: PixiJS otherwise generates shader/uniform code with new Function (blocked by our Content-Security-Policy).
 import 'pixi.js/unsafe-eval';
-import { Application, Circle, Container, Graphics, Text } from 'pixi.js';
+import { Application, Circle, Container, Graphics, Text, UPDATE_PRIORITY } from 'pixi.js';
 import type { Track } from '../sim/track';
 import type { Obstacles } from '../sim/obstacles';
 import { FLAG } from '../sim/race';
+import { finishFeedback } from './finishFeedback';
 import { buildScenery, SCENE_COLORS, sceneryStyle } from './scenery';
 
 export interface CarVisual {
@@ -69,7 +70,7 @@ export class RaceRenderer {
   /** Pixel-art mode: render at low resolution and upscale with hard pixel edges. */
   pixel = false;
   private textRes = 2;
-  private labelFont = 'Barlow, sans-serif';
+  private labelFont = '"Space Mono", monospace';
   /** Car index of the local player (gets a "YOU" tag and ring). */
   you = -1;
   mode: CameraMode = 'overview';
@@ -96,10 +97,14 @@ export class RaceRenderer {
       background: COLORS.grass,
       antialias: !r.pixel,
       autoDensity: true,
+      autoStart: false,
       // Pixel mode: half resolution, then CSS upscales with nearest-neighbour => chunky pixels.
       resolution: r.pixel ? 0.5 : Math.min(window.devicePixelRatio || 1, 2),
       roundPixels: r.pixel,
     });
+    // The ticker still updates live/broadcast controls in 3D, but only draws a visible map.
+    r.app.ticker.remove(r.app.render, r.app);
+    r.app.ticker.add(() => { if (r.app.stage.visible) r.app.render(); }, undefined, UPDATE_PRIORITY.LOW);
     if (r.pixel) r.app.canvas.style.imageRendering = 'pixelated';
     el.appendChild(r.app.canvas);
     new ResizeObserver(() => r.app.resize()).observe(el);
@@ -171,6 +176,7 @@ export class RaceRenderer {
   }
 
   setTrack(track: Track) {
+    finishFeedback.reset();
     this.track = track;
     this.pending = { track, ob: null };
   }
@@ -297,7 +303,7 @@ export class RaceRenderer {
           fontFamily: this.labelFont,
           fontSize: this.pixel ? 14 : 12,
           fontWeight: '700',
-          fill: i === this.you ? 0xa463ff : 0xffffff,
+          fill: i === this.you ? 0xff006e : 0xffffff,
           stroke: { color: 0x000000, width: this.pixel ? 4 : 3 },
         },
         resolution: this.textRes,
@@ -317,6 +323,7 @@ export class RaceRenderer {
   /** Draw one frame. `order` is race order (leader first); `dt` is wall-clock seconds. */
   render(cars: CarVisual[], order: number[], dt: number, animateFx: boolean) {
     if (!this.track) return;
+    finishFeedback.observe(cars, this.mode === 'leader' || this.mode === 'overview' ? order[0] ?? -1 : this.focus);
     if (this.pending) {
       const { track, ob } = this.pending;
       this.pending = null;

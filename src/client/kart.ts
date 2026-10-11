@@ -5,6 +5,7 @@
 // player's colour, gold chain with a coin. Faces -Z here; the caller turns it to face +X like the
 // old car. Shared geometry/materials are made once; only the coloured parts are per player.
 import * as THREE from 'three';
+import { ownRacerMaterial } from './renderResources';
 
 export interface KartParts {
   model: THREE.Group; // faces -Z, wheels' axles along X
@@ -116,9 +117,9 @@ export function buildKart(color: string): KartParts {
   shared ??= makeShared();
   const { geo: G, mat: M } = shared;
   const paint = new THREE.Color(color);
-  const seatMat = new THREE.MeshStandardMaterial({ color: paint.clone().multiplyScalar(0.55), roughness: 0.6 });
-  const capMat = new THREE.MeshStandardMaterial({ color: paint, roughness: 0.5 });
-  const tail = new THREE.MeshStandardMaterial({ color: 0x400008, emissive: 0xff1a2e, emissiveIntensity: 0.8 });
+  const seatMat = ownRacerMaterial(new THREE.MeshStandardMaterial({ color: paint.clone().multiplyScalar(0.55), roughness: 0.6 }));
+  const capMat = ownRacerMaterial(new THREE.MeshStandardMaterial({ color: paint, roughness: 0.5 }));
+  const tail = ownRacerMaterial(new THREE.MeshStandardMaterial({ color: 0x400008, emissive: 0xff1a2e, emissiveIntensity: 0.8 }));
 
   const model = new THREE.Group();
   const kart = new THREE.Group();

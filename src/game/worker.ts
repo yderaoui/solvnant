@@ -101,6 +101,6 @@ export default {
         return back(`error=${encodeURIComponent(e instanceof Error ? e.message : 'X login failed.')}`);
       }
     }
-    return new Response('RaceTrench game server. WebSocket: /ws  API: /api/*', { headers: { 'content-type': 'text/plain' } });
+    return new Response('PumpKart game server. WebSocket: /ws  API: /api/*', { headers: { 'content-type': 'text/plain' } });
   },
 };

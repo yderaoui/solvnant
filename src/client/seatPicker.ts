@@ -7,7 +7,7 @@ import type { SeatArea } from './chase3d';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 type Pt = [number, number];
 
-const KIND_COLOR: Record<SeatArea['kind'], string> = { stand: '#22d3ee', terrace: '#a463ff', platform: '#ffd60a' };
+const KIND_COLOR: Record<SeatArea['kind'], string> = { stand: '#00ffff', terrace: '#ff006e', platform: '#ffd60a' };
 const KIND_LABEL: Record<SeatArea['kind'], string> = { stand: 'Seated · covered grandstand', terrace: 'Standing · right at the fence', platform: 'Standing · raised, over the crowd' };
 
 export function initFanUi() {
@@ -133,12 +133,12 @@ function drawMap() {
       ctx.fillStyle = '#ffd60a';
       ctx.fill();
       ctx.fillStyle = '#111';
-      ctx.font = '700 10px Barlow, sans-serif';
+      ctx.font = '700 10px "Space Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(a.name.replace(/\D+/g, ''), x, y + 0.5);
     } else {
-      ctx.font = '700 12px Barlow, sans-serif';
+      ctx.font = '700 12px "Space Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
       ctx.lineWidth = 3;

@@ -48,7 +48,7 @@ export function isSolanaAddress(a: string): boolean {
 
 /** The exact text the wallet signs. Free, off-chain, moves nothing. */
 export function walletMessage(uid: string, nonce: string): string {
-  return `RaceTrench: link this wallet to my account.\nAccount: ${uid}\nNonce: ${nonce}\nSigning this is free and does not move any funds.`;
+  return `PumpKart: link this wallet to my account.\nAccount: ${uid}\nNonce: ${nonce}\nSigning this is free and does not move any funds.`;
 }
 
 /** Ed25519 check that `signature` (base58 or base64) over `message` came from `address`. */
@@ -111,7 +111,7 @@ export interface TicketPayment {
 interface TokenBalance {
   owner?: string;
   mint: string;
-  uiTokenAmount: { uiAmount: number | null };
+  uiTokenAmount: { uiAmount: number | null; amount?: string };
 }
 
 interface ParsedTx {
@@ -128,6 +128,7 @@ export interface Payment {
   wallet: string; // who paid (the fee payer / signer)
   amount: number; // coins received by the treasury
   memos: string[];
+  units?: string; // exact raw token delta for locked friend-lobby entries
 }
 
 /**
@@ -160,9 +161,12 @@ export async function readPayment(cfg: TicketConfig, signature: string, fetchFn:
   const bal = (list: TokenBalance[] | undefined) =>
     (list ?? []).filter((b) => b.owner === cfg.treasury && b.mint === cfg.mint).reduce((s, b) => s + (b.uiTokenAmount.uiAmount ?? 0), 0);
   const amount = bal(tx.meta.postTokenBalances) - bal(tx.meta.preTokenBalances);
+  const relevant = [...(tx.meta.preTokenBalances ?? []), ...(tx.meta.postTokenBalances ?? [])].filter(b => b.owner === cfg.treasury && b.mint === cfg.mint);
+  const raw = (list: TokenBalance[] | undefined) => (list ?? []).filter(b => b.owner === cfg.treasury && b.mint === cfg.mint).reduce((sum, b) => sum + BigInt(b.uiTokenAmount.amount!), 0n);
+  const units = relevant.length && relevant.every(b => /^\d+$/.test(b.uiTokenAmount.amount ?? '')) ? String(raw(tx.meta.postTokenBalances) - raw(tx.meta.preTokenBalances)) : undefined;
   // who paid: the signer that isn't the house (the house co-signs sponsored payments as fee payer)
   const wallet = tx.transaction.message.accountKeys.find((k) => k.signer && k.pubkey !== cfg.treasury)?.pubkey ?? '';
-  return { wallet, amount, memos };
+  return { wallet, amount: units === undefined ? amount : Number(units) / 10 ** cfg.decimals, memos, units };
 }
 
 /**

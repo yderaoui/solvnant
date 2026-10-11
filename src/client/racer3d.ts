@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { skinById } from '../game/skins';
+import { ownRacerMaterial } from './renderResources';
 
 const ASSET = (p: string) => `${import.meta.env.BASE_URL}assets/${p}`;
 
@@ -244,13 +245,13 @@ export function buildRacer(id: string, color: string): RacerParts {
   const pose: Pose = { aHead: { value: new THREE.Vector3() }, aBody: { value: new THREE.Vector2() }, aSpin: { value: 0 }, aExtra: { value: new THREE.Vector2() } };
   const model = new THREE.Group();
   const bounce = new THREE.Group();
-  bounce.add(place(p.near, p, (m) => rigMaterial(m, p.rig, pose)));
+  bounce.add(place(p.near, p, (m) => ownRacerMaterial(rigMaterial(m, p.rig, pose))));
   model.add(bounce);
 
   // player colour: a bright ring + soft disc on the ground, sized to the vehicle
   const c = new THREE.Color(color);
-  const ring = new THREE.Mesh(G.ring, new THREE.MeshBasicMaterial({ color: c, toneMapped: false, transparent: true, opacity: 0.85, depthWrite: false }));
-  const glow = new THREE.Mesh(G.glow, new THREE.MeshBasicMaterial({ color: c, toneMapped: false, transparent: true, opacity: 0.12, depthWrite: false }));
+  const ring = new THREE.Mesh(G.ring, ownRacerMaterial(new THREE.MeshBasicMaterial({ color: c, toneMapped: false, transparent: true, opacity: 0.85, depthWrite: false })));
+  const glow = new THREE.Mesh(G.glow, ownRacerMaterial(new THREE.MeshBasicMaterial({ color: c, toneMapped: false, transparent: true, opacity: 0.12, depthWrite: false })));
   for (const m of [ring, glow]) {
     m.scale.set(p.size.x * 0.68, 1, Math.max(1.5, p.size.z * 0.85));
     m.position.y = 0.04;
@@ -261,7 +262,7 @@ export function buildRacer(id: string, color: string): RacerParts {
   // exhaust flames, pointing backwards
   const flames: THREE.Mesh[] = [];
   const cores: THREE.Mesh[] = [];
-  const outer = skin.rainbow ? flameMat.clone() : flameMat; // rainbow skins get their own, recoloured each frame
+  const outer = skin.rainbow ? ownRacerMaterial(flameMat.clone()) : flameMat; // rainbow skins get their own, recoloured each frame
   for (const [x, y, z] of skin.exhaust) {
     const f = new THREE.Mesh(G.flame, outer);
     const k = new THREE.Mesh(G.flame, coreMat);

@@ -18,6 +18,7 @@ export function load3d(host: HTMLElement): Promise<Chase3D> {
     const v = new Chase3D(host);
     if (v.software) window.dispatchEvent(new CustomEvent('tl-slow', { detail: { gpu: v.gpuName, software: true } }));
     await v.ready;
+    if (!v.available) throw new Error('3D graphics could not start.');
     return (view = v);
   });
   return loading;

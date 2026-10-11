@@ -5,10 +5,10 @@ import { account, priceLabel, showAuthModal } from './account';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
 import { toast } from './toast';
+import { racerPortrait } from './portraits';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const SLOTS = 10; // the garage shows this many bays; empty ones say "coming soon"
-const ASSET = (p: string) => `${import.meta.env.BASE_URL}assets/${p}`;
 
 let trySkin: string | null = null; // picked with "Test drive" in the garage
 let busy: string | null = null; // skin being bought
@@ -43,7 +43,7 @@ export function renderGarage() {
   const payOn = !!account.cfg?.tickets;
   const mine = mySkin();
   const ticket = account.cfg?.tickets?.price ?? 100;
-  const cards = SKINS.map((s) => {
+  const cards = SKINS.map((s, i) => {
     const price = account.cfg?.tickets ? priceLabel(account.cfg.tickets, skinPrice(s, 1)) : skinPrice(s, ticket).toLocaleString('en-US');
     const have = owned(s.id);
     const on = have && s.id === mine;
@@ -54,7 +54,7 @@ export function renderGarage() {
         ? `<button class="btn small btn-lime" data-use="${s.id}">Race with it</button>`
         : `<button class="btn small btn-lime" data-buy="${s.id}" ${busy || !payOn ? 'disabled' : ''}>${icon('zap', 14)}Buy for ${escapeHtml(price)}</button>`;
     return `<article class="bay${on ? ' on' : ''}${have ? '' : ' locked'}">
-      <div class="bay-pic"><img src="${ASSET(`characters/${s.file}.webp`)}" alt="${escapeHtml(s.name)}" loading="lazy" width="480" height="360" /></div>
+      <div class="bay-pic"><span class="bay-number" aria-hidden="true">${String(i + 1).padStart(2, '0')}</span><img src="${racerPortrait(s.file)}" alt="${escapeHtml(s.name)}" loading="lazy" width="480" height="360" /></div>
       <div class="bay-info">
         <div class="bay-top"><h2>${escapeHtml(s.name)}</h2><span class="bay-tag">${s.price === 0 ? 'FREE' : have ? 'OWNED' : `${icon('lock', 12)}${escapeHtml(price)}`}</span></div>
         <p class="muted small">${escapeHtml(s.tagline)}</p>
@@ -69,6 +69,7 @@ export function renderGarage() {
   $('garage-body').innerHTML = `
     ${!account.me ? `<p class="garage-note">${icon('alert', 14)}Sign in to buy racers and use them in live races. You can test drive any of them right now.</p>` : ''}
     ${devnet ? `<p class="garage-note">${icon('alert', 14)}Test network: racers are paid with free test ${escapeHtml(sym)} (no real value). Get some from your account menu.</p>` : ''}
+    <div class="garage-catalog"><span>${SKINS.length} racers</span><span>${icon('pad', 14)}Every racer available to test drive</span></div>
     <div class="garage-grid">${cards.join('')}</div>`;
 
   const body = $('garage-body');

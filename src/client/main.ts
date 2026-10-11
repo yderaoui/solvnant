@@ -1,4 +1,6 @@
 import './style.css';
+import './theme.css';
+import { initControlFeedback } from './controlFeedback';
 import { RaceRenderer } from './renderer';
 import { Broadcast, fmtTime } from './broadcast';
 import { LiveGame } from './livegame';
@@ -14,7 +16,6 @@ import { LeagueLobby } from './leagueLobby';
 import { renderBuyPage } from './buy';
 import { renderGarage } from './garage';
 import { renderRacePage, takeTicketRun } from './ticketrace';
-import { introSeen, showIntro } from './intro';
 import { paintSoundButton, toggleMuteQuick, toggleSoundPanel } from './soundPanel';
 import { PracticeDrive } from './practice';
 import {
@@ -31,12 +32,30 @@ import {
   localRace,
   type RaceInfo,
 } from './data';
-import { generateTrack, lapsFor } from '../sim/track';
+import { generateTrack, lapsFor, BOT_RACE_LAPS } from '../sim/track';
 import { raceStartAt, slotAt, slotStart } from '../sim/schedule';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 hydrateIcons();
+initControlFeedback();
+const moreMenu = document.querySelector<HTMLDetailsElement>('.nav-more');
+moreMenu?.addEventListener('click', (e) => {
+  if ((e.target as HTMLElement).closest('a')) moreMenu.open = false;
+});
+document.addEventListener('click', (e) => {
+  if (moreMenu?.open && !moreMenu.contains(e.target as Node)) moreMenu.open = false;
+});
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && moreMenu?.open) {
+    moreMenu.open = false;
+    moreMenu.querySelector('summary')?.focus();
+  }
+});
+$('race-enter').addEventListener('click', () => {
+  $('race-body').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
+  $('race-body').focus({ preventScroll: true });
+});
 // Who's signed in, first: it doesn't need the map, and the sign-in download starts from it.
 const accountLoading = account.load();
 await document.fonts.ready; // badges on the map measure their text, so the real font must be loaded first
@@ -47,7 +66,7 @@ initFanUi();
 const viewer = new CodeViewer();
 initAccountUi(toast);
 const leagueLobby = new LeagueLobby((html) => broadcast.center(html));
-const practice = new PracticeDrive();
+const practice = new PracticeDrive(renderer);
 if (import.meta.env.DEV) (window as unknown as { __practice: PracticeDrive }).__practice = practice; // browser tests
 void accountLoading;
 // Once per visit, when signed in: credit any coin payment that reached the treasury but wasn't counted.
@@ -106,6 +125,12 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyM' && !e.repeat && tag !== 'INPUT' && tag !== 'TEXTAREA') toggleMuteQuick();
 });
 paintSoundButton();
+let graphicsNotice = false;
+window.addEventListener('tl-3d-unavailable', () => {
+  if (graphicsNotice) return;
+  graphicsNotice = true;
+  toast('3D graphics are unavailable. You can keep racing in map view.');
+});
 
 // Graphics quality (shared 3D view): Auto -> High -> Low
 const gfxLabel = (m: string) => `GFX ${m.toUpperCase()}`;
@@ -209,6 +234,10 @@ let session = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 
 function show(view: 'stage' | 'leaderboard' | 'history' | 'agent' | 'buy' | 'garage' | 'race') {
+  if (view !== 'stage' && broadcast.active) broadcast.deactivate();
+  // Live/broadcast controllers use this ticker; practice owns its own animation loop.
+  if (view === 'stage' && !['drive', 'run'].includes(document.body.dataset.page ?? '')) renderer.app.start();
+  else renderer.app.stop();
   for (const v of ['stage', 'leaderboard', 'history', 'agent', 'buy', 'garage', 'race']) $(`view-${v}`).hidden = v !== view;
   for (const a of document.querySelectorAll<HTMLAnchorElement>('nav a')) {
     const href = a.getAttribute('href')!;
@@ -235,7 +264,7 @@ async function route() {
   document.body.classList.remove('is-replay');
   if (my > 1) $('main').focus({ preventScroll: true }); // screen readers: announce the new view
   // The live multiplayer game and the AI-league broadcast share one stage; only one drives it.
-  if (practice.active && page !== 'drive' && page !== 'run') practice.stop();
+  if (practice.active && (page !== prevPage || !['drive', 'run'].includes(page))) practice.stop();
   if (page === 'run') {
     // A ticketed race: only right after taking a seat (a reload can't restart the same run).
     const run = takeTicketRun();
@@ -357,7 +386,7 @@ async function openPractice() {
   const d = loadDraft();
   const seed = randomSeed();
   await broadcast.load(
-    { id: null, slot: null, seed, laps: null, startAt: 0, simVersion: null, entries: practiceEntries(d), results: null, local: true },
+    { id: null, slot: null, seed, laps: BOT_RACE_LAPS, startAt: 0, simVersion: '4', entries: practiceEntries(d), results: null, local: true },
     'replay',
     'Practice race: your agent against the house bots. Nothing is saved.',
   );
@@ -570,4 +599,4 @@ async function renderHistory() {
 
 route();
 // First visit: the lore intro (not over a link someone shared into a race, replay or the lab).
-if (!introSeen() && /^(#\/(race|live|drive|garage|league)?)?$/.test(location.hash)) showIntro();
+// The story is optional, available from Race rules; players land directly on the game.

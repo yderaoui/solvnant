@@ -144,6 +144,27 @@ it('reports readiness and outstanding money without changing the coin or opening
   expect(await r.json()).toMatchObject({ paidReady: false, paidProblem: 'The treasury needs at least 0.02 SOL.', outstanding: { openLobbies: 0, payouts: 0, unusedTickets: 0 } });
   expect(await config()).toEqual(before);
 });
+it('inspects a locked friend entry without changing expired lobbies, balances or launch settings', async () => {
+  db.prepare("INSERT INTO lobbies (id,seed,price,status,created,mint,invite_code,entry_usd,entry_units) VALUES ('inspection-fixture','fixture',20,'open',?,?,'RK5J6F78',0.01,'1234567')").run(now - 31 * 60_000, mint);
+  db.prepare('INSERT INTO tickets (sig,uid,wallet,amount,ts,mint,lobby_id,amount_units) VALUES (?,?,?,?,?,?,?,?)').run('fixture-signature','fixture-player','public-fixture-wallet',1.234567,now,mint,'inspection-fixture','1234567');
+  const before = await config();
+  const r = await admin('check', { code: 'rk5j6f78' });
+  expect(r.status).toBe(200);
+  expect(await r.json()).toMatchObject({ friendLobby: {
+    mint, entryUnits: '1234567', lobby: { code: 'RK5J6F78', status: 'open', entry: { usd: 0.01, coins: 1.234567 } },
+    payments: [{ sig: 'fixture-signature', amount_units: '1234567' }], refunds: [],
+  } });
+  expect(await config()).toEqual(before);
+  expect(db.prepare('SELECT status FROM lobbies').get()!.status).toBe('open');
+  expect(db.prepare('SELECT COUNT(*) AS n FROM lobby_payouts').get()!.n).toBe(0);
+  expect(db.prepare('SELECT used_ref FROM tickets').get()!.used_ref).toBeNull();
+});
+it('restricts lobby inspection to operations authentication and rejects invalid/unknown codes', async () => {
+  expect((await admin('check', { code: 'RK5J6F78' }, 'wrong-key')).status).toBe(401);
+  expect((await admin('check', { code: "' OR 1=1 --" })).status).toBe(400);
+  expect((await admin('check', { code: 'RK5J6F78' })).status).toBe(404);
+  expect(mocks.readiness).not.toHaveBeenCalled();
+});
 
 it('rejects malformed operational test settings before on-chain verification', async () => {
   await admin('pause'); now += 120_001;

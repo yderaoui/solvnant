@@ -65,7 +65,7 @@ KOL shown as a racer.
   client CA is pending. See COIN_LAUNCH.md for the exact player steps and switch procedure.
 
 - **Backend published (2026-10-11):** Worker version
-  `80661041-ebc0-4023-b4e2-951ad830ae30` at the existing Worker URL.
+  `86a5e450-712c-48c8-a085-2130709608ef` at the existing Worker URL.
   Server Pump SDK reads now explicitly select the configured cluster on the verification
   proxy; previously a missing cluster query incorrectly read devnet during mainnet activation.
   Real server-proxy mainnet verification and runtime prepare/enable both passed.
@@ -84,7 +84,7 @@ KOL shown as a racer.
   buying; ticket/paid friend-lobby controls are enabled for the funded test. Login/wallet SDK preloads for
   existing sessions. Active approval survives account refresh and page navigation;
   uncertain submissions retain their signed transaction ID and block repeat buys.
-  Validation: 181 tests in 26 files, production build, Worker dry-run, mobile/desktop
+  Validation: 183 tests in 26 files, production build, Worker dry-run, mobile/desktop
   browser fixtures and a funded devnet integration round passed. Devnet verified five
   $1.25 entries, 20-test-coin prize, 3.75 burn, 1.25 team share, full 2-coin refund and
   sponsored 1-coin withdrawal to a new destination. No mainnet transaction was signed
@@ -94,9 +94,16 @@ KOL shown as a racer.
   Twitter option; published-page checks at 375/768/1440 px found no page errors or CSP
   violations. Completing OAuth and signing a purchase still require the owner/client.
   Deployment verification and exact player steps are recorded in COIN_LAUNCH.md.
-  Latest production frontend: `solvnant-oc6l7ujsy-yousser-ayman.vercel.app`.
+  Latest production frontend: `solvnant-7gpellukd-yousser-ayman.vercel.app`.
   Live mobile/desktop browser checks show paid testing open, $0.01 custom entries
   selectable and a working X login window. No test payment was sent by those checks.
+  Temporary-coin friend-lobby defaults/presets now start at $0.01; official defaults
+  and the $20 public ticket price stay the same. The supplied code RK5J6F78 was
+  inspected and is a $5 lobby with zero payments/runs, so a new one-cent code is needed.
+  Authenticated `coin-launch.mjs check <LOBBY_CODE>` is read-only: locked price,
+  seats, payment signatures, payout/refunds, no settlement or signing. Deployment
+  initially left a resident Hub on earlier code. SERVER_RELEASE now forces the
+  existing x-config-stamp restart while preserving SQLite launch/lobby data.
   Account-scoped payment receipts survive RPC/login errors and block duplicate
   checkout while pending. Withdrawals keep known signatures before broadcast, show
   pending honestly and check the same signature on retry; finalized expiry/history
@@ -466,6 +473,8 @@ onchain/ (branch phase4-anchor-pots)  Early devnet-only Anchor escrow prototype;
 - Payment memos, tickets and lobbies are bound to the coin mint, so switching coins can't be abused with old data.
 - Hub self-restart: the Worker sends `x-config-stamp` (fingerprint of all settings); a Hub Durable Object still running
   with older settings aborts and restarts. (Found because a deploy did not restart the Hub.)
+  Bump the public `SERVER_RELEASE` var for backend code releases too; unchanged settings
+  can leave a resident Hub serving earlier code. Verify the specific new behavior after deploying.
 - RPC proxy only exposes whitelisted methods to browsers; `getTransaction` needs the server key.
 - The game wallet's private key is only in the Worker secret `HOUSE_SECRET` (and the owner's Phantom). **Never print,
   log, commit or ask for it.**

@@ -784,15 +784,28 @@ export class Hub {
   private async adminCoin(req: Request): Promise<Response> {
     if (!this.coinAdminKey || bearer(req) !== this.coinAdminKey) return fail('Not authorized.', 401);
     if (req.method !== 'POST') return fail('Use POST.', 405);
-    const b = await req.json() as { action?: string; mint?: string; symbol?: string; revision?: string; mode?: string; paidEnabled?: boolean };
+    const b = await req.json() as { action?: string; mint?: string; symbol?: string; revision?: string; mode?: string; paidEnabled?: boolean; code?: unknown };
     if (!this.cfg.tickets) return fail('Configure ticket network and treasury first.');
     const revision = this.cfg.coinLaunch.revision;
     if (b.revision !== revision) return fail('Launch settings changed. Fetch /api/config and retry.', 409);
     if (b.action === 'check') {
+      let friendLobby: object | undefined;
+      if (b.code !== undefined) {
+        const code = normalizeFriendCode(b.code);
+        if (!code) return fail('Enter a valid 8-character lobby code.');
+        const row = this.sql.exec('SELECT id, mint, entry_units FROM lobbies WHERE invite_code = ?', code).toArray()[0];
+        if (!row) return fail('Lobby not found.', 404);
+        const id = String(row.id);
+        // Support inspection only: never expire runs, settle a pot, sign or send money here.
+        friendLobby = { ...this.lobbyView(id, ''), mint: row.mint, entryUnits: row.entry_units,
+          payments: this.sql.exec('SELECT sig, amount, amount_units FROM tickets WHERE lobby_id = ? ORDER BY ts', id).toArray(),
+          refunds: this.sql.exec("SELECT prize, status, sig FROM lobby_payouts WHERE parent_lobby = ? AND kind = 'refund' ORDER BY ts", id).toArray(),
+        };
+      }
       const problem = await paidReadinessProblem(this.cfg.tickets, (await this.house())?.address ?? null, this.cfg.teamWallet);
       if (this.cfg.coinLaunch.revision !== revision) return fail('Launch settings changed during verification. Retry.', 409);
       return json({ coinLaunch: this.cfg.coinLaunch, mint: this.cfg.tickets.mint, symbol: this.cfg.tickets.symbol,
-        paidReady: !problem, paidProblem: problem,
+        paidReady: !problem, paidProblem: problem, ...(friendLobby ? { friendLobby } : {}),
         outstanding: {
           openLobbies: Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobbies WHERE status = 'open'").one().n),
           payouts: Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobby_payouts WHERE status IN ('pending','sent','failed','manual')").one().n),

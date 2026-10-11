@@ -21,8 +21,8 @@ no fee sponsor in this stage. Practice and play-point modes remain available.
 **Current paid test activation verified on 2026-10-11:** `/api/config` reports status live,
 buyEnabled true, mode test, paidEnabled true, sponsor equal to the funded treasury,
 and the exact same authorized temporary mint.
-Revision: `coin_1IW81Dz-DGQipqGD`. Worker: `80661041-ebc0-4023-b4e2-951ad830ae30`.
-Frontend production deployment: `solvnant-oc6l7ujsy-yousser-ayman.vercel.app`.
+Revision: `coin_1IW81Dz-DGQipqGD`. Worker: `86a5e450-712c-48c8-a085-2130709608ef`.
+Frontend production deployment: `solvnant-7gpellukd-yousser-ayman.vercel.app`.
 Changing client copy alone does not open payments.
 
 **First real owner purchase is verified on mainnet.** The owner approved it through
@@ -95,13 +95,23 @@ Do not send wallet keys, recovery phrases or admin secrets in chat.
    The server refuses enable if the payout wallet does not match the treasury, the
    team wallet is missing/invalid, funding is below 0.02 SOL, or the balance cannot be
    read. A reserve is a starting budget, not unlimited sponsored gas.
-4. Open **https://www.pumpkart.racing/#/race**. Under **Race with friends**, change
-   the entry amount from $20 to **$0.01**, then click **Create $0.01 lobby**.
+4. Open **https://www.pumpkart.racing/#/race** and refresh. Under **Race with friends**,
+   the temporary-test form now defaults to **$0.01**, with small test presets. Check
+   that amount, then click **Create $0.01 lobby**. Official-mode defaults and the
+   $20 public ticket price are unchanged.
    Creating an invite is free. Share its link/code with four friends, approve the
    entry payment in Privy, close the wallet receipt and start your run. All five
    accounts pay the same locked coin amount. Use five real X accounts, then verify the
    public transaction links for the split, refund and withdrawal. Finish or refund
    all test pots and use/resolve leftover tickets before switching the official mint.
+
+The owner supplied `RK5J6F78`. The authenticated operations check verified its
+locked entry is **$5**, not the intended $0.01, with **zero payments and zero runs**.
+The existing lobby price remains locked; use a new one-cent lobby for the test.
+Its invite expires on the normal 30-minute schedule. The support command
+`node scripts/coin-launch.mjs check <LOBBY_CODE>` reads the locked amount, seats,
+payment signatures and payout/refund status without signing, submitting or settling.
+It requires the existing operations secret; it does not bypass player authentication.
 
 Use five real accounts in a low-entry friend lobby. All five must pay the same locked
 coin amount chosen from the creator's USD entry. Verify each receipt, race submission,
@@ -170,7 +180,7 @@ The original noon launch target was a target, not an automatic scheduled deploym
 
 ## Verification limits
 
-181 regression tests in 26 files, TypeScript/build, Worker dry-run, mobile/desktop
+183 regression tests in 26 files, TypeScript/build, Worker dry-run, mobile/desktop
 browser fixtures and real unsigned PumpSwap simulation passed. The quote/fee review
 took about 3 seconds in this local read-only browser check; it is not a promise of
 transaction confirmation speed. The funded devnet round passed five $1.25 entries,

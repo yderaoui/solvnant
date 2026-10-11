@@ -20,12 +20,15 @@ export const friendLink = (code: string) => `${location.origin}${location.pathna
 
 export function friendLobbyHtml(): string {
   const invite = location.hash.startsWith('#/race/friends/');
+  const test = account.cfg?.coinLaunch?.mode === 'test';
+  const initialEntry = test ? 0.01 : 20;
+  const quickEntries = test ? [0.01, 0.05, 0.1, 1] : [5, 10, 20, 50];
   return `<section class="card friends-panel" aria-labelledby="friends-title">
     <div class="friends-heading"><div><h2 id="friends-title">Race with friends</h2><p class="muted">Choose the entry. Invite four friends. Everyone pays the same amount.</p></div></div>
     ${invite ? '<details class="friends-another"><summary>Create another lobby</summary>' : ''}<form id="friends-create-form" class="friends-create-form">
       <label for="friends-entry">Entry per player <span class="muted">USD</span></label>
-      <div class="friends-entry-row"><div class="friends-dollar-input"><span aria-hidden="true">$</span><input id="friends-entry" type="number" min="0.01" step="0.01" value="20" inputmode="decimal" required aria-describedby="friends-entry-note" /></div><button class="btn btn-lime" id="friends-create">${icon('users', 16)}<span>Create $20 lobby</span></button></div>
-      <div class="friends-amounts" aria-label="Quick entry amounts">${[5,10,20,50].map(n => `<button class="btn btn-ghost small" type="button" data-entry="${n}" aria-pressed="${n === 20}">$${n}</button>`).join('')}</div>
+      <div class="friends-entry-row"><div class="friends-dollar-input"><span aria-hidden="true">$</span><input id="friends-entry" type="number" min="0.01" step="0.01" value="${initialEntry}" inputmode="decimal" required aria-describedby="friends-entry-note" /></div><button class="btn btn-lime" id="friends-create">${icon('users', 16)}<span>Create $${initialEntry} lobby</span></button></div>
+      <div class="friends-amounts" aria-label="Quick entry amounts">${quickEntries.map(n => `<button class="btn btn-ghost small" type="button" data-entry="${n}" aria-pressed="${n === initialEntry}">$${n}</button>`).join('')}</div>
       <p class="small muted" id="friends-entry-note">Creating a lobby costs nothing. All five players approve the same coin payment. Winner gets 80% of the pot.</p>
     </form>${invite ? '</details>' : ''}
     <form id="friends-join" class="friends-join"><label for="friends-code">Have an invite?</label><div class="input-row"><input id="friends-code" placeholder="Paste lobby code or link" autocomplete="off" spellcheck="false" maxlength="300" /><button class="btn">Open lobby</button></div></form>

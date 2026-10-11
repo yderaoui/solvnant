@@ -56,7 +56,12 @@ KOL shown as a racer.
   launch changes, house keys, ticket payments, races, withdrawals or server broadcasts.
   Fixed 0.001 SOL buy; unsigned cost simulation at review and before signing must
   conservatively fit 0.005 SOL. Public buying remains paused.
-  Validation: 133 tests pass, production build passes. Browser fixture checks reject
+  Connection recovery: private verification stays disabled until settings/session checks
+  finish. Failed reads preserve the saved login and offer Retry connection; config/me
+  reads have 12-second deadlines. Production sign-in offers retry instead of local server
+  commands. Browser fixtures cover slow settings, failed settings, failed saved-session
+  reads, and sign-in modal recovery without signing or submitting transactions.
+  Validation: 137 tests pass, production build passes. Browser fixture checks reject
   a different wallet and reach a real read-only PumpSwap quote/unsigned cost review
   without page errors or transaction submission. Actual owner message/purchase
   approval and confirmation are still pending. This avoids a second X login; it does

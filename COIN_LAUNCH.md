@@ -2,6 +2,10 @@
 
 The frontend is pushed to GitHub and live on `https://www.pumpkart.racing`.
 The updated Cloudflare game server is deployed with coin purchases paused. No real coin buys have been tested.
+The private check now waits for settings and the saved session before enabling wallet
+verification. Failed connection/session checks offer **Retry connection**, preserve the
+saved login, and time out after 12 seconds per read request. Production sign-in no longer
+shows local `npm run game` instructions. A successful owner purchase is still pending.
 Do the advance setup before announcing the coin. Never put wallet keys or operations secrets in chat or git.
 
 **Original launch target: Sunday, 11 October 2026 at 12:00 noon, Africa/Casablanca.**

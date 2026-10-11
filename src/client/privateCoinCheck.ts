@@ -10,6 +10,7 @@ import { checkPrivateBuyBudget } from './privateBuyBudget';
 
 const status = document.getElementById('test-message')!;
 const verify = document.getElementById('test-verify') as HTMLButtonElement;
+const retry = document.getElementById('test-retry') as HTMLButtonElement;
 const view = document.getElementById('view-buy')!;
 const body = document.getElementById('buy-body')!;
 const report = (text: string) => { status.textContent = text; };
@@ -19,6 +20,31 @@ let proofToken: string | null = null;
 let quote: CoinQuote | null = null;
 let busy = false;
 let completed = false;
+let loadingSession = false;
+
+function reportSession() {
+  if (loadingSession || busy || completed || proof) return;
+  const unavailable = !account.cfg || (!!account.token && !account.me);
+  verify.disabled = unavailable;
+  retry.hidden = !unavailable;
+  report(!account.cfg
+    ? 'Could not connect to PumpKart. Retry the connection; your saved login stays in this browser.'
+    : account.token && !account.me
+      ? 'Could not check your saved session. Retry the connection before verifying your wallet.'
+      : account.me
+        ? 'Your existing X session is connected. Verify your wallet to begin.'
+        : 'Open PumpKart in this browser and sign in with your existing X account first.');
+}
+
+async function loadSession() {
+  if (loadingSession || busy || completed || proof) return;
+  loadingSession = true; verify.disabled = true; retry.disabled = true;
+  report('Connecting to PumpKart and checking your existing session…');
+  try { await account.load(); }
+  catch { /* Keep the saved token and offer a retry instead of another X login. */ }
+  finally { loadingSession = false; retry.disabled = false; reportSession(); }
+}
+retry.onclick = () => { void loadSession(); };
 
 async function privateApi<T>(action: string, extra: object = {}): Promise<T> {
   if (!account.token || account.token !== proofToken || !proof) throw new Error('Verify your wallet first. No purchase was made.');
@@ -85,7 +111,8 @@ async function approve() {
 }
 
 verify.onclick = async () => {
-  if (busy || completed) return;
+  if (busy || completed || loadingSession) return;
+  if (!account.cfg || (account.token && !account.me)) { await loadSession(); return; }
   if (!account.me || !account.token) { showAuthModal(); return; }
   busy = true; verify.disabled = true; quote = null;
   try {
@@ -107,9 +134,10 @@ verify.onclick = async () => {
 
 account.onChange(() => {
   if (proof && account.token !== proofToken) { proof = null; proofToken = null; quote = null; view.hidden = true; }
+  reportSession();
 });
-void account.load().then(() => {
-  initAccountUi(report);
+initAccountUi(report);
+function restoreCompleted() {
   try {
     const signature = sessionStorage.getItem(PRIVATE_BUY_CHECK.revision);
     if (signature && /^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(signature)) {
@@ -117,8 +145,9 @@ void account.load().then(() => {
       const link = document.createElement('a');
       link.href = `https://solscan.io/tx/${encodeURIComponent(signature)}`; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'View your confirmed test transaction';
       status.replaceChildren('This test purchase is already complete. ', link);
-      return;
+      return true;
     }
   } catch { /* optional storage */ }
-  report(account.me ? 'Your existing X session is connected. Verify your wallet to begin.' : 'Open PumpKart in this browser and sign in with your existing X account first.');
-}).catch(() => report('Could not load your game session. Open PumpKart and retry.'));
+  return false;
+}
+if (!restoreCompleted()) void loadSession();

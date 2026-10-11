@@ -60,7 +60,7 @@ class Account {
     this.refreshingConfig = true;
     try {
       const next = await this.api<PublicConfig>('/api/config');
-      const changed = this.cfg?.coinLaunch?.revision !== next.coinLaunch?.revision;
+      const changed = !this.cfg || this.cfg.coinLaunch?.revision !== next.coinLaunch?.revision;
       this.cfg = next;
       if (changed) { this.emit(); await this.refresh(); }
     } catch { /* Actions still require a successful server preflight. */ }
@@ -82,7 +82,9 @@ class Account {
     if (body !== undefined) headers['content-type'] = 'application/json';
     let r: Response;
     try {
-      r = await fetch(`${API_URL}${path}`, { method: body !== undefined ? 'POST' : 'GET', headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+      r = await fetch(`${API_URL}${path}`, { method: body !== undefined ? 'POST' : 'GET', headers, body: body !== undefined ? JSON.stringify(body) : undefined,
+        // Bound connection checks without cancelling or retrying payment requests.
+        signal: body === undefined && (path === '/api/config' || path === '/api/me') ? AbortSignal.timeout(12_000) : undefined });
     } catch {
       throw new Error('The game server is not reachable.');
     }
@@ -194,7 +196,11 @@ export function initAccountUi(toast: (t: string) => void) {
       return;
     }
     if (!account.cfg) {
-      host.innerHTML = `<span class="pill pill-warn" title="Start it with: npm run game">Game server offline</span>`;
+      host.innerHTML = `<button class="pill pill-warn" id="acct-reconnect">Retry connection</button>`;
+      $('acct-reconnect').onclick = async () => {
+        ($('acct-reconnect') as HTMLButtonElement).disabled = true;
+        await account.load();
+      };
       return;
     }
     if (!me) {
@@ -481,12 +487,19 @@ export function showAuthModal(error?: string) {
       <div class="sp-head"><div><h2 id="auth-title">Sign in to race</h2><p class="muted">You get <b>${cfg ? fmtPts(cfg.points.signup) : '1,000'} points</b> to start. Points are play money.</p></div>
         <button class="icon-btn" id="auth-close" aria-label="Close">${icon('x', 18)}</button></div>
       ${error ? `<p class="err" role="alert">${escapeHtml(error)}</p>` : ''}
-      ${cfg ? x + guest : '<p class="err">The game server is offline. Start it with <code>npm run game</code>.</p>'}
+      ${cfg ? x + guest : '<p class="err" role="alert">Could not connect to PumpKart. Please retry in a moment.</p><button class="btn btn-lime" id="auth-retry">Retry connection</button>'}
       ${cfg && !cfg.x && !cfg.guests ? '<p class="err">Sign-in is not set up on this server.</p>' : ''}
       <p class="muted small">By signing in you agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms</a> and <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p>
     </div>`;
   m.hidden = false;
   $('auth-close').onclick = closeAuthModal;
+  document.getElementById('auth-retry')?.addEventListener('click', async () => {
+    const button = $('auth-retry') as HTMLButtonElement;
+    button.disabled = true; button.textContent = 'Connecting…';
+    await account.load();
+    closeAuthModal();
+    if (!account.me || !account.cfg) showAuthModal();
+  });
   document.getElementById('auth-x')?.addEventListener('click', () => store.set('tl-after-login', location.hash || '#/race'));
   const form = document.getElementById('auth-guest') as HTMLFormElement | null;
   if (form) {

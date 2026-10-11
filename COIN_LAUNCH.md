@@ -22,7 +22,7 @@ no fee sponsor in this stage. Practice and play-point modes remain available.
 buyEnabled true, mode test, paidEnabled true, sponsor equal to the funded treasury,
 and the exact same authorized temporary mint.
 Revision: `coin_1IW81Dz-DGQipqGD`. Worker: `deb3e24e-479c-46ea-9ce9-902e09891c95` (payment recovery audit).
-Frontend production deployment: `solvnant-7gpellukd-yousser-ayman.vercel.app`.
+Frontend production deployment: `solvnant-gobkqrva2-yousser-ayman.vercel.app`.
 Changing client copy alone does not open payments.
 
 **First real owner purchase is verified on mainnet.** The owner approved it through
@@ -157,6 +157,12 @@ funded devnet round passed the new preparation/broadcast flow, five equal entrie
 burn, team share, full refund and sponsored withdrawal. A separate alarm-only devnet
 test refunded an expired abandoned run with no lobby-view requests and no burn/team cut.
 Browser refund polling passed deadline -> pending -> paid, links and 375/768/1440 widths.
+Production verification confirms the new signed-preparation code, cross-tab lock and
+refund UI are served at www.pumpkart.racing, plus working balance RPC and X login UI.
+The serverless API now has its own type configuration; the latest Vercel build has no
+missing Node/Vite type-definition errors. Backend maintenance continues completing;
+the operations check reports zero open lobbies, unresolved payouts and unused tickets.
+After the finalized refund, the owner's wallet holds 46,196.549711 test $RACE again.
 
 **Next owner step:** the owner selected public treasury `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`
 as the test withdrawal recipient. In the updated site's account menu, expand Withdraw,

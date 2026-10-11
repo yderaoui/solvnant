@@ -53,6 +53,13 @@ KOL shown as a racer.
   keep polling after deadline and display refund/prize transaction links.
   207 tests in 28 files, build/dry-run, funded devnet full round and a separate alarm-only
   abandoned-run refund passed. Browser polling covers pending -> paid without reload.
+  Frontend `solvnant-gobkqrva2-yousser-ayman.vercel.app` is Ready and aliased to the
+  PumpKart domain. Published assets contain preparation, cross-tab lock and refund UI;
+  live balance RPC and mobile/desktop X window checks passed. API types are isolated
+  from browser types; production build logs have no missing type-definition errors.
+  Read-only operations checks show completed maintenance and no outstanding lobbies,
+  unresolved payouts or unused tickets. The finalized refund restored the owner balance
+  to 46,196.549711 test $RACE; no live withdrawal is present at this check.
   Owner chose treasury WXzD5...NFVHc for a tiny 1-test-coin withdrawal, approval pending.
   Official CA, fresh client X/wallet persistence, live withdrawal and real multi-user
   mainnet prize/burn/team settlement still need verification. Earlier pending-refund

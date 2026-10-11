@@ -35,7 +35,7 @@ export async function reviewCoinBuyCost(q: CoinQuote, tx: import('@solana/web3.j
   const before = await conn.getBalanceAndContext(new PublicKey(q.address), 'confirmed');
   if (before.value < q.maxLamports + 10_000_000) throw new Error('Keep at least 0.01 SOL beyond the purchase for fees and account setup.');
   const unsigned = VersionedTransaction.deserialize(tx.serialize({ requireAllSignatures: false, verifySignatures: false }));
-  const result = await conn.simulateTransaction(unsigned, { sigVerify: false, commitment: 'confirmed', minContextSlot: before.context.slot,
+  const result = await conn.simulateTransaction(unsigned, { sigVerify: !!tx.signature, commitment: 'confirmed', minContextSlot: before.context.slot,
     accounts: { encoding: 'base64', addresses: [q.address] } });
   if (result.value.err) throw new Error('This purchase could not be simulated. Refresh the price or add SOL for account setup. Nothing was sent.');
   const after = result.value.accounts?.[0]?.lamports;
@@ -63,8 +63,10 @@ export async function quoteCoinBuy(sol: number): Promise<CoinQuote> {
   return { ...q, mint: fresh.tickets.mint, symbol: fresh.tickets.symbol, decimals: fresh.tickets.decimals, address: wallet.address, revision: fresh.coinLaunch.revision, ticket: fresh.tickets, expires: Date.now() + 30_000, sol };
 }
 
-export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void, reviewTransaction?: (tx: import('@solana/web3.js').Transaction, conn: import('@solana/web3.js').Connection) => Promise<void>): Promise<string> {
+export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void, reviewTransaction?: (tx: import('@solana/web3.js').Transaction, conn: import('@solana/web3.js').Connection, cost: Awaited<ReturnType<typeof reviewCoinBuyCost>>) => Promise<void>): Promise<string> {
   if (Date.now() > q.expires) throw new Error('This quote expired. Get a fresh quote before buying.');
+  const uid = account.me?.id;
+  if (!uid) throw new Error('Sign in with X first.');
   const guard = () => account.api('/api/coin/preflight', { mint: q.mint, coinRevision: q.revision, purpose: 'coin' });
   await guard();
   const wallet = await payer();
@@ -80,17 +82,27 @@ export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void,
   const fee = feeResult.value;
   if (fee === null) throw new Error('Could not estimate network fees. Refresh your quote.');
   if (balance < q.maxLamports + fee + 10_000_000) throw new Error('Keep at least 0.01 SOL beyond the purchase amount for network fees and account setup.');
-  if (reviewTransaction) await reviewTransaction(tx, conn);
+  const initialCost = await reviewCoinBuyCost(q, tx, conn);
+  if (reviewTransaction) await reviewTransaction(tx, conn, initialCost);
   await guard();
   if (Date.now() > q.expires) throw new Error('This quote expired. Review a fresh price. Nothing was sent.');
   step('Approve in your wallet, then click Close to finish the purchase here.');
   let signature: string;
   if (wallet.signOnly) {
     const bytes = await wallet.signOnly(tx);
-    if (Date.now() > q.expires) throw new Error('Quote expired during wallet approval. Nothing was sent. Review a fresh price, approve, then click Close in the wallet promptly.');
+    if (account.me?.id !== uid) throw new Error('Account changed during approval. Nothing was sent.');
     await guard();
     const signed = Transaction.from(bytes);
-    if (!signed.signature) throw new Error('The wallet did not sign the purchase.');
+    if (!signed.serializeMessage().equals(tx.serializeMessage()) || !signed.signature || !signed.verifySignatures()) throw new Error('The wallet returned a changed or invalid payment. Nothing was sent.');
+    step('Rechecking your signed purchase and spending limit…');
+    if (!(await conn.isBlockhashValid(latest.blockhash, { commitment: 'confirmed' })).value) throw new Error('The Solana transaction expired while the wallet was open. Nothing was sent. Review again for a fresh transaction.');
+    // Prices are checked before opening the wallet. Its signed instructions still enforce the
+    // exact mint, minimum coins and maximum spend; re-simulate them after Privy's receipt closes.
+    const signedCost = await reviewCoinBuyCost(q, signed, conn);
+    if (signedCost.totalLamports > initialCost.totalLamports + q.maxLamports) throw new Error('The total cost changed beyond the reviewed limit. Nothing was sent. Review again.');
+    if (reviewTransaction) await reviewTransaction(signed, conn, signedCost);
+    await guard(); // A pause/coin switch during the simulation must still block submission.
+    if (account.me?.id !== uid) throw new Error('Account changed during approval. Nothing was sent.');
     const { base58Encode } = await import('../game/solana');
     signature = base58Encode(new Uint8Array(signed.signature));
     remember(signature, wallet.address, latest.lastValidBlockHeight);
@@ -126,7 +138,7 @@ async function checkPendingCoinBuy(t: TicketConfig, address: string) {
   if (!pending) return;
   const conn = await coinConnection(t);
   const result = (await conn.getSignatureStatuses([pending.signature], { searchTransactionHistory: true })).value[0];
-  if (result?.err || result?.confirmationStatus === 'confirmed' || result?.confirmationStatus === 'finalized' || (!result && await conn.getBlockHeight('confirmed') > pending.lastValid)) {
+  if (result?.err || result?.confirmationStatus === 'confirmed' || result?.confirmationStatus === 'finalized' || (!result && await conn.getBlockHeight('finalized') > pending.lastValid + 10)) {
     pendingMemory.delete(address);
     try { sessionStorage.removeItem(`pumpkart-pending-coin:${address}`); } catch { /* optional */ }
     return;

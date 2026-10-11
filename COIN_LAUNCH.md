@@ -21,7 +21,7 @@ no fee sponsor in this stage. Practice and play-point modes remain available.
 **Live activation verified on 2026-10-11:** `/api/config` reports status live,
 buyEnabled true, mode test, paidEnabled false, sponsor null and the exact test mint.
 Revision: `coin_1sF8rStR3xEUU7iV`. Worker: `80661041-ebc0-4023-b4e2-951ad830ae30`.
-Frontend production deployment: `solvnant-hij93z7rt-yousser-ayman.vercel.app`.
+Frontend production deployment: `solvnant-i30euawbp-yousser-ayman.vercel.app`.
 Changing client copy alone does not open payments.
 
 1. Open **https://www.pumpkart.racing/#/buy** and sign in with your existing X account.
@@ -35,9 +35,14 @@ Changing client copy alone does not open payments.
 5. Click **Approve purchase**, then review and approve the transaction in Privy.
    Approval is a transaction signature; the site broadcasts only after its final
    launch/quote checks. Cancel if the amount or wallet differs from your expectation.
-   **Click Close in Privy immediately after signing.** Privy's SDK only returns the
+   **Click Close in Privy after signing.** Privy's SDK only returns the
    signed transaction to PumpKart when that receipt window closes. Signing alone
-   does not send a purchase; leaving the window open can expire the 30-second quote.
+   does not send a purchase. The review price must be fresh when approval starts;
+   after signing, checkout uses the actual Solana blockhash lifetime and re-simulates
+   the exact signed transaction against the reviewed spending limit before broadcasting.
+   A changed message, invalid signature, expired blockhash, failed simulation, exceeded
+   budget, changed account or launch pause stops submission. Wallet approval is not
+   cancelled just because the 30-second review timer ran out while Privy was open.
    The wallet receipt now explains this instead of saying "You're all set."
 6. Wait for **Coins received** and open **View transaction**. Give Codex the public
    transaction link/signature to verify the mint, receiver and wallet debit on-chain.
@@ -141,7 +146,8 @@ Resolve those; never bypass the check to meet a launch deadline.
 
 No frontend rebuild is needed to change the coin after this release. Open tabs refresh
 configuration every 30 seconds and when returning to the tab. Coin quotes expire after
-30 seconds; ticket quotes after two minutes. The server validates revision/mint before
+30 seconds before opening wallet approval; ticket quotes after two minutes. A signed
+coin purchase uses actual transaction expiry and fresh cost/swap simulation. The server validates revision/mint before
 approval and broadcasting. A transaction already broadcast cannot be undone by pausing.
 
 Inspect a small approved official-coin transaction on-chain before announcing purchases.
@@ -150,7 +156,7 @@ The original noon launch target was a target, not an automatic scheduled deploym
 
 ## Verification limits
 
-172 regression tests in 25 files, TypeScript/build, Worker dry-run, mobile/desktop
+181 regression tests in 26 files, TypeScript/build, Worker dry-run, mobile/desktop
 browser fixtures and real unsigned PumpSwap simulation passed. The quote/fee review
 took about 3 seconds in this local read-only browser check; it is not a promise of
 transaction confirmation speed. The funded devnet round passed five $1.25 entries,
@@ -159,3 +165,7 @@ transaction confirmation speed. The funded devnet round passed five $1.25 entrie
 the owner or prove that their actual Privy dialog opened. A funded devnet integration
 round exercises ticket payments, racing, payout, burn, team split, refund and withdrawal;
 it does not replace the approved mainnet checks above.
+An additional opt-in funded devnet client test passed a late wallet Close after the
+review quote expiry: valid signed simulation, one signature and one broadcast, exactly
+10,000 lamports delivered. This tests the approval/broadcast lifecycle with a disposable
+devnet SOL transfer; it is not a mainnet PumpSwap trade or owner-wallet signature.

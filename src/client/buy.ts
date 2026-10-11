@@ -2,7 +2,7 @@ import './buy.css';
 import { account, showAuthModal } from './account';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
-import { quoteCoinBuy, estimateCoinBuy, reviewCoinBuyCost, approveCoinBuy, type CoinQuote } from './coinPurchase';
+import { quoteCoinBuy, estimateCoinBuy, approveCoinBuy, type CoinQuote } from './coinPurchase';
 
 let hooked = false;
 let generation = 0;
@@ -93,8 +93,7 @@ export function renderBuyPage() {
         approve.disabled = true; setBusy(true); steps(2);
         status.textContent = 'Preparing your wallet approval…';
         try {
-          const signature = await approveCoinBuy(buying, text => { if (current()) status.textContent = text; }, async (tx, conn) => {
-            const fresh = await reviewCoinBuyCost(buying, tx, conn);
+          const signature = await approveCoinBuy(buying, text => { if (current()) status.textContent = text; }, async (_tx, _conn, fresh) => {
             if (fresh.totalLamports + buying.maxLamports > totalLimit) throw new Error('The estimated cost changed. Review a fresh price before approving. Nothing was sent.');
           });
           if (!current()) return;

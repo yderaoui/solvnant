@@ -75,7 +75,7 @@ KOL shown as a racer.
   buying; ticket/paid friend-lobby controls are closed. Login/wallet SDK preloads for
   existing sessions. Active approval survives account refresh and page navigation;
   uncertain submissions retain their signed transaction ID and block repeat buys.
-  Validation: 172 tests in 25 files, production build, Worker dry-run, mobile/desktop
+  Validation: 181 tests in 26 files, production build, Worker dry-run, mobile/desktop
   browser fixtures and a funded devnet integration round passed. Devnet verified five
   $1.25 entries, 20-test-coin prize, 3.75 burn, 1.25 team share, full 2-coin refund and
   sponsored 1-coin withdrawal to a new destination. No mainnet transaction was signed
@@ -84,7 +84,7 @@ KOL shown as a racer.
   Twitter option; published-page checks at 375/768/1440 px found no page errors or CSP
   violations. Completing OAuth and signing a purchase still require the owner/client.
   Deployment verification and exact player steps are recorded in COIN_LAUNCH.md.
-  Latest production frontend: `solvnant-hij93z7rt-yousser-ayman.vercel.app`.
+  Latest production frontend: `solvnant-i30euawbp-yousser-ayman.vercel.app`.
   Account-scoped payment receipts survive RPC/login errors and block duplicate
   checkout while pending. Withdrawals keep known signatures before broadcast, show
   pending honestly and check the same signature on retry; finalized expiry/history
@@ -94,8 +94,13 @@ KOL shown as a racer.
   the payout signer, team address, live USD price and 0.02 SOL starting reserve.
   Privy?s signing hook resolves only when its receipt window closes. The success
   receipt now says "Approval signed" and tells the player to click Close promptly;
-  signing alone does not broadcast. Thirty-second quote expiry and final revision
-  guards remain enforced. The owner supplied a signed-receipt screenshot and reports
+  signing alone does not broadcast. The thirty-second review timer is checked before
+  wallet approval. After signing, checkout validates the unchanged message and signatures,
+  actual blockhash lifetime, fresh signed simulation, original spending budget and final
+  launch/account guards. A late Close no longer fails merely on review quote age.
+  A funded devnet client lifecycle test delivered exactly 10,000 lamports after artificial
+  quote expiry with one sign/broadcast; this was a disposable devnet SOL transfer, not
+  a PumpSwap/mainnet purchase. The owner supplied a signed-receipt screenshot and reports
   Coins received, but mainnet RPC checks still show no test-coin ATA or new purchase
   in the supplied wallet; a completed mainnet purchase is not verified yet.
   Historical implementation notes below are not proof of mainnet completion.

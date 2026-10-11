@@ -21,6 +21,9 @@ beforeEach(() => {
   vi.spyOn(Connection.prototype,'getLatestBlockhash').mockResolvedValue({blockhash:mint,lastValidBlockHeight:100});
   vi.spyOn(Connection.prototype,'getFeeForMessage').mockResolvedValue({context:{slot:1},value:5000});
   vi.spyOn(Connection.prototype,'getBalance').mockResolvedValue(1_000_000_000);
+  vi.spyOn(Connection.prototype,'getBalanceAndContext').mockResolvedValue({ context: { slot: 1 }, value: 1_000_000_000 });
+  vi.spyOn(Connection.prototype,'simulateTransaction').mockResolvedValue({ context: { slot: 1 }, value: { err: null, logs: [], accounts: [{ lamports: 950_000_000 } as any] } });
+  vi.spyOn(Connection.prototype,'isBlockhashValid').mockResolvedValue({ context: { slot: 1 }, value: true });
   vi.spyOn(Connection.prototype,'sendRawTransaction').mockImplementation(mock.send);
   vi.spyOn(Connection.prototype,'getSignatureStatuses').mockImplementation(mock.statuses);
 });
@@ -59,14 +62,19 @@ it('a cancelled wallet approval never broadcasts or retries signing', async () =
   expect(mock.sign).toHaveBeenCalledOnce(); expect(mock.send).not.toHaveBeenCalled();
 });
 
-it('expiration during wallet approval prevents submission even with a valid signature', async () => {
+it('a wallet receipt closed after quote expiry can send the same signed limits after fresh chain/cost checks', async () => {
   const q = quote();
   mock.sign.mockImplementation(async (tx: Transaction) => {
     tx.partialSign(wallet); q.expires = Date.now() - 1;
     return new Uint8Array(tx.serialize());
   });
-  await expect(approveCoinBuy(q, vi.fn())).rejects.toThrow('Nothing was sent');
-  expect(mock.sign).toHaveBeenCalledOnce(); expect(mock.send).not.toHaveBeenCalled();
+  mock.send.mockResolvedValue('rpc-response');
+  mock.statuses.mockResolvedValue({ value: [{ err: null, confirmationStatus: 'confirmed' }] });
+  await expect(approveCoinBuy(q, vi.fn())).resolves.toMatch(/^[1-9A-HJ-NP-Za-km-z]+$/);
+  expect(mock.sign).toHaveBeenCalledOnce(); expect(mock.send).toHaveBeenCalledOnce();
+  expect(Connection.prototype.isBlockhashValid).toHaveBeenCalledWith(mint, { commitment: 'confirmed' });
+  expect(Connection.prototype.simulateTransaction).toHaveBeenCalledTimes(2);
+  expect(Connection.prototype.simulateTransaction).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sigVerify: true }));
 });
 it('a launch pause during wallet approval prevents broadcasting the signed transaction', async () => {
   mock.sign.mockImplementation(async (tx:Transaction)=>{tx.partialSign(wallet);return new Uint8Array(tx.serialize());});
@@ -94,7 +102,47 @@ it('a confirmed coin purchase broadcasts once and reports the actual signed tran
   const signature=await approveCoinBuy(quote(),vi.fn());
   expect(signature).toMatch(/^[1-9A-HJ-NP-Za-km-z]+$/);
   expect(mock.send).toHaveBeenCalledOnce();
-  expect(mock.api).toHaveBeenCalledTimes(3);
+  expect(mock.api).toHaveBeenCalledTimes(4);
+});
+
+it('an expired Solana blockhash after approval never broadcasts or signs another transaction', async () => {
+  mock.sign.mockImplementation(async (tx: Transaction) => { tx.partialSign(wallet); return new Uint8Array(tx.serialize()); });
+  vi.mocked(Connection.prototype.isBlockhashValid).mockResolvedValue({ context: { slot: 1 }, value: false });
+  await expect(approveCoinBuy(quote(), vi.fn())).rejects.toThrow('Solana transaction expired');
+  expect(mock.sign).toHaveBeenCalledOnce(); expect(mock.send).not.toHaveBeenCalled();
+});
+
+it('failed signed simulation stops broadcasting even though wallet approval succeeded', async () => {
+  mock.sign.mockImplementation(async (tx: Transaction) => { tx.partialSign(wallet); return new Uint8Array(tx.serialize()); });
+  vi.mocked(Connection.prototype.simulateTransaction).mockResolvedValueOnce({ context: { slot: 1 }, value: { err: null, logs: [], accounts: [{ lamports: 950_000_000 } as any] } }).mockResolvedValueOnce({ context: { slot: 1 }, value: { err: { InstructionError: [1, 'Custom'] } as any, logs: [] } });
+  await expect(approveCoinBuy(quote(), vi.fn())).rejects.toThrow('could not be simulated');
+  expect(mock.send).not.toHaveBeenCalled();
+});
+
+it('a changed signed transaction is refused before simulation or broadcast', async () => {
+  // A real wallet gets serialized bytes; make the fixture change a copy instead of the original.
+  mock.sign.mockImplementation(async (tx: Transaction) => {
+    const changed = Transaction.from(tx.serialize({ requireAllSignatures: false, verifySignatures: false }));
+    changed.add(SystemProgram.transfer({ fromPubkey: wallet.publicKey, toPubkey: new PublicKey(mint), lamports: 1 }));
+    changed.partialSign(wallet); return new Uint8Array(changed.serialize());
+  });
+  await expect(approveCoinBuy(quote(), vi.fn())).rejects.toThrow('changed or invalid');
+  expect(mock.send).not.toHaveBeenCalled();
+});
+
+it('a pause while the signed transaction is simulated prevents its broadcast', async () => {
+  mock.sign.mockImplementation(async (tx: Transaction) => { tx.partialSign(wallet); return new Uint8Array(tx.serialize()); });
+  mock.api.mockResolvedValue({ ok: true }).mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(new Error('Launch paused'));
+  await expect(approveCoinBuy(quote(), vi.fn())).rejects.toThrow('Launch paused');
+  expect(mock.send).not.toHaveBeenCalled();
+});
+
+it('the signed cost must still fit the user’s reviewed total budget', async () => {
+  mock.sign.mockImplementation(async (tx: Transaction) => { tx.partialSign(wallet); return new Uint8Array(tx.serialize()); });
+  vi.mocked(Connection.prototype.simulateTransaction).mockResolvedValueOnce({ context: { slot: 1 }, value: { err: null, logs: [], accounts: [{ lamports: 950_000_000 } as any] } }).mockResolvedValueOnce({ context: { slot: 1 }, value: { err: null, logs: [], accounts: [{ lamports: 945_000_000 } as any] } });
+  const budget = vi.fn(async (_tx, _conn, cost) => { if (cost.totalLamports > 52_000_000) throw new Error('Reviewed budget exceeded'); });
+  await expect(approveCoinBuy(quote(), vi.fn(), budget)).rejects.toThrow('budget exceeded');
+  expect(budget).toHaveBeenCalledTimes(2); expect(mock.send).not.toHaveBeenCalled();
 });
 
 it('uncertain submission retains the transaction and blocks another quote while pending', async () => {

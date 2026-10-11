@@ -35,6 +35,29 @@ KOL shown as a racer.
 
 ## 2. Current state (read this first)
 
+- **Payment audit and real solo refund (October 12 Casablanca):** Worker
+  `deb3e24e-479c-46ea-9ce9-902e09891c95`, SERVER_RELEASE
+  `2026-10-12-payment-recovery-2`. The old alarm remained set to a past timestamp,
+  delaying automatic expiry after the owner left the page. Stale alarms now re-arm;
+  alarm work saves its next wake-up before external waits and bounds RPC/database
+  calls. Sent payouts are checked promptly and cannot be replaced while merely
+  processed; retry requires absent historical status and finalized expiry.
+  The normal alarm closed solo lobby 6ANT7755 and its full mainnet refund is paid:
+  exactly 4,222.972973 test $RACE to the original owner game wallet, zero player SOL
+  debit, treasury fee 0.000005 SOL. Public signature:
+  `kvTJuC76yyd3mwsX4cFCB6haCGhjW7R6YhwvpE2zTWAmj3NQueNpXByN1hXVVUGMDHJ25ofEtyFAUYeAG8enTsD`.
+  New sponsored checkout/withdrawal prepares only, validates and saves the signed
+  receipt before browser broadcast; legacy sponsor clients still work. Shared approval
+  locks and durable coin receipts block overlapping/cross-tab uncertain payments.
+  Co-signing verifies real player signatures and bounds priority fees. Friend pages
+  keep polling after deadline and display refund/prize transaction links.
+  207 tests in 28 files, build/dry-run, funded devnet full round and a separate alarm-only
+  abandoned-run refund passed. Browser polling covers pending -> paid without reload.
+  Owner chose treasury WXzD5...NFVHc for a tiny 1-test-coin withdrawal, approval pending.
+  Official CA, fresh client X/wallet persistence, live withdrawal and real multi-user
+  mainnet prize/burn/team settlement still need verification. Earlier pending-refund
+  notes below are historical; see COIN_LAUNCH.md for current receipts and owner steps.
+
 - **Normal website coin-only test (2026-10-11):** owner authorized temporary `$RACE`
   mint `BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump` in the normal player screens,
   visibly labeled temporary and using real SOL. Owner chose coin buying first because

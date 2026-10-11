@@ -1,10 +1,11 @@
-// Race tickets paid in the game coin. The player's wallet (Phantom) sends `price` coins to the
-// treasury wallet with a one-time memo; the game server reads that transaction on-chain and credits
-// one ticket. Joining a live race uses a ticket; leaving before lights out gives it back.
+// Race tickets paid in the game coin. The player's wallet sends the quoted coins to the
+// treasury with a one-time memo; the game server verifies the transfer and credits one ticket
+// or an invite-bound entry. Live/play-point races do not consume coin tickets.
 // No smart contract involved: it's a plain SPL token transfer the player approves in their wallet.
 import { account } from "./account";
 import type { TicketConfig } from "../game/config";
 import { hasPurchaseMemo } from "../game/purchaseMemo";
+import { withPaymentLock } from './paymentLock';
 
 interface SolanaProvider {
   isPhantom?: boolean;
@@ -148,17 +149,13 @@ async function payCoins(
   if (!account.me) throw new Error("Sign in first.");
   const uid = account.me.id;
   const scopedKey = `${pendingKey}:${uid}`;
-  if (paymentsInFlight.has(uid)) throw new Error('Finish your current payment before starting another.');
-  paymentsInFlight.add(uid);
-  try {
+  return await withPaymentLock(uid, async () => {
     const previous = await claimSaved(scopedKey, claimPath, uid);
     if (previous) return previous;
     const pending = paymentSignature(scopedKey);
     if (pending) throw new Error(`Your earlier payment is still being checked. Do not pay again. Transaction: ${pending}`);
     return await sendPayment(scopedKey, uid);
-  } finally {
-    paymentsInFlight.delete(uid);
-  }
+  });
 
   async function sendPayment(pendingKey: string, uid: string): Promise<object> {
     step("Connecting your wallet…");
@@ -181,7 +178,8 @@ async function payCoins(
     (globalThis as unknown as { Buffer: typeof Buffer }).Buffer ??= Buffer;
     const [{ Connection, PublicKey, Transaction, TransactionInstruction }, spl] =
       await Promise.all([import("@solana/web3.js"), import("@solana/spl-token")]);
-    const conn = new Connection(intent.rpcUrl, "confirmed");
+    const conn = new Connection(intent.rpcUrl, { commitment: 'confirmed', disableRetryOnRateLimit: true,
+      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }) });
     const owner = new PublicKey(publicKey.toString());
     const mint = new PublicKey(intent.mint);
     const treasury = new PublicKey(intent.treasury);
@@ -283,12 +281,20 @@ async function payCoins(
             : `Wallet error: ${why}`,
         );
       }
-      step("Sending (the game pays the network fee)…");
-      const { signature } = await account.api<{ signature: string }>(
+      if (account.me?.id !== uid) throw new Error('Account changed during approval. Nothing was sent.');
+      step('Preparing your signed payment…');
+      const prepared = await account.api<{ signature: string; wire?: string }>(
         "/api/pay/sponsor",
-        { tx: Buffer.from(signedTx).toString("base64"), coinRevision },
+        { tx: Buffer.from(signedTx).toString("base64"), coinRevision, prepareOnly: true },
       );
-      return await confirm(signature);
+      const wire = await preparedWire(prepared, tx);
+      await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose: 'ticket', memo: intent.memo });
+      if (account.me?.id !== uid) throw new Error('Account changed during approval. Nothing was sent.');
+      rememberPurchase(pendingKey, prepared.signature);
+      step('Sending (the game pays the network fee)…');
+      try { await conn.sendRawTransaction(wire, { skipPreflight: false, maxRetries: 5 }); }
+      catch { /* The saved signature, not a second approval, determines the outcome. */ }
+      return await confirm(prepared.signature);
     }
     let signature: string;
     let known: string | null = null;
@@ -358,10 +364,22 @@ async function payCoins(
   }
 }
 
-const paymentsInFlight = new Set<string>();
+/** Never broadcast a preparation response that differs from the player's reviewed transaction. */
+async function preparedWire(prepared: { signature: string; wire?: string }, original: import('@solana/web3.js').Transaction): Promise<Uint8Array> {
+  if (!prepared.wire) throw new Error('The payment server needs an update. Check your wallet activity before trying again.');
+  const [{ Buffer }, { Transaction }, { base58Encode }] = await Promise.all([import('buffer'), import('@solana/web3.js'), import('../game/solana')]);
+  const bytes = new Uint8Array(Buffer.from(prepared.wire, 'base64'));
+  const tx = Transaction.from(bytes);
+  if (!tx.serializeMessage().equals(original.serializeMessage()) || !tx.signature || !tx.verifySignatures() || base58Encode(new Uint8Array(tx.signature)) !== prepared.signature) {
+    throw new Error('The server returned an invalid signed payment. Nothing was sent.');
+  }
+  return bytes;
+}
+
+const receiptMemory = new Map<string, string>();
 
 function saved(key: string): string | null {
-  try { return localStorage.getItem(key); } catch { return null; }
+  try { return localStorage.getItem(key) ?? receiptMemory.get(key) ?? null; } catch { return receiptMemory.get(key) ?? null; }
 }
 
 function paymentSignature(key: string): string | null {
@@ -401,9 +419,11 @@ async function claimSaved(key: string, path: string, uid: string): Promise<objec
 }
 
 function remember(key: string, sig: string | null) {
+  if (sig) receiptMemory.set(key, sig); else receiptMemory.delete(key);
   try {
     if (sig) localStorage.setItem(key, sig);
     else localStorage.removeItem(key);
+    receiptMemory.delete(key); // durable browser storage succeeded
   } catch {
     /* ignore */
   }
@@ -518,7 +538,7 @@ export async function coinBalance(signal?: AbortSignal): Promise<number | null> 
   const w = await privyWallet(15_000);
   const r = await fetch(t.rpcUrl, {
     method: 'POST',
-    signal,
+    signal: signal ?? AbortSignal.timeout(8_000),
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTokenAccountsByOwner', params: [w.address, { mint: t.mint }, { encoding: 'jsonParsed' }] }),
   });
@@ -534,9 +554,7 @@ export async function withdrawCoins(to: string, amount: number, step: (text: str
   if (!configured || !account.me) throw new Error('Sign in first.');
   const t: TicketConfig = configured;
   const uid = account.me.id;
-  if (paymentsInFlight.has(uid)) throw new Error('Finish your current payment before starting another.');
-  paymentsInFlight.add(uid);
-  try { return await withdraw(); } finally { paymentsInFlight.delete(uid); }
+  return await withPaymentLock(uid, withdraw);
 
   async function withdraw(): Promise<{ signature: string; confirmed: boolean }> {
     const key = `tl-pending-withdrawal:${uid}`;
@@ -544,7 +562,7 @@ export async function withdrawCoins(to: string, amount: number, step: (text: str
     const { Buffer } = await import('buffer');
     (globalThis as unknown as { Buffer: typeof Buffer }).Buffer ??= Buffer;
     const [{ Connection, PublicKey, Transaction }, spl] = await Promise.all([import('@solana/web3.js'), import('@solana/spl-token')]);
-    const connection = (url: string) => new Connection(url, { commitment: 'confirmed', fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }) });
+    const connection = (url: string) => new Connection(url, { commitment: 'confirmed', disableRetryOnRateLimit: true, fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }) });
     const old = saved(key);
     if (old) {
       const receipt = JSON.parse(old) as { signature: string; rpcUrl: string; lastValidBlockHeight: number };
@@ -561,6 +579,7 @@ export async function withdrawCoins(to: string, amount: number, step: (text: str
     const wallet = await payer();
     const conn = connection(t.rpcUrl);
     const owner = new PublicKey(wallet.address);
+    if (dest.equals(owner)) throw new Error('Enter a receiving wallet different from your game wallet.');
     const mint = new PublicKey(t.mint);
     const mintAccount = await conn.getAccountInfo(mint);
     if (!mintAccount) throw new Error('The coin is unavailable on this network. Nothing was sent.');
@@ -585,8 +604,16 @@ export async function withdrawCoins(to: string, amount: number, step: (text: str
     let sig: string;
     if (sponsor) {
       const signedTx = await wallet.signOnly!(tx);
+      if (account.me?.id !== uid || account.cfg?.tickets?.mint !== t.mint) throw new Error('Account or coin changed during approval. Nothing was sent.');
+      step('Preparing your signed withdrawal…');
+      const prepared = await account.api<{ signature: string; wire?: string }>('/api/pay/withdraw', { tx: Buffer.from(signedTx).toString('base64'), prepareOnly: true });
+      const wire = await preparedWire(prepared, tx);
+      if (account.me?.id !== uid || account.cfg?.tickets?.mint !== t.mint) throw new Error('Account or coin changed during approval. Nothing was sent.');
+      sig = prepared.signature;
+      remember(key, JSON.stringify({ signature: sig, rpcUrl: t.rpcUrl, lastValidBlockHeight: latest.lastValidBlockHeight }));
       step('Sending (the game pays the network fee)…');
-      sig = (await account.api<{ signature: string }>('/api/pay/withdraw', { tx: Buffer.from(signedTx).toString('base64') })).signature;
+      try { await conn.sendRawTransaction(wire, { skipPreflight: false, maxRetries: 5 }); }
+      catch { /* Check this signature; never automatically sign a replacement. */ }
     } else {
       let known: string | null = null;
       try {

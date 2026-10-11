@@ -2,6 +2,7 @@ import { account } from './account';
 import { payer } from './tickets';
 import type { TicketConfig } from '../game/config';
 import type { PumpBuyQuote } from '../game/pumpTrade';
+import { withPaymentLock } from './paymentLock';
 
 export interface CoinQuote extends PumpBuyQuote {
   mint: string; symbol: string; decimals: number; revision: string;
@@ -64,6 +65,12 @@ export async function quoteCoinBuy(sol: number): Promise<CoinQuote> {
 }
 
 export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void, reviewTransaction?: (tx: import('@solana/web3.js').Transaction, conn: import('@solana/web3.js').Connection, cost: Awaited<ReturnType<typeof reviewCoinBuyCost>>) => Promise<void>): Promise<string> {
+  const uid = account.me?.id;
+  if (!uid) throw new Error('Sign in with X first.');
+  return await withPaymentLock(uid, () => sendCoinBuy(q, step, reviewTransaction));
+}
+
+async function sendCoinBuy(q: CoinQuote, step: (text: string) => void, reviewTransaction?: (tx: import('@solana/web3.js').Transaction, conn: import('@solana/web3.js').Connection, cost: Awaited<ReturnType<typeof reviewCoinBuyCost>>) => Promise<void>): Promise<string> {
   if (Date.now() > q.expires) throw new Error('This quote expired. Get a fresh quote before buying.');
   const uid = account.me?.id;
   if (!uid) throw new Error('Sign in with X first.');
@@ -116,8 +123,7 @@ export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void,
     catch { throw new Error(`Purchase submitted; confirmation is unavailable. Check transaction ${signature} before buying again.`); }
     if (result?.err) throw new Error(`Purchase failed on-chain (${signature}). Network fees may still apply.`);
     if (result?.confirmationStatus === 'confirmed' || result?.confirmationStatus === 'finalized') {
-      pendingMemory.delete(wallet.address);
-      try { sessionStorage.removeItem(`pumpkart-pending-coin:${wallet.address}`); } catch { /* optional */ }
+      clearPending(wallet.address);
       return signature;
     }
     await new Promise(resolve => setTimeout(resolve, 1500));
@@ -128,19 +134,25 @@ export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void,
 function remember(signature: string, address: string, lastValid: number) {
   const pending = { signature, lastValid };
   pendingMemory.set(address, pending);
-  try { sessionStorage.setItem(`pumpkart-pending-coin:${address}`, JSON.stringify(pending)); } catch { /* memory retains the pending transaction */ }
+  try { localStorage.setItem(`pumpkart-pending-coin:${address}`, JSON.stringify(pending)); } catch { /* memory retains the pending transaction */ }
 }
 
 const pendingMemory = new Map<string, { signature: string; lastValid: number }>();
+function clearPending(address: string) {
+  pendingMemory.delete(address);
+  try { localStorage.removeItem(`pumpkart-pending-coin:${address}`); } catch { /* optional */ }
+  try { sessionStorage.removeItem(`pumpkart-pending-coin:${address}`); } catch { /* legacy receipt */ }
+}
 async function checkPendingCoinBuy(t: TicketConfig, address: string) {
   let pending = pendingMemory.get(address);
-  if (!pending) { try { pending = JSON.parse(sessionStorage.getItem(`pumpkart-pending-coin:${address}`) ?? 'null'); } catch { /* optional */ } }
+  // Prefer the shared durable receipt so a new tab cannot repeat an uncertain purchase.
+  try { pending = JSON.parse(localStorage.getItem(`pumpkart-pending-coin:${address}`) ?? 'null') ?? pending; } catch { /* memory fallback */ }
+  if (!pending) { try { pending = JSON.parse(sessionStorage.getItem(`pumpkart-pending-coin:${address}`) ?? 'null'); } catch { /* legacy receipt */ } }
   if (!pending) return;
   const conn = await coinConnection(t);
   const result = (await conn.getSignatureStatuses([pending.signature], { searchTransactionHistory: true })).value[0];
   if (result?.err || result?.confirmationStatus === 'confirmed' || result?.confirmationStatus === 'finalized' || (!result && await conn.getBlockHeight('finalized') > pending.lastValid + 10)) {
-    pendingMemory.delete(address);
-    try { sessionStorage.removeItem(`pumpkart-pending-coin:${address}`); } catch { /* optional */ }
+    clearPending(address);
     return;
   }
   throw new Error(`Your previous purchase is still pending. Check transaction ${pending.signature} before buying again.`);

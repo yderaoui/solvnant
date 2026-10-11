@@ -40,6 +40,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: body.id ?? 1, method: body.method, params: body.params }),
+      signal: AbortSignal.timeout(12_000),
     });
     const text = await r.text();
     // Diagnostics for payments: which call, and the network's error if there was one.

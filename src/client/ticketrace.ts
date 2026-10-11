@@ -28,6 +28,7 @@ interface Seat {
 }
 interface LobbyView {
   payout?: { status: string; sig: string | null } | null;
+  refund?: { amount: number; status: string; sig: string | null } | null;
   lobby: { id: string; code?: string | null; status: string; settleBy: number; seats: number; maxSeats: number; pot: number; prize: number; youWon: boolean };
   seats: Seat[];
 }
@@ -168,7 +169,7 @@ export function payoutNote(p: { status: string; sig: string | null } | null | un
     return ` <a class="tr-paid" href="https://solscan.io/tx/${p.sig}${dev}" target="_blank" rel="noopener">${icon('check', 12)}Paid · view</a>`;
   }
   if (p.status === 'pending' || p.status === 'sent') return ' <span class="tr-paid wait">paying…</span>';
-  return ' <span class="tr-paid wait">paid by the team shortly</span>';
+  return ' <span class="tr-paid wait">needs team attention</span>';
 }
 
 function lobbyCard(v: LobbyView, sym: string) {
@@ -180,7 +181,7 @@ function lobbyCard(v: LobbyView, sym: string) {
         ? `<span class="tr-chip win">${icon('trophy', 12)}WON ${L.prize.toLocaleString('en-US')} ${sym}</span>${payoutNote(v.payout)}`
         : `<span class="tr-chip">SETTLED · P${mineAt + 1}</span>`
       : L.status === 'refunded'
-        ? `<span class="tr-chip">REFUNDED</span>`
+        ? `<span class="tr-chip">${v.refund ? v.refund.status === 'paid' ? 'COINS REFUNDED' : v.refund.status === 'failed' ? 'REFUND NEEDS ATTENTION' : 'REFUND PENDING' : 'TICKET RETURNED'}</span>${v.refund ? payoutNote(v.refund) : ''}`
         : `<span class="tr-chip open">${L.seats}/${L.maxSeats} · settles by ${new Date(L.settleBy).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>`;
   const best = v.seats.find((s) => s.finished)?.finishTime ?? null;
   const rows = v.seats

@@ -21,7 +21,7 @@ no fee sponsor in this stage. Practice and play-point modes remain available.
 **Current paid test activation verified on 2026-10-11:** `/api/config` reports status live,
 buyEnabled true, mode test, paidEnabled true, sponsor equal to the funded treasury,
 and the exact same authorized temporary mint.
-Revision: `coin_1IW81Dz-DGQipqGD`. Worker: `86a5e450-712c-48c8-a085-2130709608ef`.
+Revision: `coin_1IW81Dz-DGQipqGD`. Worker: `deb3e24e-479c-46ea-9ce9-902e09891c95` (payment recovery audit).
 Frontend production deployment: `solvnant-7gpellukd-yousser-ayman.vercel.app`.
 Changing client copy alone does not open payments.
 
@@ -129,8 +129,40 @@ deadline is **2026-10-11 23:18:01 UTC / October 12, 00:18:01 Casablanca**. With 
 than four participants, the expected outcome is a full **4,222.972973 test $RACE**
 refund to the original payer, with no burn or team cut. The displayed first place and
 potential prize are provisional, not a paid win. No refund transaction exists at
-the 23:02 UTC check; automatic refund, withdrawal and multi-player mainnet settlement
-still need on-chain confirmation. No settlement was forced or fake player added.
+the 23:02 UTC check. No settlement was forced or fake player added.
+
+**Automatic mainnet refund verified (October 12 Casablanca):** after the browser left,
+the lobby remained open past its deadline. Operations diagnostics showed a stale alarm
+timestamp from the prior day. The recovery fix re-arms stale alarms, saves the next alarm
+before external requests, bounds RPC/database waits and keeps checking sent payouts.
+The normal alarm then closed the expired solo lobby and returned exactly **4,222.972973
+test $RACE** (`4222972973` raw units) to the original `4tWo...C6AGpH` wallet. Mainnet
+RPC confirms success and **zero player SOL debit**; the treasury paid **0.000005 SOL**.
+[Verified full refund](https://solscan.io/tx/kvTJuC76yyd3mwsX4cFCB6haCGhjW7R6YhwvpE2zTWAmj3NQueNpXByN1hXVVUGMDHJ25ofEtyFAUYeAG8enTsD).
+Server status is refunded / paid. Leaving the page does not cancel a refund.
+The official coin, a real mainnet withdrawal and real multi-player prize/burn/team
+settlement remain release checks.
+
+**Payment recovery audit:** sponsored entries and withdrawals now request preparation
+only, verify the fully signed transaction is unchanged, save its public transaction ID,
+then broadcast. A lost preparation response cannot hide an already-sent payment.
+Legacy clients retain their existing sponsor send route. New shared Web Locks prevent
+overlapping approvals across tabs; pending coin receipts also persist across tabs.
+Processed payouts are never treated as absent. Replacements require absent historical
+status and finalized expiry; missing legacy expiry data never permits a guessed retry.
+Server co-signing verifies the real player signature and caps supplied priority fees.
+Refund/prize UI shows honest status and links; it polls past the deadline until final.
+Validation: **207 tests in 28 files**, TypeScript/build and Worker dry-run passed. A fresh
+funded devnet round passed the new preparation/broadcast flow, five equal entries, prize,
+burn, team share, full refund and sponsored withdrawal. A separate alarm-only devnet
+test refunded an expired abandoned run with no lobby-view requests and no burn/team cut.
+Browser refund polling passed deadline -> pending -> paid, links and 375/768/1440 widths.
+
+**Next owner step:** the owner selected public treasury `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`
+as the test withdrawal recipient. In the updated site's account menu, expand Withdraw,
+paste that address, enter **1 test $RACE**, approve in Privy and click Close. Wait for
+Confirmed and supply its public transaction link. This requires the owner's signature;
+Codex does not approve or sign their wallet. Do not repeat the earlier buy or entry test.
 
 Use five real accounts in a low-entry friend lobby. All five must pay the same locked
 coin amount chosen from the creator's USD entry. Verify each receipt, race submission,

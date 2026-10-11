@@ -318,7 +318,7 @@ describe('custom friend entries (devnet payment fixtures)', () => {
     vi.setSystemTime(Date.now()+SETTLE_AFTER_MS+1);
     const view=await (await api('/api/lobby/private/view','p0',{code:v.lobby.code})).json() as View;
     expect(view.lobby.status).toBe('refunded');
-    expect(view.refund).toEqual({amount:500,status:'pending'});
+    expect(view.refund).toEqual({amount:500,status:'pending',sig:null});
     const rows=db.prepare('SELECT * FROM lobby_payouts').all();
     expect(rows).toHaveLength(4);
     expect(rows.every(r=>r.prize===500&&r.burn===0&&r.team===0&&r.kind==='refund')).toBe(true);

@@ -7,6 +7,7 @@ vi.mock('../src/client/privy/client', () => ({ privyOn: () => true, privyWallet:
 import { account } from '../src/client/account';
 import { buyTicket, claimPendingTicket, withdrawCoins } from '../src/client/tickets';
 import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js';
+import { base58Encode } from '../src/game/solana';
 
 let store: Map<string, string>;
 beforeEach(() => {
@@ -132,4 +133,60 @@ it('saves the withdrawal signature before broadcasting and never signs twice aft
   expect(await withdrawCoins(mint, 1, vi.fn())).toEqual({ signature: pending.signature, confirmed: true });
   expect(sign).toHaveBeenCalledTimes(1);
   expect(send).toHaveBeenCalledTimes(1);
+});
+
+function sponsoredFixture() {
+  const player = Keypair.generate(), house = Keypair.generate(), destination = Keypair.generate().publicKey;
+  const mint = 'So11111111111111111111111111111111111111112';
+  const tickets = { mint, treasury: house.publicKey.toBase58(), decimals: 6, price: 1, cluster: 'devnet' as const, symbol: '$TEST', rpcUrl: 'https://rpc.fixture' };
+  account.cfg = { ...account.cfg!, sponsor: house.publicKey.toBase58(), tickets } as typeof account.cfg;
+  const sign = vi.fn(async bytes => {
+    const tx = Transaction.from(bytes); tx.partialSign(player);
+    return new Uint8Array(tx.serialize({ requireAllSignatures: false }));
+  });
+  mocks.wallet.mockResolvedValue({ address: player.publicKey.toBase58(), sign });
+  vi.spyOn(Connection.prototype, 'getAccountInfo').mockResolvedValue({ owner: new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'), data: Buffer.alloc(82), executable: false, lamports: 1, rentEpoch: 1 });
+  vi.spyOn(Connection.prototype, 'getTokenAccountBalance').mockResolvedValue({ context: { slot: 1 }, value: { amount: '10000000', decimals: 6, uiAmount: 10, uiAmountString: '10' } });
+  vi.spyOn(Connection.prototype, 'getLatestBlockhash').mockResolvedValue({ blockhash: mint, lastValidBlockHeight: 100 });
+  const prepare = (body: { tx: string; prepareOnly?: boolean }) => {
+    expect(body.prepareOnly).toBe(true);
+    const tx = Transaction.from(Buffer.from(body.tx, 'base64')); tx.partialSign(house);
+    return { signature: base58Encode(new Uint8Array(tx.signature!)), wire: tx.serialize().toString('base64') };
+  };
+  return { sign, destination: destination.toBase58(), tickets, prepare };
+}
+it('persists a sponsored withdrawal before broadcast and checks the same ID after an uncertain send', async () => {
+  const fixture = sponsoredFixture();
+  mocks.api.mockImplementation(async (_path, body) => fixture.prepare(body));
+  const send = vi.spyOn(Connection.prototype, 'sendRawTransaction').mockImplementation(async () => {
+    expect(store.has('tl-pending-withdrawal:alice')).toBe(true); throw new Error('response lost');
+  });
+  const statuses = vi.spyOn(Connection.prototype, 'getSignatureStatuses').mockRejectedValue(new Error('RPC offline'));
+  const r = await withdrawCoins(fixture.destination, 1, vi.fn()); expect(r.confirmed).toBe(false);
+  statuses.mockResolvedValue({ context: { slot: 1 }, value: [{ slot: 1, confirmations: 1, err: null, confirmationStatus: 'confirmed' }] });
+  expect(await withdrawCoins('', 0, vi.fn())).toEqual({ signature: r.signature, confirmed: true });
+  expect(fixture.sign).toHaveBeenCalledOnce(); expect(send).toHaveBeenCalledOnce(); expect(mocks.api).toHaveBeenCalledOnce();
+});
+it('a lost sponsorship preparation response does not broadcast a withdrawal', async () => {
+  const fixture = sponsoredFixture(); mocks.api.mockRejectedValue(new Error('Response lost'));
+  const send = vi.spyOn(Connection.prototype, 'sendRawTransaction');
+  await expect(withdrawCoins(fixture.destination, 1, vi.fn())).rejects.toThrow('Response lost');
+  expect(send).not.toHaveBeenCalled(); expect(store.has('tl-pending-withdrawal:alice')).toBe(false);
+});
+it('persists a sponsored entry ID before sending and claims it without a second approval', async () => {
+  const fixture = sponsoredFixture();
+  mocks.api.mockImplementation(async (path, body) => path === '/api/ticket/intent' ? { ...fixture.tickets, memo: 'PumpKart ticket fixture' } : path === '/api/pay/sponsor' ? fixture.prepare(body) : path === '/api/ticket/claim' ? { ok: true, tickets: 1 } : {});
+  const send = vi.spyOn(Connection.prototype, 'sendRawTransaction').mockImplementation(async () => {
+    expect(store.has('tl-pending-ticket:alice')).toBe(true); throw new Error('response lost');
+  });
+  expect(await buyTicket(vi.fn())).toBe(1);
+  expect(fixture.sign).toHaveBeenCalledOnce(); expect(send).toHaveBeenCalledOnce(); expect(store.has('tl-pending-ticket:alice')).toBe(false);
+});
+it('an account change during withdrawal approval never prepares or broadcasts it', async () => {
+  const fixture = sponsoredFixture();
+  const sign = fixture.sign.getMockImplementation()!;
+  fixture.sign.mockImplementation(async bytes => { const r = await sign(bytes); account.me = { id: 'bob' } as typeof account.me; return r; });
+  const send = vi.spyOn(Connection.prototype, 'sendRawTransaction');
+  await expect(withdrawCoins(fixture.destination, 1, vi.fn())).rejects.toThrow('Account or coin changed');
+  expect(mocks.api).not.toHaveBeenCalled(); expect(send).not.toHaveBeenCalled();
 });

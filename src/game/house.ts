@@ -65,6 +65,7 @@ async function rpc<T>(cfg: TicketConfig, method: string, params: unknown[]): Pro
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(cfg.verifyKey ? { 'x-rpc-key': cfg.verifyKey } : {}) },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    signal: AbortSignal.timeout(15_000),
   });
   if (!r.ok) throw new Error(`Solana RPC ${method}: HTTP ${r.status}`);
   const j = (await r.json()) as { result?: T; error?: { message: string } };
@@ -190,16 +191,17 @@ export async function sendWire(cfg: TicketConfig, wire: string): Promise<string>
   return rpc<string>(cfg, 'sendTransaction', [wire, { encoding: 'base64', preflightCommitment: 'confirmed', maxRetries: 5 }]);
 }
 
-/** null = not seen yet; otherwise whether it landed ok (and the error if it failed on-chain). */
-export async function txStatus(cfg: TicketConfig, sig: string): Promise<{ ok: boolean; err: unknown } | null> {
+/** null = absent from history; ok:null = processed but not yet confirmed. */
+export async function txStatus(cfg: TicketConfig, sig: string): Promise<{ ok: boolean | null; err: unknown } | null> {
   const r = await rpc<{ value: ({ confirmationStatus: string | null; err: unknown } | null)[] }>(cfg, 'getSignatureStatuses', [[sig], { searchTransactionHistory: true }]);
   const s = r.value[0];
-  if (!s || (s.confirmationStatus !== 'confirmed' && s.confirmationStatus !== 'finalized')) return null;
+  if (!s) return null;
+  if (s.confirmationStatus !== 'confirmed' && s.confirmationStatus !== 'finalized') return { ok: null, err: s.err };
   return { ok: !s.err, err: s.err };
 }
 
 export async function blockHeight(cfg: TicketConfig): Promise<number> {
-  return rpc<number>(cfg, 'getBlockHeight', [{ commitment: 'confirmed' }]);
+  return rpc<number>(cfg, 'getBlockHeight', [{ commitment: 'finalized' }]);
 }
 
 // ---------------------------------------------------------------------------------- sponsored payments
@@ -207,6 +209,22 @@ export interface SponsorCheck {
   /** The memo's price in coins if it was handed to this player (else null: refuse). */
   priceOf: (memo: string) => number | null;
   unitsOf?: (memo: string) => string | null;
+}
+
+function checkSponsoredBudget(data: Uint8Array, accounts: string[]) {
+  // Never let a supplied priority fee drain the treasury. Our normal coin transfers
+  // do not need one; accept only bounded modern compute-limit/price instructions.
+  if (accounts.length) throw new Error('Sponsored compute instructions cannot use accounts.');
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  if (data[0] === 2 && data.length === 5 && view.getUint32(1, true) > 0 && view.getUint32(1, true) <= 400_000) return;
+  if (data[0] === 3 && data.length === 9 && view.getBigUint64(1, true) <= 10_000n) return;
+  throw new Error('Sponsored priority fees exceed the allowed budget.');
+}
+
+async function signedByPlayer(player: string, signature: Uint8Array | null | undefined, message: ArrayLike<number>): Promise<boolean> {
+  if (!signature || signature.length !== 64) return false;
+  const key = await crypto.subtle.importKey('raw', getAddressEncoder().encode(address(player)) as BufferSource, { name: 'Ed25519' }, false, ['verify']);
+  return crypto.subtle.verify('Ed25519', key, signature as BufferSource, new Uint8Array(message));
 }
 
 /**
@@ -238,7 +256,7 @@ export async function cosignPurchase(cfg: TicketConfig, house: House, wireBase64
     const prog = keys[ins.programAddressIndex];
     const acc = (ins.accountIndices ?? []).map((i) => keys[i]);
     const data = ins.data ?? new Uint8Array();
-    if (prog === PROGRAMS.computeBudget) continue; // priority fees: tiny, paid by the house
+    if (prog === PROGRAMS.computeBudget) { checkSponsoredBudget(data, acc); continue; }
     if (prog === PROGRAMS.ata) {
       // only: create the house's own coin account (once), paid by the house
       if (!(data.length === 0 || (data.length === 1 && data[0] === 1))) throw bad('account creation');
@@ -266,7 +284,7 @@ export async function cosignPurchase(cfg: TicketConfig, house: House, wireBase64
   if (price === null) throw bad('memo');
   const exact = check.unitsOf?.(memo);
   if (amount !== (exact ? BigInt(exact) : units(price, m.decimals))) throw bad('amount');
-  if (!tx.signatures[player as Address]) throw bad('not signed by you');
+  if (!(await signedByPlayer(player, tx.signatures[player as Address] as Uint8Array | null, tx.messageBytes))) throw bad('not signed by you');
   const sig = await signBytes(house.signer.keyPair.privateKey, tx.messageBytes);
   const signed = { ...tx, signatures: { ...tx.signatures, [house.address]: sig } };
   const wire = getBase64Decoder().decode(getTransactionEncoder().encode(signed as never));
@@ -300,7 +318,8 @@ export async function cosignWithdrawal(cfg: TicketConfig, house: House, wireBase
     const prog = keys[ins.programAddressIndex];
     const acc = (ins.accountIndices ?? []).map((i) => keys[i]);
     const data = ins.data ?? new Uint8Array();
-    if (prog === PROGRAMS.computeBudget || prog === PROGRAMS.memo) continue;
+    if (prog === PROGRAMS.computeBudget) { checkSponsoredBudget(data, acc); continue; }
+    if (prog === PROGRAMS.memo) continue;
     if (prog === PROGRAMS.ata) {
       if (!allowCreate) throw bad('the destination has no coin account yet; daily limit reached');
       if (!(data.length === 0 || (data.length === 1 && data[0] === 1))) throw bad('account creation');
@@ -313,10 +332,11 @@ export async function cosignWithdrawal(cfg: TicketConfig, house: House, wireBase
     if (prog !== m.program) throw bad('unexpected instruction');
     if (data[0] !== 12 || data.length !== 10 || data[9] !== m.decimals) throw bad('not a transfer');
     if (acc[0] !== playerAta || acc[1] !== cfg.mint || acc[3] !== player) throw bad('transfer accounts');
+    if (new DataView(data.buffer, data.byteOffset + 1, 8).getBigUint64(0, true) === 0n) throw bad('zero amount');
     transfers++;
   }
   if (transfers !== 1 || creates > 1) throw bad('one transfer');
-  if (!tx.signatures[player as Address]) throw bad('not signed by you');
+  if (!(await signedByPlayer(player, tx.signatures[player as Address] as Uint8Array | null, tx.messageBytes))) throw bad('not signed by you');
   const sig = await signBytes(house.signer.keyPair.privateKey, tx.messageBytes);
   const wire = getBase64Decoder().decode(getTransactionEncoder().encode({ ...tx, signatures: { ...tx.signatures, [house.address]: sig } } as never));
   return { wire, signature: getBase58Decoder().decode(sig), created: creates > 0 };

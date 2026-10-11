@@ -145,6 +145,16 @@ it('the signed cost must still fit the user’s reviewed total budget', async ()
   expect(budget).toHaveBeenCalledTimes(2); expect(mock.send).not.toHaveBeenCalled();
 });
 
+it('a receipt from another tab blocks a new coin quote until its transaction resolves', async () => {
+  const store = new Map([[`pumpkart-pending-coin:${wallet.publicKey.toBase58()}`, JSON.stringify({ signature: 'other-tab-signature', lastValid: 100 })]]);
+  vi.stubGlobal('localStorage', { getItem: (key: string) => store.get(key) ?? null, removeItem: (key: string) => store.delete(key) });
+  mock.statuses.mockResolvedValue({ value: [{ err: null, confirmationStatus: 'processed' }] });
+  try {
+    await expect(quoteCoinBuy(0.05)).rejects.toThrow('previous purchase is still pending');
+    expect(mock.build).not.toHaveBeenCalled(); expect(mock.sign).not.toHaveBeenCalled();
+  } finally { vi.unstubAllGlobals(); }
+});
+
 it('uncertain submission retains the transaction and blocks another quote while pending', async () => {
   mock.sign.mockImplementation(async (tx:Transaction)=>{tx.partialSign(wallet);return new Uint8Array(tx.serialize());});
   mock.api.mockResolvedValue({ok:true}); mock.send.mockRejectedValue(new Error('RPC disconnected'));

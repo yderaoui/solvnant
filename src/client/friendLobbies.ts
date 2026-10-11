@@ -5,10 +5,10 @@ import { normalizeFriendCode, friendEntryUsd } from '../game/friendLobbies';
 import { celebrateSettledWin } from './winnerCelebration';
 
 interface FriendView {
-  payout?: { status: string } | null;
+  payout?: { status: string; sig?: string | null } | null;
   tickets: number;
   entryReady?: boolean;
-  refund?: { amount: number; status: string } | null;
+  refund?: { amount: number; status: string; sig?: string | null } | null;
   lobby: { id: string; code: string; status: string; hostedByYou: boolean; seats: number; maxSeats: number; settleBy: number; pot: number; prize: number; youWon: boolean; entry?: { usd: number; coins: number } | null };
   seats: { name: string; you: boolean; racing: boolean; finished: boolean; finishTime: number | null; ready?: boolean }[];
 }
@@ -133,7 +133,8 @@ export function mountFriendLobbies(startRace: (code: string) => void) {
         <p class="small muted">${L.status === 'settled' ? `Results are final. ${L.youWon ? 'You won!' : 'The fastest run won.'}` : L.status === 'refunded' ? entry ? 'Lobby closed. Full coin refunds are sent to the wallets that paid.' : 'Lobby closed. Entered players received their tickets back.' : `Invite up to 4 friends. Entry closes at ${new Date(L.settleBy).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. At least 4 completed runs are needed for a prize; otherwise ${entry ? 'the entry coins are refunded' : 'tickets are returned'}.`}</p>
         <p class="small muted">Each player drives their own run on the same track. Earlier runs appear as ghosts. Winner gets 80% of the pot, 15% is burned, 5% goes to the team. No bots.</p>
         <p class="small">${entry ? '' : `Entry: 1 ticket (${entryLabel}). `}Race pot: ${L.pot.toLocaleString('en-US')} ${sym}</p>
-        ${v.refund ? `<p class="friends-entered">${v.refund.status === 'paid' ? 'Refund paid' : v.refund.status === 'failed' ? 'Refund needs team attention' : 'Refund pending'}: ${v.refund.amount.toLocaleString('en-US')} ${sym} to the wallet that paid.</p>` : ''}
+        ${v.refund ? `<p class="friends-entered">${v.refund.status === 'paid' ? 'Refund paid' : ['failed', 'manual'].includes(v.refund.status) ? 'Refund needs team attention' : 'Refund pending'}: ${v.refund.amount.toLocaleString('en-US')} ${sym} to the wallet that paid.${paymentLink(v.refund.sig)}</p>` : ''}
+        ${L.youWon && v.payout ? `<p class="friends-entered">${v.payout.status === 'paid' ? 'Prize paid' : ['failed', 'manual'].includes(v.payout.status) ? 'Prize needs team attention' : 'Sending your prize'}: ${L.prize.toLocaleString('en-US')} ${sym}.${paymentLink(v.payout.sig)}</p>` : ''}
         ${mine ? `<p class="friends-entered">${mine.racing ? 'Your run has started. You cannot restart it.' : 'Your run is recorded. Check back here for your friends’ results.'}</p>` : closed || (full && !paid) ? `<p class="friends-entered">${closed ? 'This lobby is closed. Create a new lobby to race again.' : 'All seats are taken.'}</p>` : `<button class="btn btn-lime" id="friends-race">${paid ? entry ? 'Start my run · entry paid' : 'Start my run · uses 1 ticket' : entry ? `Pay ${entryLabel} entry` : `Buy 1 ticket for ${entryLabel}`}</button><p class="small muted">${paid ? 'Leaving a started race counts as not finishing.' : entry ? 'Review and approve your coin payment, then start your run. Regular race tickets do not pay a custom lobby entry.' : 'Buying a ticket does not take a seat. Return here to start your run.'}</p>`}
         <a class="hero-link" href="#/race">Back to public races</a>`;
       const copy = async (text: string) => {
@@ -154,9 +155,17 @@ export function mountFriendLobbies(startRace: (code: string) => void) {
       };
       if (focusedId) room.querySelector<HTMLElement>(`#${focusedId}`)?.focus({ preventScroll: true });
       celebrateSettledWin(v);
-      if (!closed || v.refund?.status === 'pending') refreshTimer = setTimeout(() => void load(), 8000);
+      // Crossing the deadline or submitting a wire is not a final result. Keep polling
+      // until the server closes the room and confirms its refund/prize on-chain.
+      if (L.status === 'open' || ['pending', 'sent'].includes(v.refund?.status ?? '') || ['pending', 'sent'].includes(v.payout?.status ?? '')) refreshTimer = setTimeout(() => void load(), 8000);
     } catch (e) {
       if (current()) { status.textContent = (e as Error).message; refreshTimer = setTimeout(() => void load(), 15000); }
     }
   }
+}
+
+function paymentLink(sig?: string | null): string {
+  if (!sig || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(sig)) return '';
+  const dev = account.cfg?.tickets?.cluster === 'devnet' ? '?cluster=devnet' : '';
+  return ` <a href="https://solscan.io/tx/${sig}${dev}" target="_blank" rel="noopener">View transaction ↗</a>`;
 }

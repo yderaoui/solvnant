@@ -27,6 +27,7 @@ interface DOState {
     transactionSync<T>(fn: () => T): T;
     setAlarm(ms: number): Promise<void>;
     getAlarm(): Promise<number | null>;
+    deleteAlarm?(): Promise<void>;
   };
   abort?(reason?: string): void;
 }
@@ -173,6 +174,7 @@ export class Hub {
       'ALTER TABLE lobby_payouts ADD COLUMN parent_lobby TEXT',
     ]) { try { this.sql.exec(ddl); } catch { /* already present */ } }
     this.sql.exec('CREATE INDEX IF NOT EXISTS tickets_lobby ON tickets(lobby_id, uid, used_ref)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS maintenance_status (id INTEGER PRIMARY KEY CHECK(id = 1), started INTEGER, finished INTEGER)');
   }
 
   // ================================================================== routing
@@ -186,7 +188,7 @@ export class Hub {
       throw new Error('restarting with new settings');
     }
     this.lastActivity = Date.now();
-    void this.ensureAlarm();
+    await this.ensureAlarm();
     try {
       if (p.startsWith('/internal/')) return await this.internal(p, req);
       if (p === '/api/admin/coin') return await this.adminCoin(req);
@@ -614,9 +616,9 @@ export class Hub {
     for (const r of rows) {
       if (r.status === 'sent' && r.sig) {
         const st = await txStatus(t, r.sig);
-        if (st?.ok) this.sql.exec("UPDATE lobby_payouts SET status = 'paid', paid_at = ?, error = NULL WHERE lobby = ?", Date.now(), r.lobby);
-        else if (st) this.sql.exec("UPDATE lobby_payouts SET status = 'failed', error = ? WHERE lobby = ?", JSON.stringify(st.err).slice(0, 300), r.lobby);
-        else if ((await blockHeight(t)) > (r.last_valid ?? 0) + 10) this.sql.exec("UPDATE lobby_payouts SET status = 'pending' WHERE lobby = ?", r.lobby); // expired, never landed
+        if (st?.ok === true) this.sql.exec("UPDATE lobby_payouts SET status = 'paid', paid_at = ?, error = NULL WHERE lobby = ?", Date.now(), r.lobby);
+        else if (st?.ok === false) this.sql.exec("UPDATE lobby_payouts SET status = 'failed', error = ? WHERE lobby = ?", JSON.stringify(st.err).slice(0, 300), r.lobby);
+        else if (!st && r.last_valid !== null && (await blockHeight(t)) > r.last_valid + 10) this.sql.exec("UPDATE lobby_payouts SET status = 'pending' WHERE lobby = ?", r.lobby); // finalized expiry, absent from history
         continue;
       }
       if (r.attempts >= 6) {
@@ -651,7 +653,7 @@ export class Hub {
     return Number(row.price);
   }
 
-  private async sponsorPurchase(u: UserRow, b: { tx?: string; coinRevision?: unknown }): Promise<Response> {
+  private async sponsorPurchase(u: UserRow, b: { tx?: string; coinRevision?: unknown; prepareOnly?: boolean }): Promise<Response> {
     const initialProblem = coinActionProblem(this.cfg, b.coinRevision);
     if (initialProblem) return fail(initialProblem, 409);
     const revision = this.cfg.coinLaunch.revision;
@@ -677,6 +679,9 @@ export class Hub {
     const problem = coinActionProblem(this.cfg, revision);
     if (problem) return fail(problem, 409);
     this.sql.exec('INSERT OR IGNORE INTO sponsored (sig, uid, ts) VALUES (?, ?, ?)', out.signature, u.id, Date.now());
+    // The browser saves this signed receipt before broadcasting. A lost preparation response
+    // therefore cannot leave a sent payment whose transaction ID the player never received.
+    if (b.prepareOnly === true) return json({ ok: true, signature: out.signature, wire: out.wire });
     try {
       await sendWire(t, out.wire);
     } catch {
@@ -688,8 +693,9 @@ export class Hub {
   }
 
   /** Withdrawals out of a player's game wallet: the house pays the fee (account creation: once a day). */
-  private async sponsorWithdrawal(u: UserRow, b: { tx?: string }): Promise<Response> {
+  private async sponsorWithdrawal(u: UserRow, b: { tx?: string; prepareOnly?: boolean }): Promise<Response> {
     const t = this.cfg.tickets;
+    const revision = this.cfg.coinLaunch.revision;
     const house = await this.house();
     if (!t || !house) return fail('Sponsored fees are not available.');
     const day = Date.now() - 86_400_000;
@@ -701,8 +707,10 @@ export class Hub {
     } catch (e) {
       return fail((e as Error).message);
     }
+    if (this.cfg.coinLaunch.revision !== revision || this.cfg.tickets?.mint !== t.mint) return fail('Coin settings changed during withdrawal. Nothing was sent. Try again.', 409);
     this.sql.exec('INSERT OR IGNORE INTO sponsored (sig, uid, ts) VALUES (?, ?, ?)', out.signature, u.id, Date.now());
     if (out.created) this.sql.exec('INSERT OR IGNORE INTO sponsored (sig, uid, ts) VALUES (?, ?, ?)', `create:${out.signature}`, u.id, Date.now());
+    if (b.prepareOnly === true) return json({ ok: true, signature: out.signature, wire: out.wire });
     try {
       await sendWire(t, out.wire);
     } catch {
@@ -806,6 +814,7 @@ export class Hub {
       if (this.cfg.coinLaunch.revision !== revision) return fail('Launch settings changed during verification. Retry.', 409);
       return json({ coinLaunch: this.cfg.coinLaunch, mint: this.cfg.tickets.mint, symbol: this.cfg.tickets.symbol,
         paidReady: !problem, paidProblem: problem, ...(friendLobby ? { friendLobby } : {}),
+        maintenance: { serverNow: Date.now(), alarmAt: await this.state.storage.getAlarm(), lastRun: this.sql.exec('SELECT started, finished FROM maintenance_status WHERE id = 1').toArray()[0] ?? null },
         outstanding: {
           openLobbies: Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobbies WHERE status = 'open'").one().n),
           payouts: Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobby_payouts WHERE status IN ('pending','sent','failed','manual')").one().n),
@@ -1050,12 +1059,12 @@ export class Hub {
     const s = this.lobbySplit(id);
     const unstarted = l.entry_units ? this.sql.exec('SELECT u.id, u.name FROM tickets t JOIN users u ON u.id = t.uid WHERE t.lobby_id = ? AND t.used_ref IS NULL ORDER BY t.ts', id).toArray() : [];
     const ready = unstarted.some(r => r.id === uid);
-    const refunds = this.sql.exec("SELECT prize, status FROM lobby_payouts WHERE parent_lobby = ? AND uid = ? AND kind = 'refund'", id, uid).toArray();
+    const refunds = this.sql.exec("SELECT prize, status, sig FROM lobby_payouts WHERE parent_lobby = ? AND uid = ? AND kind = 'refund'", id, uid).toArray();
     const po = this.sql.exec('SELECT status, sig FROM lobby_payouts WHERE lobby = ?', id).toArray()[0] as { status: string; sig: string | null } | undefined;
     return {
-      payout: po ? { status: po.status, sig: po.status === 'paid' ? po.sig : null } : null,
+      payout: po ? { status: po.status, sig: po.sig } : null,
       entryReady: ready,
-      refund: refunds.length ? { amount: refunds.reduce((sum, r) => sum + Number(r.prize), 0), status: refunds.every(r => r.status === 'paid') ? 'paid' : refunds.some(r => r.status === 'failed' || r.status === 'manual') ? 'failed' : 'pending' } : null,
+      refund: refunds.length ? { amount: refunds.reduce((sum, r) => sum + Number(r.prize), 0), status: refunds.every(r => r.status === 'paid') ? 'paid' : refunds.some(r => r.status === 'failed' || r.status === 'manual') ? 'failed' : 'pending', sig: refunds.length === 1 ? refunds[0].sig : null } : null,
       lobby: { id: l.id, code: l.invite_code ?? null, hostedByYou: l.host_uid === uid, status: l.status, created: l.created, settleBy: l.created + SETTLE_AFTER_MS, seats: runs.length + unstarted.length, maxSeats: SEATS, price: l.price, entry: l.entry_units ? { usd: l.entry_usd, coins: Number(l.entry_units) / 10 ** (this.cfg.tickets?.decimals ?? 6) } : null, pot: s.pot, prize: s.prize, youWon: l.status === 'settled' && l.winner === uid },
       seats: [...seats, ...unstarted.map(r => ({ name: String(r.name), color: PLAYER_COLORS[0], skin: DEFAULT_SKIN, you: r.id === uid, racing: false, finished: false, finishTime: null, progress: 0, note: null, ready: true }))],
     };
@@ -1359,11 +1368,18 @@ export class Hub {
 
   // ================================================================== background: league markets + clean-up
   private async ensureAlarm() {
-    if ((await this.state.storage.getAlarm()) === null) await this.state.storage.setAlarm(Date.now() + 5_000);
+    const scheduled = await this.state.storage.getAlarm();
+    // After exhausted platform retries, an old timestamp can remain set. It is not
+    // evidence of a healthy worker. Re-arm it without waiting for a player lobby view.
+    if (scheduled === null || scheduled < Date.now() - 120_000) await this.state.storage.setAlarm(Date.now() + 5_000);
   }
 
   async alarm() {
     const now = Date.now();
+    // Persist the next wake-up before RPC/database awaits. An outage must not silently
+    // stop expiry refunds after the browser leaves or exhaust platform alarm retries.
+    await this.state.storage.setAlarm(now + 60_000);
+    this.sql.exec('INSERT OR REPLACE INTO maintenance_status (id, started, finished) VALUES (1, ?, NULL)', now);
     // Live pots whose race never finished (server restarted mid-race): refund the entry fees.
     for (const r of this.sql.exec("SELECT ref FROM live_pots WHERE status IN ('lobby','open') AND created < ?", now - LIVE_POT_TIMEOUT_MS).toArray()) this.voidLivePot(String(r.ref));
     for (const r of this.sql.exec("SELECT id FROM markets WHERE kind = 'live' AND status IN ('open','closed') AND created < ?", now - LIVE_POT_TIMEOUT_MS).toArray())
@@ -1388,7 +1404,10 @@ export class Hub {
       Number(this.sql.exec("SELECT COUNT(*) AS n FROM markets WHERE status IN ('open','closed')").one().n) +
       Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobbies WHERE status = 'open'").one().n) +
       Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobby_payouts WHERE status IN ('pending','sent')").one().n);
-    if (pending > 0 || now - this.lastActivity < 3600_000) await this.state.storage.setAlarm(now + 60_000);
+    const sent = Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobby_payouts WHERE status = 'sent'").one().n);
+    if (pending > 0 || now - this.lastActivity < 3600_000) await this.state.storage.setAlarm(Date.now() + (sent ? 10_000 : 60_000));
+    else await this.state.storage.deleteAlarm?.();
+    this.sql.exec('UPDATE maintenance_status SET finished = ? WHERE id = 1', Date.now());
   }
 
   private async supa<T>(path: string, body?: unknown): Promise<T> {
@@ -1397,6 +1416,7 @@ export class Hub {
       method: body === undefined ? 'GET' : 'POST',
       headers: { apikey: s.key, authorization: `Bearer ${s.key}`, 'content-type': 'application/json', prefer: 'return=representation' },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(8_000),
     });
     if (!r.ok) throw new Error(`Supabase ${r.status}`);
     return (await r.json()) as T;
@@ -1448,7 +1468,7 @@ export class Hub {
           now,
         );
     }
-    const due = this.sql.exec("SELECT id FROM markets WHERE kind = 'league' AND status IN ('open','closed') AND settle_after IS NOT NULL AND settle_after < ?", now).toArray();
+    const due = this.sql.exec("SELECT id FROM markets WHERE kind = 'league' AND status IN ('open','closed') AND settle_after IS NOT NULL AND settle_after < ? ORDER BY settle_after LIMIT 4", now).toArray();
     for (const d of due) {
       const raceId = String(d.id).split(':')[1];
       const res = await this.supa<{ car: number; position: number }[]>(`race_results?select=car,position&race_id=eq.${raceId}&position=eq.1`);

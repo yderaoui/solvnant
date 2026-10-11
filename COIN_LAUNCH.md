@@ -250,6 +250,16 @@ priority fee and longer node forwarding retries. Funded devnet testing of the ac
 client path delivered exactly 2 test coins through preparation, signing, broadcast and
 confirmation. An unsigned mainnet simulation of the owner's 2-coin transfer also succeeded;
 it spent nothing. The owner's actual mainnet withdrawal still needs confirmation.
+Release Worker `58ca718e-2c1e-4f80-8c86-ad22c53a1cf7` and frontend
+`solvnant-oyj2i3wlx-yousser-ayman.vercel.app` are published. The domain's served
+assets contain the expiry check, immediate receipt link and longer forwarding retries.
+212 regression tests, build, actual funded devnet client withdrawal and browser UI
+checks passed. UI checks cover account refresh preserving the active status, immediate
+receipt, enabled Check withdrawal on pending, and 375/768/1440 widths. Recovery tests
+verify identical wire bytes are resent without a second signature or co-sign request.
+The owner was instructed to refresh, check the old receipt, then approve a fresh
+2-coin withdrawal only after the old transaction is proven expired. Keep pending
+receipts; do not instruct them to erase local storage or pay again blindly.
 
 183 regression tests in 26 files, TypeScript/build, Worker dry-run, mobile/desktop
 browser fixtures and real unsigned PumpSwap simulation passed. The quote/fee review

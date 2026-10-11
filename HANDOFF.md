@@ -43,6 +43,12 @@ KOL shown as a racer.
   generated on recovery. Operations inspection can retrieve only public sponsored receipt
   IDs for a requested public payment wallet. Worker `58ca718e-2c1e-4f80-8c86-ad22c53a1cf7`,
   SERVER_RELEASE `2026-10-12-withdrawal-check-3`. Live mainnet withdrawal remains pending.
+  Frontend `solvnant-oyj2i3wlx-yousser-ayman.vercel.app` is Ready; live assets expose
+  receipt links, approval-expiry checks and longer retries. 212 tests and build pass;
+  funded devnet actual-client withdrawal and mobile/desktop UI checks pass, including
+  keeping an active status attached during account refresh. The owner was asked to
+  refresh, check the old pending receipt, then approve a fresh 2-coin withdrawal only
+  after proven expiry. Never clear storage or re-sign blindly while pending.
 
 - **Payment audit and real solo refund (October 12 Casablanca):** Worker
   `deb3e24e-479c-46ea-9ce9-902e09891c95`, SERVER_RELEASE

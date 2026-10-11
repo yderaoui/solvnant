@@ -59,6 +59,13 @@ it('insufficient SOL stops before asking for approval', async () => {
   expect(mock.sign).not.toHaveBeenCalled(); expect(mock.send).not.toHaveBeenCalled();
 });
 
+it('a failed additional cost review prevents wallet signing and submission', async () => {
+  const review = vi.fn().mockRejectedValue(new Error('Test spending limit exceeded'));
+  await expect(approveCoinBuy(quote(), vi.fn(), review)).rejects.toThrow('spending limit');
+  expect(review).toHaveBeenCalledOnce();
+  expect(mock.sign).not.toHaveBeenCalled(); expect(mock.send).not.toHaveBeenCalled();
+});
+
 it('a confirmed coin purchase broadcasts once and reports the actual signed transaction ID', async () => {
   mock.sign.mockImplementation(async (tx:Transaction)=>{tx.partialSign(wallet);return new Uint8Array(tx.serialize());});
   mock.api.mockResolvedValue({ok:true}); mock.send.mockResolvedValue('rpc-response');

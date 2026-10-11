@@ -51,15 +51,24 @@ units). At that quote, maximum coin cost was 0.00101 SOL, network fee 0.000005 S
 and simulated total wallet debit 0.003865039 SOL including account setup. The quote
 is temporary; review a fresh quote and wallet approval screen before sending.
 
-A local coin-buy-only page is prepared at `http://localhost:5173/scratch/private-coin-buy.html`.
-It uses the real Hub with an in-memory database and the existing Privy app. Its API
-binds to loopback port 8794 and blocks ticket payments, paid races and withdrawals.
-Browser startup, the fixed 0.001 SOL input, authentication guards and blocked endpoints
-passed. Privy's X sign-in dialog also opened without browser errors; actual authenticated
-purchase is still pending. The page checks the signed-in wallet against the confirmed
-player address. Public configuration still reports buying paused. This is preparation, not a
-completed real purchase or the full five-player payment test. The scratch files are
-gitignored and require the local helper server to be running.
+The initial localhost page opened Privy, but the owner's fresh X authorization failed.
+Privy's app and OAuth-init requests returned HTTP 200 and used the documented HTTPS
+callback; the exact X-side rejection is not known. The owner confirmed the main site's
+existing X session and funded wallet still work. Fresh X login remains a release check.
+
+The replacement coin-buy-only page is `https://www.pumpkart.racing/private-coin-check.html`.
+It shares the main site's existing session and Privy wallet. A free off-chain ownership
+signature, bound to that game session, restricts its isolated API to the confirmed owner
+wallet. Proofs expire after 15 minutes; the entire temporary check closes at
+2026-10-12 16:30 UTC. Its API validates the real Privy-backed game session through the
+production `/api/me`, but never changes production coin settings or submits transactions.
+No house signer, ticket payments, paid races or withdrawals are available in this flow.
+The purchase input is fixed at 0.001 SOL. An unsigned simulation runs at review and again
+before wallet approval; a conservative cost check must fit 0.005 SOL including account
+setup and fees. The original coin-buy flow retains its stale-quote, pending-transaction,
+launch-revision and 0.01 SOL balance-buffer checks. Owner approval is still required.
+Public buying stays paused. This is preparation, not a completed real purchase or the
+full five-player payment test.
 
 ## Simple checklist for the owner
 
@@ -82,7 +91,7 @@ on the new domain; full address persistence and real coin transactions remain to
 4. **Publish the private test version with Codex.** Keep GitHub, Vercel and Cloudflare
    available on this computer. Codex prepares a separate test site/server and deploys the
    current changes. Public coin buying stays paused; the temporary coin is used only in testing.
-   A local coin-buy-only check is prepared; a complete isolated paid-race deployment
+   A coin-buy-only check on the main origin is prepared; a complete isolated paid-race deployment
    has not yet been done.
 5. **Supply a temporary pump.fun coin's CA.** Codex verifies compatibility first.
    Agree a small real-SOL test budget, then fund disposable test wallets. The game wallet
@@ -101,7 +110,7 @@ on the new domain; full address persistence and real coin transactions remain to
    purchase/race/payout/withdrawal check before opening buying to players. The temporary
    coin's test database is not copied into production.
 
-**Next: sign into the local page with the same X account, review a fresh 0.001 SOL quote, and approve it in the wallet only after reviewing the cost.** The CA is already supplied and verified. No passwords, wallet keys
+**Next: open the private page on the main site in the signed-in browser, verify ownership for free, review a fresh 0.001 SOL quote, and approve it in the wallet only after reviewing the cost.** The CA is already supplied and verified. No passwords, wallet keys
 or account secrets are needed in chat.
 
 ## Advance setup

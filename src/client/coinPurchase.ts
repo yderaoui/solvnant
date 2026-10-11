@@ -25,7 +25,7 @@ export async function quoteCoinBuy(sol: number): Promise<CoinQuote> {
   return { ...q, mint: fresh.tickets.mint, symbol: fresh.tickets.symbol, decimals: fresh.tickets.decimals, address: wallet.address, revision: fresh.coinLaunch.revision, ticket: fresh.tickets, expires: Date.now() + 30_000, sol };
 }
 
-export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void): Promise<string> {
+export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void, reviewTransaction?: (tx: import('@solana/web3.js').Transaction, conn: import('@solana/web3.js').Connection) => Promise<void>): Promise<string> {
   if (Date.now() > q.expires) throw new Error('This quote expired. Get a fresh quote before buying.');
   const guard = () => account.api('/api/coin/preflight', { mint: q.mint, coinRevision: q.revision, purpose: 'coin' });
   await guard();
@@ -43,6 +43,7 @@ export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void)
   const fee = (await conn.getFeeForMessage(tx.compileMessage())).value;
   if (fee === null) throw new Error('Could not estimate network fees. Refresh your quote.');
   if (await conn.getBalance(new PublicKey(wallet.address)) < q.maxLamports + fee + 10_000_000) throw new Error('Keep at least 0.01 SOL beyond the purchase amount for network fees and account setup.');
+  if (reviewTransaction) await reviewTransaction(tx, conn);
   await guard();
   step('Approve the coin purchase in your wallet.');
   let signature: string;

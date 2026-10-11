@@ -46,10 +46,21 @@ KOL shown as a racer.
   Read-only mainnet balance: 0.188229983 SOL. Actual 0.001 SOL PumpSwap unsigned
   simulation passed: 0.003865039 SOL total debit including account setup and
   0.000005 SOL network fee; max coin cost 0.00101 SOL. A fresh quote still needs
-  owner wallet approval. A local coin-buy-only page/server is prepared in gitignored
-  scratch files (localhost:5173 page, loopback API port 8794, in-memory Hub, same Privy).
-  Browser startup, blocked-payment/auth checks and the Privy X sign-in dialog passed.
-  The page checks that the signed-in wallet matches this player; public buying remains paused.
+  owner wallet approval. The localhost check opened Privy but fresh X authorization
+  failed; the exact X rejection is unknown. Owner confirmed the existing main-site
+  session and wallet still work. Fresh X login remains an outstanding release check.
+  Replacement page: `/private-coin-check.html` on www.pumpkart.racing, sharing the
+  existing session. Isolated `/api/private-coin-check` requires a real Privy-backed
+  game session and a free, session-bound ownership signature from this exact wallet.
+  Proof lifetime: 15 minutes. Entire test closes 2026-10-12 16:30 UTC. No production
+  launch changes, house keys, ticket payments, races, withdrawals or server broadcasts.
+  Fixed 0.001 SOL buy; unsigned cost simulation at review and before signing must
+  conservatively fit 0.005 SOL. Public buying remains paused.
+  Validation: 133 tests pass, production build passes. Browser fixture checks reject
+  a different wallet and reach a real read-only PumpSwap quote/unsigned cost review
+  without page errors or transaction submission. Actual owner message/purchase
+  approval and confirmation are still pending. This avoids a second X login; it does
+  not establish that fresh X authorization now works.
   Full isolated paid-race testing is not provisioned. The official client coin is still pending.
 
 - **Backend published (2026-10-11):** Worker version

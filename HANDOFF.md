@@ -42,10 +42,14 @@ KOL shown as a racer.
   Latest screenshot shows about 0.1882 SOL, up from 0.0020 SOL. Funding does not
   authorize spending the entire balance. Proposed first buy is 0.001 SOL plus reviewed
   account/network costs, preserving the 0.01 SOL buffer. No transaction was signed/sent.
-  Full player address is pending: owner supplied the treasury instead of the pictured
-  `4tWo1p...C6AGpH` wallet. A local coin-buy-only page/server is prepared in gitignored
+  Player address is confirmed: `4tWo1pQfrtFbw94HW9NScGmmWNH2Y8u7D9DGxPC6AGpH`.
+  Read-only mainnet balance: 0.188229983 SOL. Actual 0.001 SOL PumpSwap unsigned
+  simulation passed: 0.003865039 SOL total debit including account setup and
+  0.000005 SOL network fee; max coin cost 0.00101 SOL. A fresh quote still needs
+  owner wallet approval. A local coin-buy-only page/server is prepared in gitignored
   scratch files (localhost:5173 page, loopback API port 8794, in-memory Hub, same Privy).
-  Browser startup and blocked-payment/auth checks passed; public buying remains paused.
+  Browser startup, blocked-payment/auth checks and the Privy X sign-in dialog passed.
+  The page checks that the signed-in wallet matches this player; public buying remains paused.
   Full isolated paid-race testing is not provisioned. The official client coin is still pending.
 
 - **Backend published (2026-10-11):** Worker version
@@ -64,7 +68,7 @@ KOL shown as a racer.
   on-chain transaction submitted by deployment checks. X login and wallet display
   are confirmed by owner screenshots; full copied-address persistence still needs
   confirmation. Isolated temporary-coin/mainnet checks remain outstanding and need
-  the correct player address and reviewed spending approval. The test CA is supplied
+  an owner-approved real purchase and subsequent payment/race checks. The test CA is supplied
   and verified. Do not put a random test coin into
   the public production configuration.
 

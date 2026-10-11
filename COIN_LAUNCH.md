@@ -43,14 +43,21 @@ The latest owner screenshot shows approximately **0.1882 SOL**, up from 0.0020 S
 Funding is not approval to spend the entire balance. The first proposed purchase is
 **0.001 SOL**, with network/account setup costs reviewed before wallet approval and
 the existing **0.01 SOL retained buffer** preserved. No transaction was signed or sent.
-The full player address still needs confirmation: the supplied `WXzD5...` address is
-the production treasury, not the pictured `4tWo1p...C6AGpH` player wallet.
+The owner confirmed the player address as
+`4tWo1pQfrtFbw94HW9NScGmmWNH2Y8u7D9DGxPC6AGpH`; mainnet RPC shows 0.188229983 SOL.
+The previously supplied `WXzD5...` address is the production treasury (0.00089088 SOL).
+An unsigned simulation of the actual 0.001 SOL PumpSwap buy passed (118,370 compute
+units). At that quote, maximum coin cost was 0.00101 SOL, network fee 0.000005 SOL,
+and simulated total wallet debit 0.003865039 SOL including account setup. The quote
+is temporary; review a fresh quote and wallet approval screen before sending.
 
 A local coin-buy-only page is prepared at `http://localhost:5173/scratch/private-coin-buy.html`.
 It uses the real Hub with an in-memory database and the existing Privy app. Its API
 binds to loopback port 8794 and blocks ticket payments, paid races and withdrawals.
 Browser startup, the fixed 0.001 SOL input, authentication guards and blocked endpoints
-passed. Public configuration still reports buying paused. This is preparation, not a
+passed. Privy's X sign-in dialog also opened without browser errors; actual authenticated
+purchase is still pending. The page checks the signed-in wallet against the confirmed
+player address. Public configuration still reports buying paused. This is preparation, not a
 completed real purchase or the full five-player payment test. The scratch files are
 gitignored and require the local helper server to be running.
 
@@ -94,7 +101,7 @@ on the new domain; full address persistence and real coin transactions remain to
    purchase/race/payout/withdrawal check before opening buying to players. The temporary
    coin's test database is not copied into production.
 
-**Next: confirm the full player wallet address, estimate the first buy's costs, and review it before wallet approval.** The CA is already supplied and verified. No passwords, wallet keys
+**Next: sign into the local page with the same X account, review a fresh 0.001 SOL quote, and approve it in the wallet only after reviewing the cost.** The CA is already supplied and verified. No passwords, wallet keys
 or account secrets are needed in chat.
 
 ## Advance setup

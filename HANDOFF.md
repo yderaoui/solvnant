@@ -58,7 +58,7 @@ KOL shown as a racer.
   client CA is pending. See COIN_LAUNCH.md for the exact player steps and switch procedure.
 
 - **Backend published (2026-10-11):** Worker version
-  `0b50141d-51d5-4c7c-b9bd-0f7e45e108f3` at the existing Worker URL.
+  `80661041-ebc0-4023-b4e2-951ad830ae30` at the existing Worker URL.
   Server Pump SDK reads now explicitly select the configured cluster on the verification
   proxy; previously a missing cluster query incorrectly read devnet during mainnet activation.
   Real server-proxy mainnet verification and runtime prepare/enable both passed.
@@ -84,7 +84,7 @@ KOL shown as a racer.
   Twitter option; published-page checks at 375/768/1440 px found no page errors or CSP
   violations. Completing OAuth and signing a purchase still require the owner/client.
   Deployment verification and exact player steps are recorded in COIN_LAUNCH.md.
-  Latest production frontend: `solvnant-dk0zn25pi-yousser-ayman.vercel.app`.
+  Latest production frontend: `solvnant-hij93z7rt-yousser-ayman.vercel.app`.
   Account-scoped payment receipts survive RPC/login errors and block duplicate
   checkout while pending. Withdrawals keep known signatures before broadcast, show
   pending honestly and check the same signature on retry; finalized expiry/history
@@ -92,6 +92,12 @@ KOL shown as a racer.
   receipt. A shared team/treasury devnet payout verified exactly 5% retained.
   `prepare ... --test-paid` opens a labeled full test only after `enable` checks
   the payout signer, team address, live USD price and 0.02 SOL starting reserve.
+  Privy?s signing hook resolves only when its receipt window closes. The success
+  receipt now says "Approval signed" and tells the player to click Close promptly;
+  signing alone does not broadcast. Thirty-second quote expiry and final revision
+  guards remain enforced. The owner supplied a signed-receipt screenshot and reports
+  Coins received, but mainnet RPC checks still show no test-coin ATA or new purchase
+  in the supplied wallet; a completed mainnet purchase is not verified yet.
   Historical implementation notes below are not proof of mainnet completion.
 
 - **New domain connected: `pumpkart.racing` through Cloudflare.** The owner attached

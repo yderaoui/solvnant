@@ -22,7 +22,7 @@ it('checks the configured chain through the authenticated proxy and accepts the 
   expect(url.searchParams.get('cluster')).toBe('mainnet-beta');
   expect(url.searchParams.get('existing')).toBe('1');
   expect(init.headers).toMatchObject({ 'x-rpc-key': 'fixture-only' });
-  expect(JSON.parse(init.body as string).params).toEqual([treasury, 'confirmed']);
+  expect(JSON.parse(init.body as string).params).toEqual([treasury, { commitment: 'confirmed' }]);
 });
 it.each([null, -1, '20000000', 1.5])('fails closed when the balance response is malformed (%s)', async value => {
   expect(await paidReadinessProblem(cfg, treasury, team, rpc(value))).toContain('Cannot verify');

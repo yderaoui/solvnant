@@ -20,8 +20,8 @@ paid ticket, cosmetic and friend-lobby payments/entries. Public configuration ex
 no fee sponsor in this stage. Practice and play-point modes remain available.
 **Live activation verified on 2026-10-11:** `/api/config` reports status live,
 buyEnabled true, mode test, paidEnabled false, sponsor null and the exact test mint.
-Revision: `coin_1sF8rStR3xEUU7iV`. Worker: `0b50141d-51d5-4c7c-b9bd-0f7e45e108f3`.
-Frontend production deployment: `solvnant-dk0zn25pi-yousser-ayman.vercel.app`.
+Revision: `coin_1sF8rStR3xEUU7iV`. Worker: `80661041-ebc0-4023-b4e2-951ad830ae30`.
+Frontend production deployment: `solvnant-hij93z7rt-yousser-ayman.vercel.app`.
 Changing client copy alone does not open payments.
 
 1. Open **https://www.pumpkart.racing/#/buy** and sign in with your existing X account.
@@ -35,6 +35,10 @@ Changing client copy alone does not open payments.
 5. Click **Approve purchase**, then review and approve the transaction in Privy.
    Approval is a transaction signature; the site broadcasts only after its final
    launch/quote checks. Cancel if the amount or wallet differs from your expectation.
+   **Click Close in Privy immediately after signing.** Privy's SDK only returns the
+   signed transaction to PumpKart when that receipt window closes. Signing alone
+   does not send a purchase; leaving the window open can expire the 30-second quote.
+   The wallet receipt now explains this instead of saying "You're all set."
 6. Wait for **Coins received** and open **View transaction**. Give Codex the public
    transaction link/signature to verify the mint, receiver and wallet debit on-chain.
 7. If the page says pending or uncertain, check that transaction before buying again.

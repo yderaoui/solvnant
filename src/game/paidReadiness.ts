@@ -19,7 +19,7 @@ export async function paidReadinessProblem(
     const r = await fetchFn(url, {
       method: 'POST', signal: AbortSignal.timeout(12_000),
       headers: { 'content-type': 'application/json', ...(t.verifyKey ? { 'x-rpc-key': t.verifyKey } : {}) },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [t.treasury, 'confirmed'] }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [t.treasury, { commitment: 'confirmed' }] }),
     });
     const j = await r.json() as { result?: { value?: number }; error?: unknown };
     const value = j.result?.value;

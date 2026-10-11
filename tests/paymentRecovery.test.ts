@@ -110,7 +110,7 @@ it('unlocks an expired withdrawal only after finalized chain height and history 
 it('saves the withdrawal signature before broadcasting and never signs twice after an uncertain send', async () => {
   const player = Keypair.generate(); // Disposable unfunded fixture, never sent to a network.
   const mint = 'So11111111111111111111111111111111111111112';
-  account.cfg = { tickets: { mint, cluster: 'devnet', symbol: '$TEST', rpcUrl: 'https://rpc.fixture' }, sponsor: null } as typeof account.cfg;
+  account.cfg = { ...account.cfg!, tickets: { mint, treasury: mint, decimals: 6, price: 1, cluster: 'devnet', symbol: '$TEST', rpcUrl: 'https://rpc.fixture' } };
   const sign = vi.fn(async bytes => {
     const tx = Transaction.from(bytes);
     tx.partialSign(player);

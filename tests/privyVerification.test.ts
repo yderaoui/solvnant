@@ -38,6 +38,8 @@ it('opens visible cancellable transaction approval for the selected embedded wal
   expect(await selected.sign(transaction)).toBe(transaction);
   expect(sdk.signTransaction).toHaveBeenCalledWith({ transaction, wallet: sdk.embedded, chain: 'solana:mainnet', options: { uiOptions: {
     showWalletUIs: true, isCancellable: true, description: 'Review your PumpKart payment before signing.', buttonText: 'Approve payment',
+    successHeader: 'Approval signed',
+    successDescription: 'Click Close now to finish your payment in PumpKart. Signing alone does not send it. Wait for confirmation on the PumpKart page.',
   } } });
   expect(sdk.directSign).not.toHaveBeenCalled(); expect(sdk.send).not.toHaveBeenCalled();
 });

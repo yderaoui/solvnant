@@ -83,11 +83,11 @@ export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void,
   if (reviewTransaction) await reviewTransaction(tx, conn);
   await guard();
   if (Date.now() > q.expires) throw new Error('This quote expired. Review a fresh price. Nothing was sent.');
-  step('Approve the coin purchase in your wallet.');
+  step('Approve in your wallet, then click Close to finish the purchase here.');
   let signature: string;
   if (wallet.signOnly) {
     const bytes = await wallet.signOnly(tx);
-    if (Date.now() > q.expires) throw new Error('Quote expired during approval. Nothing was sent. Get a new quote.');
+    if (Date.now() > q.expires) throw new Error('Quote expired during wallet approval. Nothing was sent. Review a fresh price, approve, then click Close in the wallet promptly.');
     await guard();
     const signed = Transaction.from(bytes);
     if (!signed.signature) throw new Error('The wallet did not sign the purchase.');

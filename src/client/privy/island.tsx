@@ -42,6 +42,8 @@ function Bridge({ chain, onState }: { chain: SolanaChain; onState: (s: PrivyStat
             sign: async (tx) => (await signTransaction({ transaction: tx, wallet: pick, chain, options: { uiOptions: {
               showWalletUIs: true, isCancellable: true,
               description: 'Review your PumpKart payment before signing.', buttonText: 'Approve payment',
+              successHeader: 'Approval signed',
+              successDescription: 'Click Close now to finish your payment in PumpKart. Signing alone does not send it. Wait for confirmation on the PumpKart page.',
             } } })).signedTransaction,
           }
         : null,

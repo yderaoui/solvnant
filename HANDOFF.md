@@ -39,11 +39,14 @@ KOL shown as a racer.
   `$RACE` CA `BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump`. Actual
   `verifyPumpCoin` mainnet reads passed: six decimals, supported authorities/extensions,
   graduated curve and canonical SOL-paired PumpSwap pool. Production remains paused.
-  Owner-approved spending is capped at the current wallet balance (screenshot about
-  0.0020 SOL), below the current minimum buy plus 0.01 SOL buffer and fees. Do not
-  raise the cap or bypass the balance guard without authorization. No transaction
-  was signed/sent. Paid testing needs sufficient funds and a higher approved cap;
-  isolated testing has not yet been provisioned. The official client coin is still pending.
+  Latest screenshot shows about 0.1882 SOL, up from 0.0020 SOL. Funding does not
+  authorize spending the entire balance. Proposed first buy is 0.001 SOL plus reviewed
+  account/network costs, preserving the 0.01 SOL buffer. No transaction was signed/sent.
+  Full player address is pending: owner supplied the treasury instead of the pictured
+  `4tWo1p...C6AGpH` wallet. A local coin-buy-only page/server is prepared in gitignored
+  scratch files (localhost:5173 page, loopback API port 8794, in-memory Hub, same Privy).
+  Browser startup and blocked-payment/auth checks passed; public buying remains paused.
+  Full isolated paid-race testing is not provisioned. The official client coin is still pending.
 
 - **Backend published (2026-10-11):** Worker version
   `5188d8fb-9799-4fde-bbdb-b5097d402d32` is live at the existing Worker URL.
@@ -61,7 +64,8 @@ KOL shown as a racer.
   on-chain transaction submitted by deployment checks. X login and wallet display
   are confirmed by owner screenshots; full copied-address persistence still needs
   confirmation. Isolated temporary-coin/mainnet checks remain outstanding and need
-  a CA and an owner-approved spending budget. Do not put a random test coin into
+  the correct player address and reviewed spending approval. The test CA is supplied
+  and verified. Do not put a random test coin into
   the public production configuration.
 
 - **Frontend published (2026-10-11):** project work is pushed to GitHub `main`; Vercel

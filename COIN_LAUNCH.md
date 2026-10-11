@@ -39,12 +39,20 @@ these release checks. See `PREDEPLOY_CHECK.md` for the verification limits.
 Read-only verification through the actual `verifyPumpCoin` code passed on mainnet:
 six decimals, supported mint settings and a canonical SOL-paired **PumpSwap** pool.
 It has graduated from its pump.fun bonding curve. No production activation occurred.
-The owner capped test spending at the wallet's current balance, shown as approximately
-**0.0020 SOL**. This is below the current buy flow's **0.001 SOL minimum purchase plus
-0.01 SOL retained buffer**, maximum-cost slippage and network fee. Do not increase that
-budget or bypass the guard. No quote was signed and no transaction was submitted.
-Paid testing is pending sufficient funds and an explicitly approved higher budget;
-read-only or free devnet checks can continue within the current cap.
+The latest owner screenshot shows approximately **0.1882 SOL**, up from 0.0020 SOL.
+Funding is not approval to spend the entire balance. The first proposed purchase is
+**0.001 SOL**, with network/account setup costs reviewed before wallet approval and
+the existing **0.01 SOL retained buffer** preserved. No transaction was signed or sent.
+The full player address still needs confirmation: the supplied `WXzD5...` address is
+the production treasury, not the pictured `4tWo1p...C6AGpH` player wallet.
+
+A local coin-buy-only page is prepared at `http://localhost:5173/scratch/private-coin-buy.html`.
+It uses the real Hub with an in-memory database and the existing Privy app. Its API
+binds to loopback port 8794 and blocks ticket payments, paid races and withdrawals.
+Browser startup, the fixed 0.001 SOL input, authentication guards and blocked endpoints
+passed. Public configuration still reports buying paused. This is preparation, not a
+completed real purchase or the full five-player payment test. The scratch files are
+gitignored and require the local helper server to be running.
 
 ## Simple checklist for the owner
 
@@ -67,7 +75,8 @@ on the new domain; full address persistence and real coin transactions remain to
 4. **Publish the private test version with Codex.** Keep GitHub, Vercel and Cloudflare
    available on this computer. Codex prepares a separate test site/server and deploys the
    current changes. Public coin buying stays paused; the temporary coin is used only in testing.
-   This setup and deployment have not yet been done.
+   A local coin-buy-only check is prepared; a complete isolated paid-race deployment
+   has not yet been done.
 5. **Supply a temporary pump.fun coin's CA.** Codex verifies compatibility first.
    Agree a small real-SOL test budget, then fund disposable test wallets. The game wallet
    and house fee wallet both need funding for their respective operations; Codex checks this.
@@ -85,7 +94,7 @@ on the new domain; full address persistence and real coin transactions remain to
    purchase/race/payout/withdrawal check before opening buying to players. The temporary
    coin's test database is not copied into production.
 
-**Next: resolve the insufficient test budget, then prepare isolated testing.** The CA is already supplied and verified. No passwords, wallet keys
+**Next: confirm the full player wallet address, estimate the first buy's costs, and review it before wallet approval.** The CA is already supplied and verified. No passwords, wallet keys
 or account secrets are needed in chat.
 
 ## Advance setup

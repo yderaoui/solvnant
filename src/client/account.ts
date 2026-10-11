@@ -258,6 +258,7 @@ function renderMenu(toast: (t: string) => void) {
     return;
   }
   const dailyIn = me.dailyAt - Date.now();
+  const coinReady = cfg.coinLaunch?.status === 'live';
   const gate = cfg.gate;
   const race = me.canRace
     ? `<p class="acct-ok">${icon('check', 14)}You can race in live rounds.</p>`
@@ -282,10 +283,10 @@ function renderMenu(toast: (t: string) => void) {
       cfg.tickets
         ? `<section><h4>Race tickets</h4>
             <div class="acct-wallet"><span>You have <b>${me.tickets ?? 0}</b> ticket${me.tickets === 1 ? '' : 's'}</span><span>${escapeHtml(priceLabel(cfg.tickets))} each</span></div>
-            <div class="acct-row"><button class="btn small btn-lime" id="am-buyticket">${icon('zap', 14)}Buy a ticket</button>
+            <div class="acct-row"><button class="btn small btn-lime" id="am-buyticket" ${coinReady ? '' : 'disabled'}>${icon('zap', 14)}${coinReady ? 'Buy a ticket' : 'Ticket buying paused'}</button>
             ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost" id="am-faucet">Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}</div>
-            <p class="muted small" id="am-buystep">${cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>
-          ${cfg.privy ? `<section><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">Send the game coin here to buy tickets. Race prizes arrive in this wallet too.</p>
+            <p class="muted small" id="am-buystep">${!coinReady ? 'Buying opens once the official coin is verified. Practice is free.' : cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>
+          ${cfg.privy ? `<section><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">${coinReady ? 'Send the game coin here to buy tickets. Race prizes arrive in this wallet too.' : 'Your Solana wallet. Wait for the verified official coin before funding race tickets.'}</p>
             <details class="am-withdraw"><summary>Withdraw ${escapeHtml(cfg.tickets?.symbol ?? '')}</summary>
               <input id="am-wd-to" placeholder="Send to (Solana address)" autocomplete="off" spellcheck="false" />
               <div class="acct-row"><input id="am-wd-amt" type="number" min="0" step="any" placeholder="Amount" /><button class="btn small btn-ghost" id="am-wd-max">Max</button></div>
@@ -390,21 +391,37 @@ function renderMenu(toast: (t: string) => void) {
 async function paintMyWallet(rpcUrl: string | undefined) {
   const box = document.getElementById('am-mywallet');
   if (!box) return;
+  const uid = account.me?.id;
+  const mint = account.cfg?.tickets?.mint;
+  const current = () => box.isConnected && document.getElementById('am-mywallet') === box && account.me?.id === uid && account.cfg?.tickets?.mint === mint;
   try {
     const { privyWallet } = await import('./privy/client');
     const w = await privyWallet(15_000);
-    let sol = '';
-    if (rpcUrl) {
-      const r = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [w.address] }) });
-      const j = (await r.json()) as { result?: { value: number } };
-      if (j.result) sol = `${(j.result.value / 1e9).toFixed(4)} SOL`;
-    }
-    const coins = await import('./tickets').then((t) => t.coinBalance()).catch(() => null);
-    if (coins !== null) sol = `${coins.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${account.cfg?.tickets?.symbol ?? ''}${sol ? ' · ' + sol : ''}`;
-    box.innerHTML = `<code title="${escapeHtml(w.address)}">${escapeHtml(w.address.slice(0, 6))}…${escapeHtml(w.address.slice(-6))}</code><span>${sol}</span><button class="btn small btn-ghost" id="am-copyw">${icon('copy', 14)}Copy</button>`;
-    document.getElementById('am-copyw')!.onclick = () => void navigator.clipboard.writeText(w.address).then(() => toastFn?.('Wallet address copied'));
+    if (!current()) return;
+    box.innerHTML = `<code title="${escapeHtml(w.address)}">${escapeHtml(w.address.slice(0, 6))}…${escapeHtml(w.address.slice(-6))}</code><span class="muted small" id="am-wallet-balance">Checking balance…</span><button class="btn small btn-ghost" id="am-copyw">${icon('copy', 14)}Copy</button>`;
+    box.querySelector<HTMLButtonElement>('#am-copyw')!.onclick = async () => {
+      try { await navigator.clipboard.writeText(w.address); toastFn?.('Wallet address copied'); }
+      catch { toastFn?.(`Wallet address: ${w.address}`); }
+    };
+    const [sol, coins] = await Promise.all([
+      rpcUrl ? fetch(rpcUrl, { method: 'POST', signal: AbortSignal.timeout(8_000), headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [w.address] }) })
+        .then(async r => {
+          const j = await r.json() as { result?: { value: number } };
+          return r.ok && typeof j.result?.value === 'number' ? `${(j.result.value / 1e9).toFixed(4)} SOL` : null;
+        }).catch(() => null) : Promise.resolve(null),
+      import('./tickets').then(t => t.coinBalance(AbortSignal.timeout(8_000))).catch(() => null),
+    ]);
+    if (!current()) return;
+    const balances = [coins !== null ? `${coins.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${account.cfg?.tickets?.symbol ?? ''}` : null, sol].filter(Boolean);
+    box.querySelector('#am-wallet-balance')!.textContent = balances.join(' · ') || 'Balance unavailable. Your address is ready.';
   } catch (e) {
-    box.innerHTML = `<span class="muted small">${escapeHtml((e as Error).message)}</span>`;
+    if (!current()) return;
+    box.innerHTML = `<span class="muted small">${escapeHtml((e as Error).message)}</span><button class="btn small btn-ghost" id="am-wallet-retry">Retry wallet</button>`;
+    box.querySelector<HTMLButtonElement>('#am-wallet-retry')!.onclick = event => {
+      event.stopPropagation();
+      box.innerHTML = '<span class="muted small">Loading…</span>';
+      void paintMyWallet(rpcUrl);
+    };
   }
 }
 

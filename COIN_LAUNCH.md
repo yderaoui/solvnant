@@ -1,6 +1,7 @@
 # PumpKart coin launch
 
-This code is prepared locally. It has not been deployed and no real coin buys have been tested.
+The frontend is pushed to GitHub and live on `https://www.pumpkart.racing`.
+The updated Cloudflare game server has not been deployed, and no real coin buys have been tested.
 Do the advance setup before announcing the coin. Never put wallet keys or operations secrets in chat or git.
 
 **Launch target: Sunday, 11 October 2026 at 12:00 noon, Africa/Casablanca.**
@@ -9,16 +10,18 @@ temporary-coin testing and official-coin verification remain outstanding. Paid b
 open only after the release checks pass; the site can be released with buying paused.
 
 **Domain connected: `pumpkart.racing` (Cloudflare).** Main address: `https://www.pumpkart.racing`.
-Local Worker site settings and the Solana RPC browser-origin allowlist are prepared for it.
-These code changes have not been deployed. The owner attached both hostnames to Vercel
+Worker site settings are prepared for it; the Solana RPC browser-origin allowlist is published.
+The Worker update still needs deployment. The owner attached both hostnames to Vercel
 and configured Cloudflare DNS; Vercel now shows Valid Configuration for both. Apex redirects
 to `www` (308), which serves Production. The owner has added both PumpKart HTTPS origins
 in Privy's Allowed Origins list. Confirm saving if prompted; real login/wallet checks
-remain outstanding. Privy branding still needs updating in UI components → Branding:
-Name `PumpKart`, PNG logo from `public/pumpkart-logo.png`. The intended logo URL is
-`https://www.pumpkart.racing/pumpkart-logo.png`; it currently returns 404 and must be
-published with the updated site before using that URL in the dashboard. The local SDK
-already uses the PumpKart logo and `Sign in to PumpKart` header.
+remain outstanding. The owner has applied the pink color and new PNG logo in Privy's
+UI components → Branding. Final name casing should be `PumpKart`.
+`https://www.pumpkart.racing/pumpkart-logo.png` is published and returns HTTP 200.
+The frontend also uses the PumpKart logo and `Sign in to PumpKart` header.
+The owner reached the signed-in account menu with X, but wallet-address visibility and
+the same address after signing out/in are not yet confirmed. The old `$RACE` symbol
+still comes from server settings; do not treat it as the official PumpKart coin.
 
 ## Simple checklist for the owner
 
@@ -59,7 +62,7 @@ their dashboard settings and real login still need checking on the new domain.
    purchase/race/payout/withdrawal check before opening buying to players. The temporary
    coin's test database is not copied into production.
 
-**Next: update the existing Privy app's branding, then check X login.** No passwords, wallet keys
+**Next: confirm the wallet address, then deploy the updated Worker with buying paused.** No passwords, wallet keys
 or account secrets are needed in chat.
 
 ## Advance setup

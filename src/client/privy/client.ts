@@ -6,7 +6,7 @@ import type { PrivyState, SolanaChain } from './island';
 let state: PrivyState | null = null;
 let mounting: Promise<void> | null = null;
 let exchanging = false;
-const waiters: (() => void)[] = [];
+const waiters = new Set<() => void>();
 
 export const privyOn = () => !!account.cfg?.privy;
 
@@ -15,12 +15,26 @@ function chain(): SolanaChain {
 }
 
 /** Load Privy (once) and wait until it knows whether the person is signed in. */
-async function ensure(): Promise<PrivyState> {
+async function ensure(timeoutMs = 20_000): Promise<PrivyState> {
   if (!privyOn()) throw new Error('Privy is not set up.');
-  mounting ??= import('./island').then(({ mountPrivy }) => mountPrivy(account.cfg!.privy!, chain(), onState, account.cfg?.tickets?.rpcUrl));
-  await mounting;
-  while (!state?.ready) await new Promise<void>((r) => waiters.push(r));
-  return state;
+  mounting ??= import('./island').then(({ mountPrivy }) => mountPrivy(account.cfg!.privy!, chain(), onState, account.cfg?.tickets?.rpcUrl)).catch(error => { mounting = null; throw error; });
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      waiters.delete(ready);
+      if (error) reject(error); else resolve();
+    };
+    const ready = () => finish();
+    const timer = setTimeout(() => finish(new Error('Your wallet could not finish loading. Please retry.')), timeoutMs);
+    mounting!.then(() => {
+      if (settled) return;
+      if (state?.ready) finish(); else waiters.add(ready);
+    }).catch(finish);
+  });
+  return state!;
 }
 
 /** Signed-out visitors: load Privy in the background so "Sign in" opens straight away (it's a big download). */
@@ -30,7 +44,7 @@ export function preloadPrivy() {
 
 function onState(s: PrivyState) {
   state = s;
-  if (s.ready) waiters.splice(0).forEach((w) => w());
+  if (s.ready) waiters.forEach((w) => w());
   // Just signed in with Privy: get a game session for it.
   if (s.ready && s.authenticated && !account.me && !exchanging) void exchange(s);
 }
@@ -67,12 +81,15 @@ export async function privyLogout() {
 
 /** The player's Solana wallet via Privy (embedded wallet is created at sign-in). */
 export async function privyWallet(timeoutMs = 20_000): Promise<NonNullable<PrivyState['wallet']>> {
-  const s = await ensure();
+  const deadline = Date.now() + timeoutMs;
+  const s = await ensure(timeoutMs);
   if (!s.authenticated) throw new Error('Sign in first.');
-  const t0 = Date.now();
   while (!state?.wallet) {
-    if (Date.now() - t0 > timeoutMs) throw new Error('Your wallet is still being created. Try again in a few seconds.');
-    await new Promise((r) => setTimeout(r, 300));
+    if (!state?.authenticated) throw new Error('Sign in first.');
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error('Your wallet is still being created. Please retry in a few seconds.');
+    await new Promise((r) => setTimeout(r, Math.min(300, remaining)));
   }
+  if (!state.authenticated) throw new Error('Sign in first.');
   return state.wallet;
 }

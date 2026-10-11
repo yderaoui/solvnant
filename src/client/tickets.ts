@@ -456,17 +456,20 @@ export async function recoverPayments(): Promise<{
 }
 
 /** The game wallet's coin balance (for the account menu). */
-export async function coinBalance(): Promise<number | null> {
+export async function coinBalance(signal?: AbortSignal): Promise<number | null> {
   const t = account.cfg?.tickets;
   if (!t) return null;
   const { privyWallet } = await import('./privy/client');
   const w = await privyWallet(15_000);
   const r = await fetch(t.rpcUrl, {
     method: 'POST',
+    signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTokenAccountsByOwner', params: [w.address, { mint: t.mint }, { encoding: 'jsonParsed' }] }),
   });
-  const v = ((await r.json()) as { result?: { value: { account: { data: { parsed: { info: { tokenAmount: { uiAmount: number } } } } } }[] } }).result?.value ?? [];
+  const j = await r.json() as { result?: { value: { account: { data: { parsed: { info: { tokenAmount: { uiAmount: number } } } } } }[] } };
+  if (!r.ok || !Array.isArray(j.result?.value)) throw new Error('Coin balance is unavailable. Please retry.');
+  const v = j.result.value;
   return v.reduce((s, a) => s + (a.account.data.parsed.info.tokenAmount.uiAmount ?? 0), 0);
 }
 

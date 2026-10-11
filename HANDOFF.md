@@ -35,14 +35,26 @@ KOL shown as a racer.
 
 ## 2. Current state (read this first)
 
+- **Frontend published (2026-10-11):** project work is pushed to GitHub `main`; Vercel
+  serves the updated PumpKart site, including the direct Watch AI League navigation.
+  The Cloudflare Worker update is still not deployed. Historical "local" notes below
+  describe when changes were implemented; they are not proof of a backend deployment.
+  The owner reached the signed-in account menu with X. Real wallet-address visibility
+  and persistence after signing out/in still need confirmation. Wallet display now
+  shows the address before balance requests, bounds startup and balance waits, offers
+  retry, and guards stale menu updates. Failed RPC reads do not display a false zero.
+  Account-menu ticket buying stays disabled for paused or legacy launch configuration.
+  The complete suite has 121 passing tests in 17 files; production build passes.
+
 - **New domain connected: `pumpkart.racing` through Cloudflare.** The owner attached
   both hostnames to Vercel and configured DNS; both now show Valid Configuration. Apex
   redirects (308) to `www`, which serves Production. Local `SITE_URL` matches
   `https://www.pumpkart.racing`; the Solana RPC browser-origin allowlist accepts both.
-  These code changes remain local. The owner has added both HTTPS origins to the existing
-  Privy app. Real login/wallet checks and dashboard branding remain outstanding. Use Name
-  `PumpKart` and the existing `public/pumpkart-logo.png` asset in UI components → Branding;
-  its intended new-domain URL currently returns 404 until the site update is deployed.
+  The frontend changes are published; Worker site settings still await deployment.
+  The owner has added both HTTPS origins to the existing Privy app and applied the pink
+  color and PumpKart logo. Final name casing should be `PumpKart`.
+  `https://www.pumpkart.racing/pumpkart-logo.png` returns HTTP 200.
+  Real wallet checks remain outstanding.
 
 - **Local predeployment stability audit (2026-10-11):** see `PREDEPLOY_CHECK.md` for
   measurements, coverage and remaining release checks. Hidden Track Lab rendering and

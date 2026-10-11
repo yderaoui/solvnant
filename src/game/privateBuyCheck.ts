@@ -1,4 +1,4 @@
-import { verifyWalletSignature } from './solana';
+import { verifyWalletSignature } from './solana.js';
 
 /** One temporary owner check. Never used by the public coin-launch configuration. */
 export const PRIVATE_BUY_CHECK = {

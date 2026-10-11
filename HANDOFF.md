@@ -100,6 +100,13 @@ KOL shown as a racer.
   Temporary-coin friend-lobby defaults/presets now start at $0.01; official defaults
   and the $20 public ticket price stay the same. The supplied code RK5J6F78 was
   inspected and is a $5 lobby with zero payments/runs, so a new one-cent code is needed.
+  The replacement code is 6ANT7755, locked $0.01 = 4,222.972973 test $RACE per player.
+  First sponsored owner entry is now verified on mainnet and credited: one Paid · ready
+  seat, no run at verification. Receipt:
+  `3BQbYqKeH7q89HYDQuz7Hrgs2LxuDAJfGoEMseo8B25wfXN63DCtfmDzt3sUpZcJJ1t5pLo2HwDC3ce6b6AYtRyv`.
+  Exactly 4222972973 raw units reached the treasury; it paid 0.00001 SOL network fee
+  and player SOL debit was zero. Remaining player coins: 41,973.576738. Still need
+  real runs, the other players and mainnet payout/burn/team/refund/withdrawal checks.
   Authenticated `coin-launch.mjs check <LOBBY_CODE>` is read-only: locked price,
   seats, payment signatures, payout/refunds, no settlement or signing. Deployment
   initially left a resident Hub on earlier code. SERVER_RELEASE now forces the

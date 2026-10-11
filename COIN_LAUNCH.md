@@ -113,6 +113,16 @@ Its invite expires on the normal 30-minute schedule. The support command
 payment signatures and payout/refund status without signing, submitting or settling.
 It requires the existing operations secret; it does not bypass player authentication.
 
+**First paid friend entry verified:** replacement lobby `6ANT7755` locks **$0.01**
+to **4,222.972973 test $RACE** per player (`4222972973` raw units). The owner's
+payment was credited and the lobby has one **Paid · ready** seat, with no run yet
+at this check. Mainnet transaction
+`3BQbYqKeH7q89HYDQuz7Hrgs2LxuDAJfGoEMseo8B25wfXN63DCtfmDzt3sUpZcJJ1t5pLo2HwDC3ce6b6AYtRyv`
+succeeded: exactly those coins reached the treasury, the treasury paid **0.00001 SOL**
+network fee, and player SOL debit was **zero**. Player test-coin balance afterwards:
+**41,973.576738**. This verifies the sponsored entry/claim flow; race completion,
+five-player mainnet settlement, burn/team split, refund and withdrawal are still pending.
+
 Use five real accounts in a low-entry friend lobby. All five must pay the same locked
 coin amount chosen from the creator's USD entry. Verify each receipt, race submission,
 80% winner payout, 15% burn, 5% team transfer, expiry refund and withdrawal on mainnet.

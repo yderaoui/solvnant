@@ -6,6 +6,12 @@ The private check now waits for settings and the saved session before enabling w
 verification. Failed connection/session checks offer **Retry connection**, preserve the
 saved login, and time out after 12 seconds per read request. Production sign-in no longer
 shows local `npm run game` instructions. A successful owner purchase is still pending.
+Free wallet verification uses Privy's Solana `useSignMessage` approval hook with wallet
+UI explicitly enabled. The dialog is titled **Verify your PumpKart wallet** and its
+button says **Verify wallet — free**. A stalled message request stops after one minute,
+ignores late signatures and offers a page reload before another attempt. This timeout
+applies only to free verification, not to a submitted purchase. Actual owner approval
+and purchase confirmation remain pending; 142 tests and the production build pass.
 Do the advance setup before announcing the coin. Never put wallet keys or operations secrets in chat or git.
 
 **Original launch target: Sunday, 11 October 2026 at 12:00 noon, Africa/Casablanca.**

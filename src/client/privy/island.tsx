@@ -5,7 +5,7 @@
 import { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PrivyProvider, usePrivy, type User } from '@privy-io/react-auth';
-import { useWallets } from '@privy-io/react-auth/solana';
+import { useWallets, useSignMessage } from '@privy-io/react-auth/solana';
 import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
 
 export type SolanaChain = 'solana:devnet' | 'solana:mainnet';
@@ -24,6 +24,7 @@ export interface PrivyState {
 function Bridge({ chain, onState }: { chain: SolanaChain; onState: (s: PrivyState) => void }) {
   const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
+  const { signMessage } = useSignMessage();
   useEffect(() => {
     const pick = wallets.find((w) => /privy/i.test(w.standardWallet.name)) ?? wallets[0];
     onState({
@@ -39,11 +40,17 @@ function Bridge({ chain, onState }: { chain: SolanaChain; onState: (s: PrivyStat
             embedded: /privy/i.test(pick.standardWallet.name),
             signAndSend: async (tx) => (await pick.signAndSendTransaction({ transaction: tx, chain })).signature,
             sign: async (tx) => (await pick.signTransaction({ transaction: tx, chain })).signedTransaction,
-            signMessage: async (message) => (await pick.signMessage({ message })).signature,
+            signMessage: async (message) => (await signMessage({ message, wallet: pick, options: { uiOptions: {
+              showWalletUIs: true,
+              title: 'Verify your PumpKart wallet',
+              description: 'Free ownership check. This message does not spend SOL or buy coins.',
+              buttonText: 'Verify wallet — free',
+              isCancellable: true,
+            } } })).signature,
           }
         : null,
     });
-  }, [ready, authenticated, user, wallets, login, logout, getAccessToken, onState, chain]);
+  }, [ready, authenticated, user, wallets, login, logout, getAccessToken, onState, chain, signMessage]);
   return null;
 }
 

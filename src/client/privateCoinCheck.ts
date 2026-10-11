@@ -3,6 +3,7 @@ import './theme.css';
 import './privateCoinCheck.css';
 import { account, initAccountUi, showAuthModal } from './account';
 import { privyWallet } from './privy/client';
+import { waitForVerification, VerificationTimeout } from './privy/verification';
 import { PRIVATE_BUY_CHECK, privateBuyMessage, type PrivateBuyProof } from '../game/privateBuyCheck';
 import { base58Encode } from '../game/solana';
 import { quoteCoinBuy, approveCoinBuy, type CoinQuote } from './coinPurchase';
@@ -11,6 +12,8 @@ import { checkPrivateBuyBudget } from './privateBuyBudget';
 const status = document.getElementById('test-message')!;
 const verify = document.getElementById('test-verify') as HTMLButtonElement;
 const retry = document.getElementById('test-retry') as HTMLButtonElement;
+const reload = document.getElementById('test-reload') as HTMLButtonElement;
+reload.onclick = () => location.reload();
 const view = document.getElementById('view-buy')!;
 const body = document.getElementById('buy-body')!;
 const report = (text: string) => { status.textContent = text; };
@@ -21,9 +24,10 @@ let quote: CoinQuote | null = null;
 let busy = false;
 let completed = false;
 let loadingSession = false;
+let verificationBlocked = false;
 
 function reportSession() {
-  if (loadingSession || busy || completed || proof) return;
+  if (loadingSession || busy || completed || proof || verificationBlocked) return;
   const unavailable = !account.cfg || (!!account.token && !account.me);
   verify.disabled = unavailable;
   retry.hidden = !unavailable;
@@ -37,7 +41,7 @@ function reportSession() {
 }
 
 async function loadSession() {
-  if (loadingSession || busy || completed || proof) return;
+  if (loadingSession || busy || completed || proof || verificationBlocked) return;
   loadingSession = true; verify.disabled = true; retry.disabled = true;
   report('Connecting to PumpKart and checking your existing session…');
   try { await account.load(); }
@@ -111,25 +115,31 @@ async function approve() {
 }
 
 verify.onclick = async () => {
-  if (busy || completed || loadingSession) return;
+  if (busy || completed || loadingSession || verificationBlocked) return;
   if (!account.cfg || (account.token && !account.me)) { await loadSession(); return; }
   if (!account.me || !account.token) { showAuthModal(); return; }
   busy = true; verify.disabled = true; quote = null;
   try {
     const token = account.token;
+    report('Loading your Privy wallet…');
     const wallet = await privyWallet();
     if (!wallet.embedded || wallet.address !== PRIVATE_BUY_CHECK.wallet) throw new Error('Use the same X account as your funded PumpKart wallet.');
     if (!wallet.signMessage) throw new Error('Your wallet cannot verify ownership.');
     const timestamp = Date.now();
     const message = await privateBuyMessage(token, timestamp);
     report('Approve the free wallet-verification message in Privy. This does not spend SOL.');
-    const signed = await wallet.signMessage(new TextEncoder().encode(message));
+    const signed = await waitForVerification(wallet.signMessage(new TextEncoder().encode(message)));
     if (account.token !== token) throw new Error('Your account changed. Verify again.');
+    report('Message signed. Checking wallet ownership with PumpKart…');
     proof = { timestamp, signature: base58Encode(signed) }; proofToken = token;
     account.cfg = await privateApi('config');
     paintReview(); report('Wallet verified. Review the 0.001 SOL purchase when ready.');
-  } catch (error) { proof = null; proofToken = null; view.hidden = true; report((error as Error).message); }
-  finally { busy = false; verify.disabled = false; }
+  } catch (error) {
+    proof = null; proofToken = null; view.hidden = true;
+    if (error instanceof VerificationTimeout) { verificationBlocked = true; reload.hidden = false; }
+    report((error as Error).message);
+  }
+  finally { busy = false; verify.disabled = verificationBlocked; }
 };
 
 account.onChange(() => {

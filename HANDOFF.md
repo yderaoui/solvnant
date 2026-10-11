@@ -61,7 +61,14 @@ KOL shown as a racer.
   reads have 12-second deadlines. Production sign-in offers retry instead of local server
   commands. Browser fixtures cover slow settings, failed settings, failed saved-session
   reads, and sign-in modal recovery without signing or submitting transactions.
-  Validation: 137 tests pass, production build passes. Browser fixture checks reject
+  Free verification explicitly uses Solana useSignMessage with showWalletUIs true,
+  a cancellable "Verify your PumpKart wallet" dialog, and "Verify wallet — free" CTA.
+  A 60-second message timeout blocks another in-page signing request until reload;
+  late signatures cannot continue to review. This does not time out purchase submission.
+  Approval-hook tests cover selected embedded wallet, visible UI options and cancellation;
+  browser fixtures cover approved, cancelled and stalled messages without moving funds.
+  Actual authenticated owner popup/approval still needs owner confirmation.
+  Validation: 142 tests pass, production build passes. Browser fixture checks reject
   a different wallet and reach a real read-only PumpSwap quote/unsigned cost review
   without page errors or transaction submission. Actual owner message/purchase
   approval and confirmation are still pending. This avoids a second X login; it does

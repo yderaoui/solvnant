@@ -189,7 +189,7 @@ export class Hub {
     try {
       if (p.startsWith('/internal/')) return await this.internal(p, req);
       if (p === '/api/admin/coin') return await this.adminCoin(req);
-      if (p === '/api/config') return json({ ...publicConfig(this.cfg), sponsor: (await this.house())?.address ?? null });
+      if (p === '/api/config') return json({ ...publicConfig(this.cfg), sponsor: this.cfg.coinLaunch.paidEnabled === false ? null : (await this.house())?.address ?? null });
       if (p === '/api/guest' && req.method === 'POST') return await this.guest(req);
       if (p === '/api/privy' && req.method === 'POST') return await this.privyLogin(req);
       if (p === '/api/leaderboard') return json(this.leaderboard());
@@ -203,6 +203,7 @@ export class Hub {
         const body = await req.clone().json() as { coinRevision?: unknown };
         const problem = coinActionProblem(this.cfg, body.coinRevision);
         if (problem) return fail(problem, 409);
+        if (p !== '/api/coin/preflight' && this.cfg.coinLaunch.paidEnabled === false) return fail('Coin buying is open for testing. Ticket sales and paid races are not open yet.', 409);
       }
       switch (p) {
         case '/api/coin/preflight': {
@@ -211,6 +212,7 @@ export class Hub {
           if (problem) return fail(problem, 409);
           if (b.mint !== this.cfg.tickets?.mint) return fail('The official coin changed. Reload and review the new quote.', 409);
           if (b.purpose === 'coin' && !this.cfg.coinLaunch.buyEnabled) return fail('Official coin buying is not enabled.', 409);
+          if (b.purpose !== 'coin' && this.cfg.coinLaunch.paidEnabled === false) return fail('Ticket sales and paid races are not open yet.', 409);
           if (b.purpose === 'ticket' && !this.currentMemo(u.id, b.memo ?? '')) return fail('This payment quote expired or the coin changed. Open checkout again.', 409);
           return json({ ok: true, coinLaunch: this.cfg.coinLaunch });
         }
@@ -779,7 +781,7 @@ export class Hub {
   private async adminCoin(req: Request): Promise<Response> {
     if (!this.coinAdminKey || bearer(req) !== this.coinAdminKey) return fail('Not authorized.', 401);
     if (req.method !== 'POST') return fail('Use POST.', 405);
-    const b = await req.json() as { action?: string; mint?: string; symbol?: string; revision?: string };
+    const b = await req.json() as { action?: string; mint?: string; symbol?: string; revision?: string; mode?: string; paidEnabled?: boolean };
     if (!this.cfg.tickets) return fail('Configure ticket network and treasury first.');
     const revision = this.cfg.coinLaunch.revision;
     if (b.revision !== revision) return fail('Launch settings changed. Fetch /api/config and retry.', 409);
@@ -790,6 +792,8 @@ export class Hub {
       if (this.cfg.coinLaunch.status !== 'paused') return fail('Pause purchases before preparing or enabling a coin.', 409);
       if (!this.cfg.coinLaunch.pausedAt || Date.now() - this.cfg.coinLaunch.pausedAt < 120_000) return fail('Pause first and allow two minutes for in-flight transactions to drain.', 409);
       if (b.action === 'prepare') {
+        if (b.mode !== undefined && !['test', 'official'].includes(b.mode)) return fail('Use test or official coin mode.');
+        if (b.paidEnabled !== undefined && typeof b.paidEnabled !== 'boolean') return fail('Paid race setting must be true or false.');
         if (!isSolanaAddress(b.mint ?? '') || !/^\$?[A-Za-z0-9]{1,12}$/.test(b.symbol ?? '')) return fail('Provide a valid mint and ticker.');
         const outstanding = Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobbies WHERE status = 'open'").one().n)
           + Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobby_payouts WHERE status IN ('pending','sent','failed','manual')").one().n)
@@ -797,7 +801,7 @@ export class Hub {
         if (outstanding) return fail('Resolve existing race pots, payouts and unused tickets before switching coins.', 409);
         const { verifyPumpCoin } = await import('./pumpTrade');
         const verified = await verifyPumpCoin({ ...this.cfg.tickets, mint: b.mint! });
-        next = { ...next, mint: b.mint!, symbol: b.symbol!, decimals: verified.decimals, status: 'paused', buyEnabled: true };
+        next = { ...next, mint: b.mint!, symbol: b.symbol!, decimals: verified.decimals, status: 'paused', buyEnabled: true, mode: b.mode === 'test' ? 'test' : 'official', paidEnabled: b.paidEnabled ?? (b.mode !== 'test') };
       } else {
         const { verifyPumpCoin } = await import('./pumpTrade');
         await verifyPumpCoin(this.cfg.tickets);

@@ -8,8 +8,47 @@ export interface CoinQuote extends PumpBuyQuote {
   address: string; expires: number; sol: number; ticket: TicketConfig;
 }
 
+/** Bound read requests so a stalled RPC returns a useful retry instead of spinning forever. */
+export async function coinConnection(t: TicketConfig) {
+  const { Connection } = await import('@solana/web3.js');
+  return new Connection(t.rpcUrl, { commitment: 'confirmed', disableRetryOnRateLimit: true,
+    fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }) });
+}
+
+async function unsignedPurchase(q: CoinQuote, conn: import('@solana/web3.js').Connection) {
+  const { PublicKey, Transaction, ComputeBudgetProgram } = await import('@solana/web3.js');
+  const latest = await conn.getLatestBlockhash('confirmed');
+  const tx = new Transaction({ ...latest, feePayer: new PublicKey(q.address) });
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), ...q.instructions);
+  return { tx, latest };
+}
+
+/** Simulate without signatures; include network fees and any token-account setup in the review. */
+export async function estimateCoinBuy(q: CoinQuote) {
+  const conn = await coinConnection(q.ticket);
+  const { tx } = await unsignedPurchase(q, conn);
+  return reviewCoinBuyCost(q, tx, conn);
+}
+
+export async function reviewCoinBuyCost(q: CoinQuote, tx: import('@solana/web3.js').Transaction, conn: import('@solana/web3.js').Connection) {
+  const { PublicKey, VersionedTransaction } = await import('@solana/web3.js');
+  const before = await conn.getBalanceAndContext(new PublicKey(q.address), 'confirmed');
+  if (before.value < q.maxLamports + 10_000_000) throw new Error('Keep at least 0.01 SOL beyond the purchase for fees and account setup.');
+  const unsigned = VersionedTransaction.deserialize(tx.serialize({ requireAllSignatures: false, verifySignatures: false }));
+  const result = await conn.simulateTransaction(unsigned, { sigVerify: false, commitment: 'confirmed', minContextSlot: before.context.slot,
+    accounts: { encoding: 'base64', addresses: [q.address] } });
+  if (result.value.err) throw new Error('This purchase could not be simulated. Refresh the price or add SOL for account setup. Nothing was sent.');
+  const after = result.value.accounts?.[0]?.lamports;
+  const total = typeof after === 'number' ? before.value - after : NaN;
+  if (!Number.isSafeInteger(total) || total <= 0) throw new Error('Could not estimate the total cost. Try reviewing again. Nothing was sent.');
+  // Reserve the full price allowance in addition to the simulated debit, which includes fees.
+  if (before.value < total + q.maxLamports + 10_000_000) throw new Error('Keep at least 0.01 SOL after the purchase and account setup.');
+  return { totalLamports: total, balanceLamports: before.value };
+}
+
 export async function quoteCoinBuy(sol: number): Promise<CoinQuote> {
   if (!account.me) throw new Error('Sign in with X first.');
+  if (!Number.isFinite(sol) || sol < 0.001 || sol > 10) throw new Error('Enter between 0.001 and 10 SOL.');
   const fresh = await account.api<NonNullable<typeof account.cfg>>('/api/config');
   if (fresh.coinLaunch.status !== 'live' || !fresh.coinLaunch.buyEnabled || !fresh.tickets) throw new Error('Official coin buying is not open yet. No payment was made.');
   if (fresh.tickets.cluster !== 'mainnet-beta') throw new Error('Pump.fun purchases are available on Solana mainnet only.');
@@ -17,9 +56,8 @@ export async function quoteCoinBuy(sol: number): Promise<CoinQuote> {
   // Anchor/Pump read Buffer during module initialization, before a quote function runs.
   const { Buffer } = await import('buffer');
   (globalThis as unknown as { Buffer: typeof Buffer }).Buffer ??= Buffer;
-  const wallet = await payer();
+  const [wallet, { buildPumpBuy }] = await Promise.all([payer(), import('../game/pumpTrade')]);
   await checkPendingCoinBuy(fresh.tickets, wallet.address);
-  const { buildPumpBuy } = await import('../game/pumpTrade');
   const q = await buildPumpBuy(fresh.tickets, wallet.address, sol);
   await account.api('/api/coin/preflight', { mint: fresh.tickets.mint, coinRevision: fresh.coinLaunch.revision, purpose: 'coin' });
   return { ...q, mint: fresh.tickets.mint, symbol: fresh.tickets.symbol, decimals: fresh.tickets.decimals, address: wallet.address, revision: fresh.coinLaunch.revision, ticket: fresh.tickets, expires: Date.now() + 30_000, sol };
@@ -35,16 +73,16 @@ export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void,
   await checkPendingCoinBuy(q.ticket, wallet.address);
   const { Buffer } = await import('buffer');
   (globalThis as unknown as { Buffer: typeof Buffer }).Buffer ??= Buffer;
-  const { Connection, PublicKey, Transaction, ComputeBudgetProgram } = await import('@solana/web3.js');
-  const conn = new Connection(q.ticket.rpcUrl, 'confirmed');
-  const latest = await conn.getLatestBlockhash('confirmed');
-  const tx = new Transaction({ ...latest, feePayer: new PublicKey(wallet.address) });
-  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), ...q.instructions);
-  const fee = (await conn.getFeeForMessage(tx.compileMessage())).value;
+  const { PublicKey, Transaction } = await import('@solana/web3.js');
+  const conn = await coinConnection(q.ticket);
+  const { tx, latest } = await unsignedPurchase(q, conn);
+  const [feeResult, balance] = await Promise.all([conn.getFeeForMessage(tx.compileMessage()), conn.getBalance(new PublicKey(wallet.address))]);
+  const fee = feeResult.value;
   if (fee === null) throw new Error('Could not estimate network fees. Refresh your quote.');
-  if (await conn.getBalance(new PublicKey(wallet.address)) < q.maxLamports + fee + 10_000_000) throw new Error('Keep at least 0.01 SOL beyond the purchase amount for network fees and account setup.');
+  if (balance < q.maxLamports + fee + 10_000_000) throw new Error('Keep at least 0.01 SOL beyond the purchase amount for network fees and account setup.');
   if (reviewTransaction) await reviewTransaction(tx, conn);
   await guard();
+  if (Date.now() > q.expires) throw new Error('This quote expired. Review a fresh price. Nothing was sent.');
   step('Approve the coin purchase in your wallet.');
   let signature: string;
   if (wallet.signOnly) {
@@ -61,7 +99,9 @@ export async function approveCoinBuy(q: CoinQuote, step: (text: string) => void,
   } else throw new Error('The game wallet cannot sign this purchase.');
   step('Checking your purchase. Do not buy again while it is pending.');
   for (let i = 0; i < 30; i++) {
-    const result = (await conn.getSignatureStatuses([signature])).value[0];
+    let result;
+    try { result = (await conn.getSignatureStatuses([signature])).value[0]; }
+    catch { throw new Error(`Purchase submitted; confirmation is unavailable. Check transaction ${signature} before buying again.`); }
     if (result?.err) throw new Error(`Purchase failed on-chain (${signature}). Network fees may still apply.`);
     if (result?.confirmationStatus === 'confirmed' || result?.confirmationStatus === 'finalized') {
       pendingMemory.delete(wallet.address);
@@ -84,8 +124,7 @@ async function checkPendingCoinBuy(t: TicketConfig, address: string) {
   let pending = pendingMemory.get(address);
   if (!pending) { try { pending = JSON.parse(sessionStorage.getItem(`pumpkart-pending-coin:${address}`) ?? 'null'); } catch { /* optional */ } }
   if (!pending) return;
-  const { Connection } = await import('@solana/web3.js');
-  const conn = new Connection(t.rpcUrl, 'confirmed');
+  const conn = await coinConnection(t);
   const result = (await conn.getSignatureStatuses([pending.signature], { searchTransactionHistory: true })).value[0];
   if (result?.err || result?.confirmationStatus === 'confirmed' || result?.confirmationStatus === 'finalized' || (!result && await conn.getBlockHeight('confirmed') > pending.lastValid)) {
     pendingMemory.delete(address);

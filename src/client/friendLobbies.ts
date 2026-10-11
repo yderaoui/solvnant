@@ -55,7 +55,7 @@ export function mountFriendLobbies(startRace: (code: string) => void) {
     else location.hash = friendHref(next);
   };
   const createForm = panel.querySelector<HTMLFormElement>('#friends-create-form')!;
-  const fundingLive = account.cfg?.coinLaunch?.status === 'live';
+  const fundingLive = account.cfg?.coinLaunch?.status === 'live' && account.cfg.coinLaunch.paidEnabled !== false;
   if (!fundingLive) {
     panel.querySelector<HTMLButtonElement>('#friends-create')!.disabled = true;
     panel.querySelector<HTMLElement>('#friends-entry-note')!.textContent = 'Custom paid lobbies open when the official coin launches. You can preview an entry amount now and practice for free.';

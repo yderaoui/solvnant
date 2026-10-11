@@ -16,6 +16,8 @@ export interface StoredCoinLaunch {
   buyEnabled: boolean;
   revision: string;
   pausedAt?: number;
+  mode?: 'test' | 'official';
+  paidEnabled?: boolean;
 }
 
 /** Apply only coin identity; treasury, USD ticket price, RPC and payout rules stay in server settings. */
@@ -23,5 +25,5 @@ export function applyCoinLaunch(cfg: GameConfig, stored: StoredCoinLaunch) {
   if (!cfg.tickets) throw new Error('Configure the ticket network and treasury before preparing a coin.');
   if (cfg.tickets.cluster !== stored.cluster) throw new Error('Stored launch network differs from the configured network. Resolve the launch settings before starting.');
   cfg.tickets = { ...cfg.tickets, mint: stored.mint, symbol: stored.symbol, decimals: stored.decimals };
-  cfg.coinLaunch = { status: stored.status, revision: stored.revision, buyEnabled: stored.buyEnabled, pausedAt: stored.pausedAt };
+  cfg.coinLaunch = { status: stored.status, revision: stored.revision, buyEnabled: stored.buyEnabled, pausedAt: stored.pausedAt, mode: stored.mode ?? 'official', paidEnabled: stored.paidEnabled ?? true };
 }

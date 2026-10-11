@@ -187,7 +187,7 @@ export function initAccountUi(toast: (t: string) => void) {
   const host = $('account');
   const paint = () => {
     const me = account.me;
-    if (account.ready && !me && account.cfg?.privy && !preloaded) {
+    if (account.ready && account.cfg?.privy && !preloaded) {
       preloaded = true;
       void import('./privy/client').then((p) => p.preloadPrivy());
     }
@@ -265,6 +265,7 @@ function renderMenu(toast: (t: string) => void) {
   }
   const dailyIn = me.dailyAt - Date.now();
   const coinReady = cfg.coinLaunch?.status === 'live';
+  const paidReady = coinReady && cfg.coinLaunch.paidEnabled !== false;
   const gate = cfg.gate;
   const race = me.canRace
     ? `<p class="acct-ok">${icon('check', 14)}You can race in live rounds.</p>`
@@ -289,10 +290,11 @@ function renderMenu(toast: (t: string) => void) {
       cfg.tickets
         ? `<section><h4>Race tickets</h4>
             <div class="acct-wallet"><span>You have <b>${me.tickets ?? 0}</b> ticket${me.tickets === 1 ? '' : 's'}</span><span>${escapeHtml(priceLabel(cfg.tickets))} each</span></div>
-            <div class="acct-row"><button class="btn small btn-lime" id="am-buyticket" ${coinReady ? '' : 'disabled'}>${icon('zap', 14)}${coinReady ? 'Buy a ticket' : 'Ticket buying paused'}</button>
+            <div class="acct-row"><button class="btn small btn-lime" id="am-buyticket" ${paidReady ? '' : 'disabled'}>${icon('zap', 14)}${paidReady ? 'Buy a ticket' : 'Ticket buying paused'}</button>
+            ${coinReady && cfg.coinLaunch.buyEnabled ? '<a class="btn small" href="#/buy">Buy coins</a>' : ''}
             ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost" id="am-faucet">Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}</div>
-            <p class="muted small" id="am-buystep">${!coinReady ? 'Buying opens once the official coin is verified. Practice is free.' : cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>
-          ${cfg.privy ? `<section><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">${coinReady ? 'Send the game coin here to buy tickets. Race prizes arrive in this wallet too.' : 'Your Solana wallet. Wait for the verified official coin before funding race tickets.'}</p>
+            <p class="muted small" id="am-buystep">${!paidReady ? coinReady ? 'Coin buying is open for testing. Paid races follow after payment checks.' : 'Buying opens once the official coin is verified. Practice is free.' : cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>
+          ${cfg.privy ? `<section><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">${coinReady ? paidReady ? 'Send the game coin here to buy tickets. Race prizes arrive in this wallet too.' : 'Your test coins arrive here. Coin purchases use your SOL; paid races are closed.' : 'Your Solana wallet. Wait for the verified official coin before funding race tickets.'}</p>
             <details class="am-withdraw"><summary>Withdraw ${escapeHtml(cfg.tickets?.symbol ?? '')}</summary>
               <input id="am-wd-to" placeholder="Send to (Solana address)" autocomplete="off" spellcheck="false" />
               <div class="acct-row"><input id="am-wd-amt" type="number" min="0" step="any" placeholder="Amount" /><button class="btn small btn-ghost" id="am-wd-max">Max</button></div>

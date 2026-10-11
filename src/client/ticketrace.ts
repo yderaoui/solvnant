@@ -80,8 +80,9 @@ export async function renderRacePage() {
     mountFriendLobbies(raceNow);
     return;
   }
-  if (account.cfg?.coinLaunch?.status !== 'live') {
-    el.innerHTML = `<section class="card"><h2>The official coin is launching soon.</h2><p class="muted">Coin purchases and paid race entry are paused. Practice for free while we get the grid ready.</p><a class="btn btn-lime" href="#/drive">Practice for free</a></section>${friendLobbyHtml()}`;
+  if (account.cfg?.coinLaunch?.status !== 'live' || account.cfg.coinLaunch.paidEnabled === false) {
+    const coinTest = account.cfg?.coinLaunch?.status === 'live' && account.cfg.coinLaunch.buyEnabled;
+    el.innerHTML = `<section class="card"><h2>${coinTest ? 'Coin buying is ready to test.' : 'The official coin is launching soon.'}</h2><p class="muted">${coinTest ? 'Try a small purchase in your game wallet. Ticket sales and paid races open after the payment checks.' : 'Coin purchases and paid race entry are paused. Practice for free while we get the grid ready.'}</p>${coinTest ? '<a class="btn btn-lime" href="#/buy">Buy test coins</a>' : ''}<a class="btn ${coinTest ? 'btn-ghost' : 'btn-lime'}" href="#/drive">Practice for free</a></section>${friendLobbyHtml()}`;
     mountFriendLobbies(raceNow);
     return;
   }

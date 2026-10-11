@@ -45,7 +45,7 @@ export interface TicketConfig {
 }
 
 export interface GameConfig {
-  coinLaunch: { status: 'paused' | 'live'; revision: string; buyEnabled: boolean; pausedAt?: number };
+  coinLaunch: { status: 'paused' | 'live'; revision: string; buyEnabled: boolean; pausedAt?: number; mode?: 'test' | 'official'; paidEnabled?: boolean };
   sessionSecret: string;
   devSecret: boolean; // true when no SESSION_SECRET was set (fine locally, never in production)
   x: XConfig | null;
@@ -81,6 +81,7 @@ export function readConfig(env: Env): GameConfig {
       status: env.COIN_LAUNCH_READY === 'true' ? 'live' : 'paused',
       revision: env.COIN_LAUNCH_REVISION || 'launch-locked',
       buyEnabled: env.COIN_BUY_ENABLED === 'true',
+      mode: 'official',
     },
     sessionSecret: env.SESSION_SECRET || 'dev-only-session-secret-change-me',
     devSecret: !env.SESSION_SECRET,

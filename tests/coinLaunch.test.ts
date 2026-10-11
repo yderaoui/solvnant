@@ -96,6 +96,38 @@ it('requires working USD pricing to enable and rejects stale/wrong-mint quotes a
   await admin('pause');
   expect((await api('/api/coin/preflight', { mint: nextMint, coinRevision: revision })).status).toBe(409);
 });
+
+it('opens test coin buying while enforcing the paid-race lock on the server, across restarts', async () => {
+  await admin('pause'); now += 120_001;
+  expect((await admin('prepare', { mint: nextMint, symbol: '$RACE', mode: 'test' })).status).toBe(200);
+  expect((await admin('enable')).status).toBe(200);
+  hub = new Hub(state(), env);
+  const cfg = await config();
+  expect(cfg.coinLaunch).toMatchObject({ status: 'live', buyEnabled: true, mode: 'test', paidEnabled: false });
+  expect(cfg.sponsor).toBeNull();
+  const body = { mint: nextMint, coinRevision: cfg.coinLaunch.revision };
+  expect((await api('/api/coin/preflight', { ...body, purpose: 'coin' })).status).toBe(200);
+  expect((await api('/api/coin/preflight', { ...body, purpose: 'ticket' })).status).toBe(409);
+  for (const path of ['/api/ticket/intent', '/api/skin/intent', '/api/pay/sponsor', '/api/lobby/join', '/api/lobby/private/create']) {
+    expect((await api(path, body)).status).toBe(409);
+  }
+  expect(db.prepare('SELECT COUNT(*) AS n FROM pay_memos').get()!.n).toBe(0);
+  expect(db.prepare('SELECT COUNT(*) AS n FROM lobbies').get()!.n).toBe(0);
+});
+
+it('an official prepare clears the temporary test mode and restores paid-race readiness', async () => {
+  await admin('pause'); now += 120_001;
+  await admin('prepare', { mint: nextMint, symbol: '$RACE', mode: 'test', paidEnabled: false });
+  expect((await admin('prepare', { mint: nextMint, symbol: '$PUMP' })).status).toBe(200);
+  expect((await config()).coinLaunch).toMatchObject({ mode: 'official', paidEnabled: true, status: 'paused' });
+});
+
+it('rejects malformed operational test settings before on-chain verification', async () => {
+  await admin('pause'); now += 120_001;
+  expect((await admin('prepare', { mint: nextMint, symbol: '$RACE', mode: 'fake' })).status).toBe(400);
+  expect((await admin('prepare', { mint: nextMint, symbol: '$RACE', paidEnabled: 'false' })).status).toBe(400);
+  expect(mocks.verify).not.toHaveBeenCalled();
+});
 it('does not overwrite a newer pause while on-chain verification is in flight', async () => {
   await admin('pause'); now += 120_001;
   let finish!: (value: object) => void;

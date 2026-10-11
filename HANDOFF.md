@@ -35,76 +35,53 @@ KOL shown as a racer.
 
 ## 2. Current state (read this first)
 
-- **Temporary coin verified read-only (2026-10-11):** owner supplied the existing
-  `$RACE` CA `BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump`. Actual
-  `verifyPumpCoin` mainnet reads passed: six decimals, supported authorities/extensions,
-  graduated curve and canonical SOL-paired PumpSwap pool. Production remains paused.
-  Latest screenshot shows about 0.1882 SOL, up from 0.0020 SOL. Funding does not
-  authorize spending the entire balance. Proposed first buy is 0.001 SOL plus reviewed
-  account/network costs, preserving the 0.01 SOL buffer. No transaction was signed/sent.
-  Player address is confirmed: `4tWo1pQfrtFbw94HW9NScGmmWNH2Y8u7D9DGxPC6AGpH`.
-  Read-only mainnet balance: 0.188229983 SOL. Actual 0.001 SOL PumpSwap unsigned
-  simulation passed: 0.003865039 SOL total debit including account setup and
-  0.000005 SOL network fee; max coin cost 0.00101 SOL. A fresh quote still needs
-  owner wallet approval. The localhost check opened Privy but fresh X authorization
-  failed; the exact X rejection is unknown. Owner confirmed the existing main-site
-  session and wallet still work. Fresh X login remains an outstanding release check.
-  Replacement page: `/private-coin-check.html` on www.pumpkart.racing, sharing the
-  existing session. Isolated `/api/private-coin-check` requires a real Privy-backed
-  game session and a free, session-bound ownership signature from this exact wallet.
-  Proof lifetime: 15 minutes. Entire test closes 2026-10-12 16:30 UTC. No production
-  launch changes, house keys, ticket payments, races, withdrawals or server broadcasts.
-  Fixed 0.001 SOL buy; unsigned cost simulation at review and before signing must
-  conservatively fit 0.005 SOL. Public buying remains paused.
-  Connection recovery: private verification stays disabled until settings/session checks
-  finish. Failed reads preserve the saved login and offer Retry connection; config/me
-  reads have 12-second deadlines. Production sign-in offers retry instead of local server
-  commands. Browser fixtures cover slow settings, failed settings, failed saved-session
-  reads, and sign-in modal recovery without signing or submitting transactions.
-  Free verification explicitly uses Solana useSignMessage with showWalletUIs true,
-  a cancellable "Verify your PumpKart wallet" dialog, and "Verify wallet — free" CTA.
-  A 60-second message timeout blocks another in-page signing request until reload;
-  late signatures cannot continue to review. This does not time out purchase submission.
-  Approval-hook tests cover selected embedded wallet, visible UI options and cancellation;
-  browser fixtures cover approved, cancelled and stalled messages without moving funds.
-  Actual authenticated owner popup/approval still needs owner confirmation.
-  Validation: 142 tests pass, production build passes. Browser fixture checks reject
-  a different wallet and reach a real read-only PumpSwap quote/unsigned cost review
-  without page errors or transaction submission. Actual owner message/purchase
-  approval and confirmation are still pending. This avoids a second X login; it does
-  not establish that fresh X authorization now works.
-  Full isolated paid-race testing is not provisioned. The official client coin is still pending.
+- **Normal website coin-only test (2026-10-11):** owner authorized temporary `$RACE`
+  mint `BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump` in the normal player screens,
+  visibly labeled temporary and using real SOL. Owner chose coin buying first because
+  the treasury is underfunded. Paid tickets, cosmetics and paid lobby entries stay closed
+  via the server's persisted `paidEnabled: false` flag; `mode: test` supplies the label.
+  `/private-coin-check.html` redirects to `/#/buy`; its API returns 410. The old ownership
+  message/proof flow and modules were removed. Privy transaction approval uses
+  Solana `useSignTransaction`, visible UI and cancellation; no agent signs the owner wallet.
+  Default first buy: 0.001 SOL, 0.005 SOL conservative budget and 0.01 SOL retained buffer.
+  Unsigned simulations show fees/account setup at review and recheck before signing.
+  Real mainnet read-only PumpSwap review reached the browser in about 3 seconds here.
+  Browser fixtures passed at 320/375/768/1440 px, cancellation, stale prices and keeping
+  approval intact across account refresh. No wallet transaction was submitted by them.
+  Owner's player wallet: `4tWo1pQfrtFbw94HW9NScGmmWNH2Y8u7D9DGxPC6AGpH`, latest
+  balance 0.188229983 SOL. Treasury: `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`,
+  0.00089088 SOL. The owner deferred adding 0.02 SOL to the treasury.
+  Owner mainnet purchase/confirmation and fresh X login remain to verify. The official
+  client CA is pending. See COIN_LAUNCH.md for the exact player steps and switch procedure.
 
 - **Backend published (2026-10-11):** Worker version
-  `5188d8fb-9799-4fde-bbdb-b5097d402d32` is live at the existing Worker URL.
-  `COIN_ADMIN_KEY` was added without displaying or committing its value; the operations
-  credential is held in gitignored `.devnet/coin-launch-admin.key` for trusted local use.
-  An authenticated pause is persisted. Public configuration reports `status: paused`
-  and `buyEnabled: false`; the old mint is retained for existing records, not enabled
-  as the official PumpKart coin. Health/configuration, CORS/no-cache and anonymous
-  payment/admin rejection checks passed. The spectator WebSocket returned room data
-  and pong; Live reports two laps and a 50-point entry fee. Cloudflare's
-  `web_socket_auto_reply_to_close` flag completes close handshakes without changing
-  the existing compatibility date. A live spectator received five snapshots and
-  closed normally (code 1000, 296 ms), instead of remaining stuck in CLOSING.
-  No race was joined or
-  on-chain transaction submitted by deployment checks. X login and wallet display
-  are confirmed by owner screenshots; full copied-address persistence still needs
-  confirmation. Isolated temporary-coin/mainnet checks remain outstanding and need
-  an owner-approved real purchase and subsequent payment/race checks. The test CA is supplied
-  and verified. Do not put a random test coin into
-  the public production configuration.
+  `38198075-7b27-4191-b31d-67a21313afd6` at the existing Worker URL.
+  Server Pump SDK reads now explicitly select the configured cluster on the verification
+  proxy; previously a missing cluster query incorrectly read devnet during mainnet activation.
+  Real server-proxy mainnet verification and runtime prepare/enable both passed.
+  Public configuration confirms revision `coin_1sF8rStR3xEUU7iV`, status live,
+  buyEnabled true, mode test, paidEnabled false, sponsor null and the authorized test mint.
+  The operations credential remains in gitignored `.devnet/coin-launch-admin.key`;
+  never display it or read house/player private keys. Existing purchase recovery,
+  submissions and withdrawals remain available. The WebSocket close fix remains deployed.
+  This opens coin buying only, not an official coin launch or a completed mainnet payment test.
 
-- **Frontend published (2026-10-11):** project work is pushed to GitHub `main`; Vercel
-  serves the updated PumpKart site, including the direct Watch AI League navigation.
-  The Cloudflare Worker update is now deployed with purchases paused. Historical "local" notes below
-  describe when changes were implemented; they are not proof of a backend deployment.
-  The owner reached the signed-in account menu with X and the wallet is visible.
-  Full address persistence after signing out/in still needs confirmation. Wallet display now
-  shows the address before balance requests, bounds startup and balance waits, offers
-  retry, and guards stale menu updates. Failed RPC reads do not display a false zero.
-  Account-menu ticket buying stays disabled for paused or legacy launch configuration.
-  The complete suite has 121 passing tests in 17 files; production build passes.
+- **Frontend release (2026-10-11):** normal `/#/buy` flow shows amount presets, selected
+  mint/route, receiving wallet, balance and an unsigned total including fees/account setup.
+  The temporary-coin disclosure appears across the site. Account menu links directly to
+  buying; ticket/paid friend-lobby controls are closed. Login/wallet SDK preloads for
+  existing sessions. Active approval survives account refresh and page navigation;
+  uncertain submissions retain their signed transaction ID and block repeat buys.
+  Validation: 141 tests in 22 files, production build, Worker dry-run, mobile/desktop
+  browser fixtures and a funded devnet integration round passed. Devnet verified five
+  $1.25 entries, 20-test-coin prize, 3.75 burn, 1.25 team share, full 2-coin refund and
+  sponsored 1-coin withdrawal to a new destination. No mainnet transaction was signed
+  or submitted by Codex. The owner/client must approve a real small buy and fresh X login.
+  The actual production Privy X login window opens with PumpKart branding and the
+  Twitter option; published-page checks at 375/768/1440 px found no page errors or CSP
+  violations. Completing OAuth and signing a purchase still require the owner/client.
+  Deployment verification and exact player steps are recorded in COIN_LAUNCH.md.
+  Historical implementation notes below are not proof of mainnet completion.
 
 - **New domain connected: `pumpkart.racing` through Cloudflare.** The owner attached
   both hostnames to Vercel and configured DNS; both now show Valid Configuration. Apex

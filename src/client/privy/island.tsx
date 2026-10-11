@@ -5,7 +5,7 @@
 import { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PrivyProvider, usePrivy, type User } from '@privy-io/react-auth';
-import { useWallets, useSignMessage } from '@privy-io/react-auth/solana';
+import { useWallets, useSignTransaction } from '@privy-io/react-auth/solana';
 import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
 
 export type SolanaChain = 'solana:devnet' | 'solana:mainnet';
@@ -18,13 +18,13 @@ export interface PrivyState {
   logout: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
   /** The player's Solana wallet: Privy's embedded one if there is one, else a connected external one. */
-  wallet: { address: string; embedded: boolean; signAndSend: (tx: Uint8Array) => Promise<Uint8Array>; sign: (tx: Uint8Array) => Promise<Uint8Array>; signMessage?: (message: Uint8Array) => Promise<Uint8Array> } | null;
+  wallet: { address: string; embedded: boolean; signAndSend: (tx: Uint8Array) => Promise<Uint8Array>; sign: (tx: Uint8Array) => Promise<Uint8Array> } | null;
 }
 
 function Bridge({ chain, onState }: { chain: SolanaChain; onState: (s: PrivyState) => void }) {
   const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
-  const { signMessage } = useSignMessage();
+  const { signTransaction } = useSignTransaction();
   useEffect(() => {
     const pick = wallets.find((w) => /privy/i.test(w.standardWallet.name)) ?? wallets[0];
     onState({
@@ -39,18 +39,14 @@ function Bridge({ chain, onState }: { chain: SolanaChain; onState: (s: PrivyStat
             address: pick.address,
             embedded: /privy/i.test(pick.standardWallet.name),
             signAndSend: async (tx) => (await pick.signAndSendTransaction({ transaction: tx, chain })).signature,
-            sign: async (tx) => (await pick.signTransaction({ transaction: tx, chain })).signedTransaction,
-            signMessage: async (message) => (await signMessage({ message, wallet: pick, options: { uiOptions: {
-              showWalletUIs: true,
-              title: 'Verify your PumpKart wallet',
-              description: 'Free ownership check. This message does not spend SOL or buy coins.',
-              buttonText: 'Verify wallet — free',
-              isCancellable: true,
-            } } })).signature,
+            sign: async (tx) => (await signTransaction({ transaction: tx, wallet: pick, chain, options: { uiOptions: {
+              showWalletUIs: true, isCancellable: true,
+              description: 'Review your PumpKart payment before signing.', buttonText: 'Approve payment',
+            } } })).signedTransaction,
           }
         : null,
     });
-  }, [ready, authenticated, user, wallets, login, logout, getAccessToken, onState, chain, signMessage]);
+  }, [ready, authenticated, user, wallets, login, logout, getAccessToken, onState, chain, signTransaction]);
   return null;
 }
 

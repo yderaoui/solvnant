@@ -8,8 +8,14 @@ import { OnlinePumpAmmSdk, PUMP_AMM_SDK, buyQuoteInput } from '@pump-fun/pump-sw
 import type { TicketConfig } from './config';
 
 export function pumpConnection(t: TicketConfig) {
-  return new Connection(t.verifyUrl ?? t.rpcUrl, {
+  // The verification proxy defaults to devnet without this query parameter.
+  // Browser RPC URLs already select their network; never substitute one for the other.
+  const verifyUrl = t.verifyUrl ? new URL(t.verifyUrl) : null;
+  verifyUrl?.searchParams.set('cluster', t.cluster);
+  return new Connection(verifyUrl?.toString() ?? t.rpcUrl, {
     commitment: 'confirmed',
+    disableRetryOnRateLimit: true,
+    fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }),
     ...(t.verifyKey ? { httpHeaders: { 'x-rpc-key': t.verifyKey } } : {}),
   });
 }

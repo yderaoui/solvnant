@@ -47,6 +47,27 @@ it('an expired quote never opens a wallet or sends a transaction', async () => {
   await expect(approveCoinBuy({...quote(),expires:Date.now()-1},vi.fn())).rejects.toThrow('expired');
   expect(mock.sign).not.toHaveBeenCalled(); expect(mock.send).not.toHaveBeenCalled();
 });
+
+it('invalid amounts fail before config reads or wallet initialization', async () => {
+  for (const sol of [NaN, 0, 0.0001, 11]) await expect(quoteCoinBuy(sol)).rejects.toThrow('between');
+  expect(mock.api).not.toHaveBeenCalled(); expect(mock.payer).not.toHaveBeenCalled();
+});
+
+it('a cancelled wallet approval never broadcasts or retries signing', async () => {
+  mock.sign.mockRejectedValue(new Error('User cancelled'));
+  await expect(approveCoinBuy(quote(), vi.fn())).rejects.toThrow('cancelled');
+  expect(mock.sign).toHaveBeenCalledOnce(); expect(mock.send).not.toHaveBeenCalled();
+});
+
+it('expiration during wallet approval prevents submission even with a valid signature', async () => {
+  const q = quote();
+  mock.sign.mockImplementation(async (tx: Transaction) => {
+    tx.partialSign(wallet); q.expires = Date.now() - 1;
+    return new Uint8Array(tx.serialize());
+  });
+  await expect(approveCoinBuy(q, vi.fn())).rejects.toThrow('Nothing was sent');
+  expect(mock.sign).toHaveBeenCalledOnce(); expect(mock.send).not.toHaveBeenCalled();
+});
 it('a launch pause during wallet approval prevents broadcasting the signed transaction', async () => {
   mock.sign.mockImplementation(async (tx:Transaction)=>{tx.partialSign(wallet);return new Uint8Array(tx.serialize());});
   mock.api.mockResolvedValue({ok:true}).mockResolvedValueOnce({ok:true}).mockResolvedValueOnce({ok:true}).mockRejectedValueOnce(new Error('Launch paused'));

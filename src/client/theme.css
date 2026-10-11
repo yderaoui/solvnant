@@ -396,16 +396,6 @@ body.in-lobby .center.show { background: rgba(10, 0, 20, .82); }
 }
 
 /* Coin funding: a single quote and approval, with an explicit launch lock. */
-.coin-buy-card{max-width:680px;margin:0 auto;padding:30px}
-.coin-buy-card h2{font-family:Orbitron,sans-serif;margin:16px 0;font-size:clamp(22px,5vw,32px)}
-.coin-buy-card form{margin:24px 0 16px}
-.coin-buy-card label{display:block;margin-bottom:10px}
-.coin-buy-card input{width:100%;min-width:0;padding:12px;border:1px solid var(--line);background:#08060e;color:#fff;border-radius:8px;font:inherit}
-.coin-buy-card .input-row{display:flex;gap:10px}
-.coin-buy-card details{margin:18px 0}
-.coin-buy-card code{overflow-wrap:anywhere;white-space:normal}
-.coin-buy-card #coin-review{margin-top:24px}
-@media(max-width:480px){.coin-buy-card{padding:20px}.coin-buy-card .input-row{flex-direction:column}}
 
 
 /* Friend entries: one dollar amount, shared by every player. */

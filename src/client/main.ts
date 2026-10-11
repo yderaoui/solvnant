@@ -58,6 +58,14 @@ $('race-enter').addEventListener('click', () => {
 });
 // Who's signed in, first: it doesn't need the map, and the sign-in download starts from it.
 const accountLoading = account.load();
+const testBanner = document.createElement('div');
+testBanner.className = 'coin-test-banner';
+testBanner.hidden = true;
+document.querySelector('.topbar')?.insertAdjacentElement('afterend', testBanner);
+account.onChange(() => {
+  testBanner.hidden = account.cfg?.coinLaunch?.mode !== 'test';
+  testBanner.innerHTML = 'Temporary test coin · uses real SOL · paid races closed. <a href="#/buy">Buy test coins</a>';
+});
 await document.fonts.ready; // badges on the map measure their text, so the real font must be loaded first
 const renderer = await RaceRenderer.create($('stage-canvas'));
 const broadcast = new Broadcast(renderer);

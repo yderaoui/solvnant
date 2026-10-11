@@ -37,16 +37,16 @@ async function ensure(timeoutMs = 20_000): Promise<PrivyState> {
   return state!;
 }
 
-/** Signed-out visitors: load Privy in the background so "Sign in" opens straight away (it's a big download). */
+/** Warm login and existing wallets so the first payment needn't load the entire SDK. */
 export function preloadPrivy() {
-  if (privyOn() && !account.me) void ensure().catch(() => {});
+  if (privyOn()) void ensure().catch(() => {});
 }
 
 function onState(s: PrivyState) {
   state = s;
   if (s.ready) waiters.forEach((w) => w());
   // Just signed in with Privy: get a game session for it.
-  if (s.ready && s.authenticated && !account.me && !exchanging) void exchange(s);
+  if (s.ready && s.authenticated && !account.me && !exchanging) void exchange(s).catch(() => {});
 }
 
 async function exchange(s: PrivyState) {

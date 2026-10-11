@@ -255,6 +255,7 @@ function closeMenu() {
   document.getElementById('acct-chip')?.setAttribute('aria-expanded', 'false');
 }
 
+let withdrawalUiUid: string | null = null;
 function renderMenu(toast: (t: string) => void) {
   const me = account.me;
   const cfg = account.cfg;
@@ -263,6 +264,8 @@ function renderMenu(toast: (t: string) => void) {
     closeMenu();
     return;
   }
+  // Keep the active receipt/status controls attached while account refreshes finish.
+  if (withdrawalUiUid === me.id) return;
   const dailyIn = me.dailyAt - Date.now();
   const coinReady = cfg.coinLaunch?.status === 'live';
   const paidReady = coinReady && cfg.coinLaunch.paidEnabled !== false;
@@ -332,6 +335,7 @@ function renderMenu(toast: (t: string) => void) {
     const step = document.getElementById('am-wd-step')!;
     const btn = document.getElementById('am-wd-go') as HTMLButtonElement;
     btn.disabled = true;
+    withdrawalUiUid = account.me?.id ?? null;
     const showReceipt = (signature: string) => {
       if (!step.isConnected || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature)) return;
       let link = document.getElementById('am-wd-receipt');
@@ -351,6 +355,7 @@ function renderMenu(toast: (t: string) => void) {
     } catch (e) {
       step.textContent = (e as Error).message;
     } finally {
+      withdrawalUiUid = null;
       btn.disabled = false;
     }
   });

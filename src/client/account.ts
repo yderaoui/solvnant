@@ -336,9 +336,10 @@ function renderMenu(toast: (t: string) => void) {
       const { withdrawCoins } = await import('./tickets');
       const to = (document.getElementById('am-wd-to') as HTMLInputElement).value;
       const amt = Number((document.getElementById('am-wd-amt') as HTMLInputElement).value);
-      const sig = await withdrawCoins(to, amt, (t) => (step.textContent = t));
+      const result = await withdrawCoins(to, amt, (t) => (step.textContent = t));
       const dev = cfg.tickets?.cluster === 'devnet' ? '?cluster=devnet' : '';
-      step.innerHTML = `Sent ✓ <a href="https://solscan.io/tx/${sig}${dev}" target="_blank" rel="noopener">view</a>`;
+      step.innerHTML = `${result.confirmed ? 'Confirmed ✓' : 'Pending — do not send again.'} <a href="https://solscan.io/tx/${escapeHtml(result.signature)}${dev}" target="_blank" rel="noopener">View transaction</a>`;
+      btn.textContent = result.confirmed ? 'Withdraw' : 'Check withdrawal';
       void paintMyWallet(cfg.tickets?.rpcUrl);
     } catch (e) {
       step.textContent = (e as Error).message;

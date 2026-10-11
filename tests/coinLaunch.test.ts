@@ -4,7 +4,8 @@ import { Hub } from '../src/game/hub';
 import { signSession } from '../src/game/auth';
 import { readConfig } from '../src/game/config';
 
-const mocks = vi.hoisted(() => ({ verify: vi.fn(), price: vi.fn() }));
+const mocks = vi.hoisted(() => ({ verify: vi.fn(), price: vi.fn(), readiness: vi.fn() }));
+vi.mock('../src/game/paidReadiness', () => ({ paidReadinessProblem: mocks.readiness }));
 vi.mock('../src/game/pumpTrade', () => ({ verifyPumpCoin: mocks.verify }));
 vi.mock('../src/game/solana', async importOriginal => ({ ...await importOriginal<object>(), coinPriceUsd: mocks.price }));
 const mint = 'So11111111111111111111111111111111111111112'; // devnet fixtures, never sent
@@ -27,6 +28,7 @@ beforeEach(() => {
   vi.spyOn(Date, 'now').mockImplementation(() => now);
   mocks.verify.mockReset().mockResolvedValue({ decimals: 6, route: 'pump.fun' });
   mocks.price.mockReset().mockResolvedValue(0.002);
+  mocks.readiness.mockReset().mockResolvedValue(null);
   hub = new Hub(state(), env);
 });
 afterEach(() => { db.close(); vi.restoreAllMocks(); });
@@ -105,6 +107,7 @@ it('opens test coin buying while enforcing the paid-race lock on the server, acr
   const cfg = await config();
   expect(cfg.coinLaunch).toMatchObject({ status: 'live', buyEnabled: true, mode: 'test', paidEnabled: false });
   expect(cfg.sponsor).toBeNull();
+  expect(mocks.readiness).not.toHaveBeenCalled();
   const body = { mint: nextMint, coinRevision: cfg.coinLaunch.revision };
   expect((await api('/api/coin/preflight', { ...body, purpose: 'coin' })).status).toBe(200);
   expect((await api('/api/coin/preflight', { ...body, purpose: 'ticket' })).status).toBe(409);
@@ -120,6 +123,26 @@ it('an official prepare clears the temporary test mode and restores paid-race re
   await admin('prepare', { mint: nextMint, symbol: '$RACE', mode: 'test', paidEnabled: false });
   expect((await admin('prepare', { mint: nextMint, symbol: '$PUMP' })).status).toBe(200);
   expect((await config()).coinLaunch).toMatchObject({ mode: 'official', paidEnabled: true, status: 'paused' });
+});
+
+it('keeps paid tests paused until payout funding checks succeed', async () => {
+  await admin('pause'); now += 120_001;
+  await admin('prepare', { mint: nextMint, symbol: '$RACE', mode: 'test', paidEnabled: true });
+  mocks.readiness.mockResolvedValue('The treasury needs at least 0.02 SOL.');
+  const paused = (await config()).coinLaunch;
+  expect((await admin('enable')).status).toBe(409);
+  expect((await config()).coinLaunch).toEqual(paused);
+  mocks.readiness.mockResolvedValue(null);
+  expect((await admin('enable')).status).toBe(200);
+  expect((await config()).coinLaunch).toMatchObject({ status: 'live', mode: 'test', paidEnabled: true });
+});
+it('reports readiness and outstanding money without changing the coin or opening payments', async () => {
+  mocks.readiness.mockResolvedValue('The treasury needs at least 0.02 SOL.');
+  const before = await config();
+  const r = await admin('check');
+  expect(r.status).toBe(200);
+  expect(await r.json()).toMatchObject({ paidReady: false, paidProblem: 'The treasury needs at least 0.02 SOL.', outstanding: { openLobbies: 0, payouts: 0, unusedTickets: 0 } });
+  expect(await config()).toEqual(before);
 });
 
 it('rejects malformed operational test settings before on-chain verification', async () => {

@@ -20,7 +20,8 @@ paid ticket, cosmetic and friend-lobby payments/entries. Public configuration ex
 no fee sponsor in this stage. Practice and play-point modes remain available.
 **Live activation verified on 2026-10-11:** `/api/config` reports status live,
 buyEnabled true, mode test, paidEnabled false, sponsor null and the exact test mint.
-Revision: `coin_1sF8rStR3xEUU7iV`. Worker: `38198075-7b27-4191-b31d-67a21313afd6`.
+Revision: `coin_1sF8rStR3xEUU7iV`. Worker: `0b50141d-51d5-4c7c-b9bd-0f7e45e108f3`.
+Frontend production deployment: `solvnant-dk0zn25pi-yousser-ayman.vercel.app`.
 Changing client copy alone does not open payments.
 
 1. Open **https://www.pumpkart.racing/#/buy** and sign in with your existing X account.
@@ -52,18 +53,46 @@ transaction confirmation cannot be guaranteed instant.
 
 Paid races remain closed for this first test. The player had **0.188229983 SOL**
 at the latest read; the payout treasury had **0.00089088 SOL**.
-The owner chose coin buying first instead of funding the treasury now.
+The owner initially chose coin buying first, then requested the full test. The
+latest balance read still shows no treasury top-up or approved owner purchase.
 
 For the next stage, fund the treasury's network/account-setup budget and have Codex
 verify the balance before explicitly opening paid tests. Public treasury address:
 `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`.
+The owner selected this same address for `TEAM_WALLET`; it is now configured in
+production, so the team's 5% remains in the treasury. A separate funded devnet
+payout confirmed 80% to the winner, 15% burned, and exactly 5% retained with this
+shared-wallet arrangement. The latest read-only `check` reports no open lobbies,
+unresolved payouts or unused tickets. Its remaining paid-readiness blocker is the
+treasury's SOL reserve.
 Do not send wallet keys, recovery phrases or admin secrets in chat.
+
+1. In the owner's wallet, send **0.02 SOL** to the public treasury above. Codex cannot
+   approve this transfer in the owner's wallet. The funded balance must be at least
+   0.02 SOL; the current balance is below that launch reserve.
+2. Complete the small normal coin buy above and give Codex its public transaction link.
+3. To open the full temporary-coin test, use `pause`, wait at least two minutes, then
+   `prepare <TEST_CA> <TEST_TICKER> --test-paid` and `enable`. This keeps the test label.
+   The server refuses enable if the payout wallet does not match the treasury, the
+   team wallet is missing/invalid, funding is below 0.02 SOL, or the balance cannot be
+   read. A reserve is a starting budget, not unlimited sponsored gas.
+4. Use five real X accounts in a small custom-entry friend lobby, then verify the
+   public transaction links for the split, refund and withdrawal. Finish or refund
+   all test pots and use/resolve leftover tickets before switching the official mint.
 
 Use five real accounts in a low-entry friend lobby. All five must pay the same locked
 coin amount chosen from the creator's USD entry. Verify each receipt, race submission,
 80% winner payout, 15% burn, 5% team transfer, expiry refund and withdrawal on mainnet.
 Public tickets stay $20; paid races have no bots. Claims, recovery, existing submissions
 and withdrawals remain available through purchase pauses.
+
+New purchase receipts belong to the signed-in account. A disconnected RPC or expired
+login keeps the receipt for recovery; checkout checks it before charging again and
+blocks overlapping payments in the tab. Older unscoped receipts remain recoverable.
+Known sponsored signatures are returned even after an uncertain RPC broadcast.
+Withdrawals show **Pending — do not send again** until confirmed; the next click checks
+that same transaction. Retries unlock after historical status and finalized block height
+prove a transaction expired without landing. An unavailable RPC does not clear it.
 
 ## Domain and login setup
 
@@ -85,6 +114,7 @@ Set `PUMPKART_API_URL` to the existing Worker URL, then use:
 
 ```text
 node scripts/coin-launch.mjs status
+node scripts/coin-launch.mjs check
 node scripts/coin-launch.mjs pause
 # Allow at least two minutes for in-flight quotes/transactions to drain.
 node scripts/coin-launch.mjs prepare <OFFICIAL_CA> <OFFICIAL_TICKER>
@@ -94,7 +124,8 @@ node scripts/coin-launch.mjs enable
 
 For the current coin-only temporary test, preparation uses
 `prepare <TEST_CA> <TEST_TICKER> --test`; this explicitly disables paid entries.
-Preparing without `--test` selects official mode and paid readiness, so only do that
+`--test-paid` selects test mode with paid races, subject to the treasury checks.
+Preparing without a test flag selects official mode and paid readiness, so only do that
 after the paid-flow release checks and treasury funding are satisfied.
 
 Prepare verifies mint/freeze authorities, supported token extensions, pump.fun provenance,
@@ -115,7 +146,7 @@ The original noon launch target was a target, not an automatic scheduled deploym
 
 ## Verification limits
 
-141 regression tests in 22 files, TypeScript/build, Worker dry-run, mobile/desktop
+172 regression tests in 25 files, TypeScript/build, Worker dry-run, mobile/desktop
 browser fixtures and real unsigned PumpSwap simulation passed. The quote/fee review
 took about 3 seconds in this local read-only browser check; it is not a promise of
 transaction confirmation speed. The funded devnet round passed five $1.25 entries,

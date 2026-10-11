@@ -52,6 +52,8 @@ TICKET_CLUSTER = "mainnet-beta"
 TICKET_MINT = "BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump"
 TICKET_DECIMALS = "6"
 TICKET_TREASURY = "WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc"
+# Owner selected the treasury as the team receiving wallet; the 5% share stays here.
+TEAM_WALLET = "WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc"
 TICKET_PRICE = "0"
 TICKET_PRICE_USD = "20"
 TICKET_SYMBOL = "$RACE"

@@ -15,6 +15,7 @@ import { blockHeight, buildPayout, cosignPurchase, cosignWithdrawal, loadHouse, 
 import { isPurchaseMemo, skinFromMemo } from './purchaseMemo';
 import { friendCode, normalizeFriendCode, friendEntryUsd, friendEntryUnits, splitFriendPot, FRIEND_LOBBIES_OPEN_LIMIT, FRIEND_LOBBIES_DAILY_LIMIT } from './friendLobbies';
 import { applyCoinLaunch, coinActionProblem, type StoredCoinLaunch } from './coinLaunch';
+import { paidReadinessProblem } from './paidReadiness';
 
 interface SqlCursor {
   toArray(): Record<string, unknown>[];
@@ -678,8 +679,10 @@ export class Hub {
     this.sql.exec('INSERT OR IGNORE INTO sponsored (sig, uid, ts) VALUES (?, ?, ?)', out.signature, u.id, Date.now());
     try {
       await sendWire(t, out.wire);
-    } catch (e) {
-      return fail(`The network refused the payment: ${(e as Error).message.slice(0, 200)}`);
+    } catch {
+      // A timeout does not prove rejection. Return the signed receipt so the player checks it
+      // instead of signing a second payment. Chain validation/expiry determines its outcome.
+      return json({ ok: true, pending: true, signature: out.signature }, 202);
     }
     return json({ ok: true, signature: out.signature });
   }
@@ -702,8 +705,8 @@ export class Hub {
     if (out.created) this.sql.exec('INSERT OR IGNORE INTO sponsored (sig, uid, ts) VALUES (?, ?, ?)', `create:${out.signature}`, u.id, Date.now());
     try {
       await sendWire(t, out.wire);
-    } catch (e) {
-      return fail(`The network refused the withdrawal: ${(e as Error).message.slice(0, 200)}`);
+    } catch {
+      return json({ ok: true, pending: true, signature: out.signature }, 202);
     }
     return json({ ok: true, signature: out.signature });
   }
@@ -785,6 +788,18 @@ export class Hub {
     if (!this.cfg.tickets) return fail('Configure ticket network and treasury first.');
     const revision = this.cfg.coinLaunch.revision;
     if (b.revision !== revision) return fail('Launch settings changed. Fetch /api/config and retry.', 409);
+    if (b.action === 'check') {
+      const problem = await paidReadinessProblem(this.cfg.tickets, (await this.house())?.address ?? null, this.cfg.teamWallet);
+      if (this.cfg.coinLaunch.revision !== revision) return fail('Launch settings changed during verification. Retry.', 409);
+      return json({ coinLaunch: this.cfg.coinLaunch, mint: this.cfg.tickets.mint, symbol: this.cfg.tickets.symbol,
+        paidReady: !problem, paidProblem: problem,
+        outstanding: {
+          openLobbies: Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobbies WHERE status = 'open'").one().n),
+          payouts: Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobby_payouts WHERE status IN ('pending','sent','failed','manual')").one().n),
+          unusedTickets: Number(this.sql.exec('SELECT COUNT(*) AS n FROM tickets WHERE used_ref IS NULL AND mint = ?', this.cfg.tickets.mint).one().n),
+        },
+      });
+    }
     if (!['pause', 'prepare', 'enable'].includes(b.action ?? '')) return fail('Use pause, prepare or enable.');
     let next: StoredCoinLaunch = { cluster: this.cfg.tickets.cluster, mint: this.cfg.tickets.mint, symbol: this.cfg.tickets.symbol, decimals: this.cfg.tickets.decimals, ...this.cfg.coinLaunch, revision: `coin_${randomToken(12)}` };
     if (b.action === 'pause') { next.status = 'paused'; next.pausedAt = Date.now(); }
@@ -808,6 +823,10 @@ export class Hub {
         const price = await this.liveCoinPrice();
         if (!(price && price > 0)) return fail('The coin is verified, but USD pricing is not available yet. Buying stays paused.', 409);
         if (!next.buyEnabled) return fail('Prepare the official pump.fun coin before enabling purchases.', 409);
+        if (next.paidEnabled !== false) {
+          const problem = await paidReadinessProblem(this.cfg.tickets, (await this.house())?.address ?? null, this.cfg.teamWallet);
+          if (problem) return fail(problem, 409);
+        }
         next.status = 'live';
       }
     }

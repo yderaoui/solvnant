@@ -50,12 +50,15 @@ KOL shown as a racer.
   approval intact across account refresh. No wallet transaction was submitted by them.
   Owner's player wallet: `4tWo1pQfrtFbw94HW9NScGmmWNH2Y8u7D9DGxPC6AGpH`, latest
   balance 0.188229983 SOL. Treasury: `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`,
-  0.00089088 SOL. The owner deferred adding 0.02 SOL to the treasury.
+  0.00089088 SOL. The owner now requested full testing; funding and wallet approval
+  still require their wallet clicks. They selected the same public treasury address
+  for the team share; `TEAM_WALLET` is now configured. The read-only operational
+  `check` reports no outstanding pots/payouts/tickets and an underfunded SOL reserve.
   Owner mainnet purchase/confirmation and fresh X login remain to verify. The official
   client CA is pending. See COIN_LAUNCH.md for the exact player steps and switch procedure.
 
 - **Backend published (2026-10-11):** Worker version
-  `38198075-7b27-4191-b31d-67a21313afd6` at the existing Worker URL.
+  `0b50141d-51d5-4c7c-b9bd-0f7e45e108f3` at the existing Worker URL.
   Server Pump SDK reads now explicitly select the configured cluster on the verification
   proxy; previously a missing cluster query incorrectly read devnet during mainnet activation.
   Real server-proxy mainnet verification and runtime prepare/enable both passed.
@@ -72,7 +75,7 @@ KOL shown as a racer.
   buying; ticket/paid friend-lobby controls are closed. Login/wallet SDK preloads for
   existing sessions. Active approval survives account refresh and page navigation;
   uncertain submissions retain their signed transaction ID and block repeat buys.
-  Validation: 141 tests in 22 files, production build, Worker dry-run, mobile/desktop
+  Validation: 172 tests in 25 files, production build, Worker dry-run, mobile/desktop
   browser fixtures and a funded devnet integration round passed. Devnet verified five
   $1.25 entries, 20-test-coin prize, 3.75 burn, 1.25 team share, full 2-coin refund and
   sponsored 1-coin withdrawal to a new destination. No mainnet transaction was signed
@@ -81,6 +84,14 @@ KOL shown as a racer.
   Twitter option; published-page checks at 375/768/1440 px found no page errors or CSP
   violations. Completing OAuth and signing a purchase still require the owner/client.
   Deployment verification and exact player steps are recorded in COIN_LAUNCH.md.
+  Latest production frontend: `solvnant-dk0zn25pi-yousser-ayman.vercel.app`.
+  Account-scoped payment receipts survive RPC/login errors and block duplicate
+  checkout while pending. Withdrawals keep known signatures before broadcast, show
+  pending honestly and check the same signature on retry; finalized expiry/history
+  is required to unlock a retry. Sponsored RPC uncertainty returns the known signed
+  receipt. A shared team/treasury devnet payout verified exactly 5% retained.
+  `prepare ... --test-paid` opens a labeled full test only after `enable` checks
+  the payout signer, team address, live USD price and 0.02 SOL starting reserve.
   Historical implementation notes below are not proof of mainnet completion.
 
 - **New domain connected: `pumpkart.racing` through Cloudflare.** The owner attached
@@ -364,7 +375,7 @@ onchain/ (branch phase4-anchor-pots)  Early devnet-only Anchor escrow prototype;
 | Role | Address | Who holds the key |
 |---|---|---|
 | **House / treasury (mainnet)** | `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc` | The Worker (secret `HOUSE_SECRET`) **and** the owner's Phantom. Receives all ticket/racer payments, pays winners, pays players' network fees. Keep its balance small (pots in flight + ~0.05 SOL). |
-| Team wallet | not set yet (`TEAM_WALLET` unset in production) -> the 5% team share currently stays in the house wallet | owner/client (multisig recommended) |
+| Team wallet | `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc` (owner selected the treasury too; the 5% remains there) | owner/client |
 | Owner's game wallet (Privy) | `4tWo1pQfrtFbw94HW9NScGmmWNH2Y8u7D9DGxPC6AGpH` | owner via Privy |
 | Current coin $RACE | mint `BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump` (Token-2022, 6 decimals, no transfer fee, no mint/freeze authority) | being replaced by the PumpKart coin |
 | Test coin $PTEST (mainnet) | mint `2EtATUYcuiCYkQRugSQvhGaE1AVXxqb8drpueeGvk4C8` | used only for testing |
@@ -443,8 +454,8 @@ onchain/ (branch phase4-anchor-pots)  Early devnet-only Anchor escrow prototype;
 
 **Worker vars (wrangler.toml):** SITE_URL, MIN_HOLD_USD, X_MIN_ACCOUNT_DAYS, X_MIN_FOLLOWERS, POINTS_SIGNUP, POINTS_DAILY,
 POINTS_ENTRY_FEE, POINTS_PRIORITY_FEE, MAX_PRIORITY_PER_RACE, BET_RAKE_PCT, TICKET_CLUSTER, TICKET_MINT, TICKET_DECIMALS,
-TICKET_TREASURY, TICKET_PRICE, TICKET_PRICE_USD, TICKET_SYMBOL, TICKET_RPC_URL, TICKET_VERIFY_URL, PRIVY_APP_ID
-(optional: TEAM_WALLET).
+TICKET_TREASURY, TICKET_PRICE, TICKET_PRICE_USD, TICKET_SYMBOL, TICKET_RPC_URL, TICKET_VERIFY_URL, PRIVY_APP_ID,
+TEAM_WALLET (required by paid-launch readiness, may equal the treasury if the owner chooses).
 
 **Worker secrets (`wrangler secret put`):** SESSION_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, X_CLIENT_ID,
 X_CLIENT_SECRET, TICKET_VERIFY_KEY (= Vercel's RPC_PROXY_KEY), HOUSE_SECRET (house wallet secret key, base58 or JSON
@@ -494,8 +505,12 @@ git push origin main        # Vercel deploys the site automatically
 2. Confirm a live price on Jupiter and DexScreener.
 3. Check the house wallet holds no unsettled coins of the old mint / no open lobbies (on-chain: house's coin account for
    the old mint and its memos). For $RACE the balance is 0, nothing to refund.
-4. In `wrangler.toml`: TICKET_MINT, TICKET_SYMBOL (and TICKET_DECIMALS if not 6); keep TICKET_PRICE = "0",
-   TICKET_PRICE_USD = "20". Deploy the Worker, push the PumpKart site, verify `/api/config`.
+4. Follow the runtime pause → two-minute drain → prepare → enable procedure in `COIN_LAUNCH.md`
+   using `scripts/coin-launch.mjs`. Persisted `coin_launch` settings override the initial Wrangler
+   mint/ticker: editing `wrangler.toml` alone will not switch the live coin. Prepare validates
+   mint/decimals/route, refuses outstanding pots/payouts/unused tickets, and stays paused.
+   Enable requires live USD pricing and, for paid races, the matching payout wallet, valid team
+   destination and at least 0.02 SOL treasury reserve. Public tickets remain $20.
 5. Ask the owner for one real purchase and confirm it on-chain (fee paid by the house, amount = quote).
 
 ---

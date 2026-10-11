@@ -792,11 +792,12 @@ export class Hub {
   private async adminCoin(req: Request): Promise<Response> {
     if (!this.coinAdminKey || bearer(req) !== this.coinAdminKey) return fail('Not authorized.', 401);
     if (req.method !== 'POST') return fail('Use POST.', 405);
-    const b = await req.json() as { action?: string; mint?: string; symbol?: string; revision?: string; mode?: string; paidEnabled?: boolean; code?: unknown };
+    const b = await req.json() as { action?: string; mint?: string; symbol?: string; revision?: string; mode?: string; paidEnabled?: boolean; code?: unknown; paymentWallet?: unknown };
     if (!this.cfg.tickets) return fail('Configure ticket network and treasury first.');
     const revision = this.cfg.coinLaunch.revision;
     if (b.revision !== revision) return fail('Launch settings changed. Fetch /api/config and retry.', 409);
     if (b.action === 'check') {
+      if (b.paymentWallet !== undefined && (typeof b.paymentWallet !== 'string' || !isSolanaAddress(b.paymentWallet))) return fail('Enter a valid public Solana wallet.');
       let friendLobby: object | undefined;
       if (b.code !== undefined) {
         const code = normalizeFriendCode(b.code);
@@ -814,6 +815,7 @@ export class Hub {
       if (this.cfg.coinLaunch.revision !== revision) return fail('Launch settings changed during verification. Retry.', 409);
       return json({ coinLaunch: this.cfg.coinLaunch, mint: this.cfg.tickets.mint, symbol: this.cfg.tickets.symbol,
         paidReady: !problem, paidProblem: problem, ...(friendLobby ? { friendLobby } : {}),
+        ...(b.paymentWallet ? { sponsoredReceipts: this.sql.exec("SELECT sig, ts FROM sponsored WHERE sig NOT LIKE 'create:%' AND uid IN (SELECT uid FROM tickets WHERE wallet = ? UNION SELECT uid FROM skins WHERE wallet = ? UNION SELECT id FROM users WHERE wallet = ?) ORDER BY ts DESC LIMIT 10", b.paymentWallet, b.paymentWallet, b.paymentWallet).toArray() } : {}),
         maintenance: { serverNow: Date.now(), alarmAt: await this.state.storage.getAlarm(), lastRun: this.sql.exec('SELECT started, finished FROM maintenance_status WHERE id = 1').toArray()[0] ?? null },
         outstanding: {
           openLobbies: Number(this.sql.exec("SELECT COUNT(*) AS n FROM lobbies WHERE status = 'open'").one().n),

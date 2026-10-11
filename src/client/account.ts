@@ -332,11 +332,18 @@ function renderMenu(toast: (t: string) => void) {
     const step = document.getElementById('am-wd-step')!;
     const btn = document.getElementById('am-wd-go') as HTMLButtonElement;
     btn.disabled = true;
+    const showReceipt = (signature: string) => {
+      if (!step.isConnected || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature)) return;
+      let link = document.getElementById('am-wd-receipt');
+      if (!link) { link = document.createElement('p'); link.id = 'am-wd-receipt'; link.className = 'small'; step.after(link); }
+      const dev = cfg.tickets?.cluster === 'devnet' ? '?cluster=devnet' : '';
+      link.innerHTML = `<a href="https://solscan.io/tx/${escapeHtml(signature)}${dev}" target="_blank" rel="noopener">View withdrawal transaction ↗</a>`;
+    };
     try {
       const { withdrawCoins } = await import('./tickets');
       const to = (document.getElementById('am-wd-to') as HTMLInputElement).value;
       const amt = Number((document.getElementById('am-wd-amt') as HTMLInputElement).value);
-      const result = await withdrawCoins(to, amt, (t) => (step.textContent = t));
+      const result = await withdrawCoins(to, amt, (t) => (step.textContent = t), showReceipt);
       const dev = cfg.tickets?.cluster === 'devnet' ? '?cluster=devnet' : '';
       step.innerHTML = `${result.confirmed ? 'Confirmed ✓' : 'Pending — do not send again.'} <a href="https://solscan.io/tx/${escapeHtml(result.signature)}${dev}" target="_blank" rel="noopener">View transaction</a>`;
       btn.textContent = result.confirmed ? 'Withdraw' : 'Check withdrawal';

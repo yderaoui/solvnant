@@ -165,6 +165,16 @@ it('restricts lobby inspection to operations authentication and rejects invalid/
   expect((await admin('check', { code: 'RK5J6F78' })).status).toBe(404);
   expect(mocks.readiness).not.toHaveBeenCalled();
 });
+it('inspects public sponsored receipt IDs only for the requested wallet and requires operations auth', async () => {
+  const wallet = '4tWo1pQfrtFbw94HW9NScGmmWNH2Y8u7D9DGxPC6AGpH';
+  db.prepare('INSERT INTO tickets(sig,uid,wallet,amount,ts,mint) VALUES(?,?,?,?,?,?)').run('paid-fixture','owner',wallet,1,now,mint);
+  db.prepare('INSERT INTO sponsored(sig,uid,ts) VALUES(?,?,?)').run('prepared-fixture','owner',now);
+  db.prepare('INSERT INTO sponsored(sig,uid,ts) VALUES(?,?,?)').run('another-player','stranger',now);
+  expect((await admin('check', { paymentWallet: wallet }, 'wrong-key')).status).toBe(401);
+  expect((await admin('check', { paymentWallet: "' OR 1=1" })).status).toBe(400);
+  expect(await (await admin('check', { paymentWallet: wallet })).json()).toMatchObject({ sponsoredReceipts: [{ sig: 'prepared-fixture', ts: now }] });
+  expect(db.prepare('SELECT COUNT(*) AS n FROM sponsored').get()!.n).toBe(2);
+});
 
 it('rejects malformed operational test settings before on-chain verification', async () => {
   await admin('pause'); now += 120_001;

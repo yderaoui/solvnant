@@ -148,6 +148,7 @@ function sponsoredFixture() {
   vi.spyOn(Connection.prototype, 'getAccountInfo').mockResolvedValue({ owner: new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'), data: Buffer.alloc(82), executable: false, lamports: 1, rentEpoch: 1 });
   vi.spyOn(Connection.prototype, 'getTokenAccountBalance').mockResolvedValue({ context: { slot: 1 }, value: { amount: '10000000', decimals: 6, uiAmount: 10, uiAmountString: '10' } });
   vi.spyOn(Connection.prototype, 'getLatestBlockhash').mockResolvedValue({ blockhash: mint, lastValidBlockHeight: 100 });
+  vi.spyOn(Connection.prototype, 'isBlockhashValid').mockResolvedValue({ context: { slot: 1 }, value: true });
   const prepare = (body: { tx: string; prepareOnly?: boolean }) => {
     expect(body.prepareOnly).toBe(true);
     const tx = Transaction.from(Buffer.from(body.tx, 'base64')); tx.partialSign(house);
@@ -189,4 +190,49 @@ it('an account change during withdrawal approval never prepares or broadcasts it
   const send = vi.spyOn(Connection.prototype, 'sendRawTransaction');
   await expect(withdrawCoins(fixture.destination, 1, vi.fn())).rejects.toThrow('Account or coin changed');
   expect(mocks.api).not.toHaveBeenCalled(); expect(send).not.toHaveBeenCalled();
+});
+it('rejects a withdrawal expired during wallet approval before sponsorship or broadcast', async () => {
+  const fixture = sponsoredFixture();
+  vi.mocked(Connection.prototype.isBlockhashValid).mockResolvedValue({ context: { slot: 1 }, value: false });
+  const send = vi.spyOn(Connection.prototype, 'sendRawTransaction');
+  await expect(withdrawCoins(fixture.destination, 2, vi.fn())).rejects.toThrow('transaction expired');
+  expect(mocks.api).not.toHaveBeenCalled(); expect(send).not.toHaveBeenCalled(); expect(store.has('tl-pending-withdrawal:alice')).toBe(false);
+});
+it('exposes the receipt before broadcast rather than hiding it until confirmation finishes', async () => {
+  const fixture = sponsoredFixture(); mocks.api.mockImplementation(async (_path, body) => fixture.prepare(body));
+  const receipt = vi.fn();
+  vi.spyOn(Connection.prototype, 'sendRawTransaction').mockImplementation(async () => { expect(receipt).toHaveBeenCalledOnce(); return 'fixture'; });
+  vi.spyOn(Connection.prototype, 'getSignatureStatuses').mockRejectedValue(new Error('RPC offline'));
+  const r = await withdrawCoins(fixture.destination, 2, vi.fn(), receipt);
+  expect(receipt).toHaveBeenCalledWith(r.signature); expect(r.confirmed).toBe(false);
+});
+it('bounds an unavailable withdrawal status read and retains its receipt for checking', async () => {
+  vi.useFakeTimers(); withdrawalReceipt();
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => {
+    const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal;
+  });
+  vi.stubGlobal('fetch', vi.fn(async (_url, init) => new Promise((_resolve, reject) => {
+    init.signal.addEventListener('abort', () => reject(new Error('RPC timed out')));
+  })));
+  try {
+    const receipt = vi.fn(); const pending = withdrawCoins('', 0, vi.fn(), receipt);
+    await vi.advanceTimersByTimeAsync(8_100);
+    expect(await pending).toEqual({ signature: 'withdrawal-signature', confirmed: false });
+    expect(receipt).toHaveBeenCalledWith('withdrawal-signature'); expect(store.has('tl-pending-withdrawal:alice')).toBe(true);
+    expect(mocks.wallet).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
+});
+it('re-broadcasts only the exact saved withdrawal wire without a second wallet approval', async () => {
+  const fixture = sponsoredFixture(); mocks.api.mockImplementation(async (_path, body) => fixture.prepare(body));
+  const send = vi.spyOn(Connection.prototype, 'sendRawTransaction').mockResolvedValue('fixture');
+  const statuses = vi.spyOn(Connection.prototype, 'getSignatureStatuses').mockRejectedValue(new Error('RPC offline'));
+  const first = await withdrawCoins(fixture.destination, 2, vi.fn());
+  const receipt = JSON.parse(store.get('tl-pending-withdrawal:alice')!); expect(receipt.wire).toEqual(expect.any(String));
+  statuses.mockResolvedValue({ context: { slot: 1 }, value: [{ slot: 1, confirmations: 0, err: null, confirmationStatus: 'processed' }] });
+  expect(await withdrawCoins('', 0, vi.fn())).toEqual(first);
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(new Uint8Array(send.mock.calls[0][0])).toEqual(new Uint8Array(send.mock.calls[1][0]));
+  statuses.mockResolvedValue({ context: { slot: 1 }, value: [{ slot: 1, confirmations: 1, err: null, confirmationStatus: 'confirmed' }] });
+  expect(await withdrawCoins('', 0, vi.fn())).toEqual({ signature: first.signature, confirmed: true });
+  expect(fixture.sign).toHaveBeenCalledOnce(); expect(mocks.api).toHaveBeenCalledOnce(); expect(send).toHaveBeenCalledTimes(2);
 });

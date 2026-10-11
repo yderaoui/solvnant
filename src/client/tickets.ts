@@ -549,7 +549,7 @@ export async function coinBalance(signal?: AbortSignal): Promise<number | null> 
 }
 
 /** Send coins out of the game wallet to any Solana address. The game pays the fee when it can. */
-export async function withdrawCoins(to: string, amount: number, step: (text: string) => void): Promise<{ signature: string; confirmed: boolean }> {
+export async function withdrawCoins(to: string, amount: number, step: (text: string) => void, receiptReady?: (signature: string) => void): Promise<{ signature: string; confirmed: boolean }> {
   const configured = account.cfg?.tickets;
   if (!configured || !account.me) throw new Error('Sign in first.');
   const t: TicketConfig = configured;
@@ -561,13 +561,14 @@ export async function withdrawCoins(to: string, amount: number, step: (text: str
     step('Preparing…');
     const { Buffer } = await import('buffer');
     (globalThis as unknown as { Buffer: typeof Buffer }).Buffer ??= Buffer;
-    const [{ Connection, PublicKey, Transaction }, spl] = await Promise.all([import('@solana/web3.js'), import('@solana/spl-token')]);
-    const connection = (url: string) => new Connection(url, { commitment: 'confirmed', disableRetryOnRateLimit: true, fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }) });
+    const [{ Connection, PublicKey, Transaction, ComputeBudgetProgram }, spl] = await Promise.all([import('@solana/web3.js'), import('@solana/spl-token')]);
+    const connection = (url: string, deadline?: AbortSignal) => new Connection(url, { commitment: 'confirmed', disableRetryOnRateLimit: true, fetch: (input, init) => fetch(input, { ...init, signal: deadline ? AbortSignal.any([deadline, AbortSignal.timeout(8_000)]) : AbortSignal.timeout(15_000) }) });
     const old = saved(key);
     if (old) {
       const receipt = JSON.parse(old) as { signature: string; rpcUrl: string; lastValidBlockHeight: number };
+      receiptReady?.(receipt.signature);
       step('Checking your previous withdrawal…');
-      return await check(receipt, connection(receipt.rpcUrl), false);
+      return await check(receipt, false);
     }
     if (!(amount > 0) || !Number.isFinite(amount)) throw new Error('Enter a valid amount.');
     let dest: InstanceType<typeof PublicKey>;
@@ -593,7 +594,7 @@ export async function withdrawCoins(to: string, amount: number, step: (text: str
     if (bal < units) throw new Error(`You only have ${Number(bal) / 10 ** decimals} ${t.symbol}.`);
     const sponsorAddr = (account.cfg as { sponsor?: string | null } | null)?.sponsor ?? null;
     const sponsor = sponsorAddr && wallet.signOnly ? new PublicKey(sponsorAddr) : null;
-    const tx = new Transaction();
+    const tx = new Transaction().add(ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10_000 }));
     if (!(await conn.getAccountInfo(toAta))) tx.add(spl.createAssociatedTokenAccountIdempotentInstruction(sponsor ?? owner, toAta, dest, mint, programId));
     tx.add(spl.createTransferCheckedInstruction(from, mint, toAta, owner, units, decimals, [], programId));
     tx.feePayer = sponsor ?? owner;
@@ -605,21 +606,27 @@ export async function withdrawCoins(to: string, amount: number, step: (text: str
     if (sponsor) {
       const signedTx = await wallet.signOnly!(tx);
       if (account.me?.id !== uid || account.cfg?.tickets?.mint !== t.mint) throw new Error('Account or coin changed during approval. Nothing was sent.');
+      if (!(await conn.isBlockhashValid(latest.blockhash, { commitment: 'confirmed' })).value) throw new Error('Wallet approval took too long and this transaction expired. Nothing was sent. Try again for a fresh approval.');
       step('Preparing your signed withdrawal…');
       const prepared = await account.api<{ signature: string; wire?: string }>('/api/pay/withdraw', { tx: Buffer.from(signedTx).toString('base64'), prepareOnly: true });
       const wire = await preparedWire(prepared, tx);
       if (account.me?.id !== uid || account.cfg?.tickets?.mint !== t.mint) throw new Error('Account or coin changed during approval. Nothing was sent.');
       sig = prepared.signature;
-      remember(key, JSON.stringify({ signature: sig, rpcUrl: t.rpcUrl, lastValidBlockHeight: latest.lastValidBlockHeight }));
+      const receipt = { signature: sig, rpcUrl: t.rpcUrl, lastValidBlockHeight: latest.lastValidBlockHeight, wire: prepared.wire };
+      remember(key, JSON.stringify(receipt));
+      receiptReady?.(sig);
       step('Sending (the game pays the network fee)…');
-      try { await conn.sendRawTransaction(wire, { skipPreflight: false, maxRetries: 5 }); }
+      try { await conn.sendRawTransaction(wire, { skipPreflight: false, maxRetries: 20 }); }
       catch { /* Check this signature; never automatically sign a replacement. */ }
+      step('Checking your withdrawal…');
+      return await check(receipt, true);
     } else {
       let known: string | null = null;
       try {
         sig = await wallet.send(tx, conn, signature => {
           known = signature;
           remember(key, JSON.stringify({ signature, rpcUrl: t!.rpcUrl, lastValidBlockHeight: latest.lastValidBlockHeight }));
+          receiptReady?.(signature);
         });
       } catch (e) {
         if (!known) throw e;
@@ -629,12 +636,17 @@ export async function withdrawCoins(to: string, amount: number, step: (text: str
     const receipt = { signature: sig, rpcUrl: t!.rpcUrl, lastValidBlockHeight: latest.lastValidBlockHeight };
     remember(key, JSON.stringify(receipt));
     step('Waiting for the network to confirm…');
-    return await check(receipt, conn, true);
+    return await check(receipt, true);
 
-    async function check(receipt: { signature: string; lastValidBlockHeight: number }, conn: import('@solana/web3.js').Connection, wait: boolean) {
-      for (let i = 0; i < (wait ? 40 : 1); i++) {
+    async function check(receipt: { signature: string; rpcUrl: string; lastValidBlockHeight: number; wire?: string }, wait: boolean) {
+      // One overall deadline bounds all status/expiry reads together. Independent
+      // per-request timeouts inside forty polls could otherwise hold the UI for minutes.
+      const deadline = AbortSignal.timeout(wait ? 12_000 : 8_000);
+      const statusConn = connection(receipt.rpcUrl, deadline);
+      let rebroadcast = false;
+      for (let i = 0; i < (wait ? 7 : 1) && !deadline.aborted; i++) {
         let s;
-        try { s = (await conn.getSignatureStatuses([receipt.signature], { searchTransactionHistory: true })).value[0]; }
+        try { s = (await statusConn.getSignatureStatuses([receipt.signature], { searchTransactionHistory: true })).value[0]; }
         catch { break; }
         if (s?.err) {
           remember(key, null);
@@ -646,11 +658,21 @@ export async function withdrawCoins(to: string, amount: number, step: (text: str
         }
         if (!s) {
           try {
-            if ((await conn.getBlockHeight('finalized')) > receipt.lastValidBlockHeight + 10) {
+            if ((await statusConn.getBlockHeight('finalized')) > receipt.lastValidBlockHeight + 10) {
               remember(key, null);
               throw new Error('The withdrawal expired before it reached the network. No coins were transferred. Try again.');
             }
           } catch (e) { if ((e as Error).message.startsWith('The withdrawal expired')) throw e; }
+        }
+        if (!rebroadcast && receipt.wire && !deadline.aborted) {
+          // Retry the exact saved signature, never a fresh approval. Solana deduplicates
+          // this wire; a lost RPC broadcast must not become a second transfer.
+          const bytes = new Uint8Array(Buffer.from(receipt.wire, 'base64'));
+          const signed = Transaction.from(bytes);
+          const { base58Encode } = await import('../game/solana');
+          if (!signed.signature || !signed.verifySignatures() || base58Encode(new Uint8Array(signed.signature)) !== receipt.signature) throw new Error('Saved withdrawal does not match its receipt. Contact support before sending again.');
+          rebroadcast = true;
+          try { await statusConn.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 20 }); } catch { /* Keep checking this same ID. */ }
         }
         if (wait) await new Promise((r) => setTimeout(r, 1500));
       }

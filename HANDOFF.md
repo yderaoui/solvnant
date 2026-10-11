@@ -35,6 +35,15 @@ KOL shown as a racer.
 
 ## 2. Current state (read this first)
 
+- **Withdrawal follow-up (October 12):** two owner withdrawal broadcasts were accepted
+  by RPC but did not land; no mainnet withdrawal success is claimed. Actual client devnet
+  withdrawal delivered 2 test coins. New client checks approval expiry, exposes a receipt
+  immediately, limits confirmation checks to 12 seconds overall, adds a bounded priority
+  fee and persists the signed wire for same-signature rebroadcast. No fresh signature is
+  generated on recovery. Operations inspection can retrieve only public sponsored receipt
+  IDs for a requested public payment wallet. Worker `58ca718e-2c1e-4f80-8c86-ad22c53a1cf7`,
+  SERVER_RELEASE `2026-10-12-withdrawal-check-3`. Live mainnet withdrawal remains pending.
+
 - **Payment audit and real solo refund (October 12 Casablanca):** Worker
   `deb3e24e-479c-46ea-9ce9-902e09891c95`, SERVER_RELEASE
   `2026-10-12-payment-recovery-2`. The old alarm remained set to a past timestamp,

@@ -237,6 +237,20 @@ The original noon launch target was a target, not an automatic scheduled deploym
 
 ## Verification limits
 
+**Live withdrawal investigation (October 12):** the owner's two signed withdrawal
+attempts were accepted by the mainnet RPC broadcast endpoint but absent from historical
+chain status; their coin balance remained 46,196.549711. These are not successful transfers.
+Operations can now inspect public sponsored receipt IDs for a supplied public payment
+wallet, authenticated with the existing admin credential. No keys or signed wires are exposed.
+Withdrawals reject a blockhash expired during wallet approval, show the receipt link
+before waiting, and bound confirmation reads to 12 seconds overall (8 seconds on a check).
+Still-pending transfers retain their receipt. Recovery re-broadcasts the exact same fully
+signed wire, never a fresh payment/signature. Withdrawals use a bounded 1,000-lamport
+priority fee and longer node forwarding retries. Funded devnet testing of the actual
+client path delivered exactly 2 test coins through preparation, signing, broadcast and
+confirmation. An unsigned mainnet simulation of the owner's 2-coin transfer also succeeded;
+it spent nothing. The owner's actual mainnet withdrawal still needs confirmation.
+
 183 regression tests in 26 files, TypeScript/build, Worker dry-run, mobile/desktop
 browser fixtures and real unsigned PumpSwap simulation passed. The quote/fee review
 took about 3 seconds in this local read-only browser check; it is not a promise of

@@ -35,6 +35,16 @@ KOL shown as a racer.
 
 ## 2. Current state (read this first)
 
+- **Temporary coin verified read-only (2026-10-11):** owner supplied the existing
+  `$RACE` CA `BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump`. Actual
+  `verifyPumpCoin` mainnet reads passed: six decimals, supported authorities/extensions,
+  graduated curve and canonical SOL-paired PumpSwap pool. Production remains paused.
+  Owner-approved spending is capped at the current wallet balance (screenshot about
+  0.0020 SOL), below the current minimum buy plus 0.01 SOL buffer and fees. Do not
+  raise the cap or bypass the balance guard without authorization. No transaction
+  was signed/sent. Paid testing needs sufficient funds and a higher approved cap;
+  isolated testing has not yet been provisioned. The official client coin is still pending.
+
 - **Backend published (2026-10-11):** Worker version
   `5188d8fb-9799-4fde-bbdb-b5097d402d32` is live at the existing Worker URL.
   `COIN_ADMIN_KEY` was added without displaying or committing its value; the operations

@@ -34,6 +34,18 @@ friend-lobby, coin-preflight and admin requests return HTTP 401. The existing Pr
 app is unchanged. No race was joined and no wallet transaction was submitted by
 these release checks. See `PREDEPLOY_CHECK.md` for the verification limits.
 
+**Temporary coin supplied and checked (2026-10-11):**
+`BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump` is the existing `$RACE` mint.
+Read-only verification through the actual `verifyPumpCoin` code passed on mainnet:
+six decimals, supported mint settings and a canonical SOL-paired **PumpSwap** pool.
+It has graduated from its pump.fun bonding curve. No production activation occurred.
+The owner capped test spending at the wallet's current balance, shown as approximately
+**0.0020 SOL**. This is below the current buy flow's **0.001 SOL minimum purchase plus
+0.01 SOL retained buffer**, maximum-cost slippage and network fee. Do not increase that
+budget or bypass the guard. No quote was signed and no transaction was submitted.
+Paid testing is pending sufficient funds and an explicitly approved higher budget;
+read-only or free devnet checks can continue within the current cap.
+
 ## Simple checklist for the owner
 
 We are keeping **X login and Privy Solana wallets**. X sign-in and wallet display work
@@ -73,7 +85,7 @@ on the new domain; full address persistence and real coin transactions remain to
    purchase/race/payout/withdrawal check before opening buying to players. The temporary
    coin's test database is not copied into production.
 
-**Next: supply the temporary pump.fun CA and approve a small test budget, then prepare isolated testing.** No passwords, wallet keys
+**Next: resolve the insufficient test budget, then prepare isolated testing.** The CA is already supplied and verified. No passwords, wallet keys
 or account secrets are needed in chat.
 
 ## Advance setup

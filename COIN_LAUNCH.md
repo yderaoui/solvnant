@@ -7,21 +7,22 @@ We are keeping **X login and Privy Solana wallets**. The separate private wallet
 verification page is retired: its URL redirects to the normal Buy coins page and
 its API returns HTTP 410. There is no free ownership-signature step before buying.
 
-## First: coin buying only
+## First: coin buying only (completed)
 
 The owner authorized the temporary `$RACE` mint:
 `BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump`.
 It is a mainnet coin, **not the official PumpKart coin**. It has graduated to
 PumpSwap. Buying it spends real SOL. The website explicitly labels this test.
 
-The release supports a persisted coin-only setting: `coinLaunch.mode: test`,
-`paidEnabled: false`. While enabled, coin buying works and the server rejects new
+The initial coin-only test used `coinLaunch.mode: test`,
+`paidEnabled: false`. In that stage, coin buying worked and the server rejected new
 paid ticket, cosmetic and friend-lobby payments/entries. Public configuration exposes
 no fee sponsor in this stage. Practice and play-point modes remain available.
-**Live activation verified on 2026-10-11:** `/api/config` reports status live,
-buyEnabled true, mode test, paidEnabled false, sponsor null and the exact test mint.
-Revision: `coin_1sF8rStR3xEUU7iV`. Worker: `80661041-ebc0-4023-b4e2-951ad830ae30`.
-Frontend production deployment: `solvnant-i30euawbp-yousser-ayman.vercel.app`.
+**Current paid test activation verified on 2026-10-11:** `/api/config` reports status live,
+buyEnabled true, mode test, paidEnabled true, sponsor equal to the funded treasury,
+and the exact same authorized temporary mint.
+Revision: `coin_1IW81Dz-DGQipqGD`. Worker: `80661041-ebc0-4023-b4e2-951ad830ae30`.
+Frontend production deployment: `solvnant-oc6l7ujsy-yousser-ayman.vercel.app`.
 Changing client copy alone does not open payments.
 
 **First real owner purchase is verified on mainnet.** The owner approved it through
@@ -31,7 +32,7 @@ wallet above. Total wallet debit: **0.003865039 SOL**, including **0.000005 SOL*
 network fee and account setup. Remaining player balance: **0.184364944 SOL**.
 [Verified purchase](https://solscan.io/tx/3jvxAE6KE8ZiythF7qhDnmjHc4B9D79zoFWMa9G8nvctN8FrLNofvcgjkW6wr7coCLeNM2155DDvSsr7S7o99zC7).
 This verifies coin buying; paid tickets, prizes, refunds and withdrawals still need
-their mainnet tests after treasury funding. Fresh client X login and wallet persistence
+their mainnet tests. Treasury funding is now verified. Fresh client X login and wallet persistence
 after sign-out/in also remain to check.
 
 1. Open **https://www.pumpkart.racing/#/buy** and sign in with your existing X account.
@@ -70,33 +71,35 @@ transaction confirmation cannot be guaranteed instant.
 
 ## Then: paid tickets, races and withdrawals
 
-Paid races remain closed after the successful coin test. The player had **0.184364944 SOL**
-at the latest read; the payout treasury had **0.00089088 SOL**.
-The owner initially chose coin buying first, then requested the full test. The
-latest balance read confirms the approved owner purchase but still shows no treasury top-up.
+Paid testing is now open after the successful coin buy and owner treasury top-up.
+The player had **0.184364944 SOL** at the latest read; the payout treasury had
+**0.085103838 SOL**. The paid-readiness check passed and reports no outstanding
+pots, payouts or unused tickets at activation. Sponsored network fees are available.
 
-For the next stage, fund the treasury's network/account-setup budget and have Codex
-verify the balance before explicitly opening paid tests. Public treasury address:
+Public treasury address:
 `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`.
 The owner selected this same address for `TEAM_WALLET`; it is now configured in
 production, so the team's 5% remains in the treasury. A separate funded devnet
 payout confirmed 80% to the winner, 15% burned, and exactly 5% retained with this
 shared-wallet arrangement. The latest read-only `check` reports no open lobbies,
-unresolved payouts or unused tickets. Its remaining paid-readiness blocker is the
-treasury's SOL reserve.
+unresolved payouts or unused tickets. Its paid-readiness status is true.
 Do not send wallet keys, recovery phrases or admin secrets in chat.
 
-1. In the owner's wallet, send **0.02 SOL** to the public treasury above. Codex cannot
-   approve this transfer in the owner's wallet. The funded balance must be at least
-   0.02 SOL; the current balance is below that launch reserve.
+1. Treasury funding is complete and exceeds the 0.02 SOL starting reserve. Do not
+   send another top-up just to repeat this step.
 2. The small normal coin buy above is already completed and verified; do not repeat it
    just to recover its transaction link. Next verify wallet persistence after sign-out/in.
-3. To open the full temporary-coin test, use `pause`, wait at least two minutes, then
+3. Full temporary-coin testing is already enabled. The activation used `pause`, a
+   two-minute drain, then
    `prepare <TEST_CA> <TEST_TICKER> --test-paid` and `enable`. This keeps the test label.
    The server refuses enable if the payout wallet does not match the treasury, the
    team wallet is missing/invalid, funding is below 0.02 SOL, or the balance cannot be
    read. A reserve is a starting budget, not unlimited sponsored gas.
-4. Use five real X accounts in a small custom-entry friend lobby, then verify the
+4. Open **https://www.pumpkart.racing/#/race**. Under **Race with friends**, change
+   the entry amount from $20 to **$0.01**, then click **Create $0.01 lobby**.
+   Creating an invite is free. Share its link/code with four friends, approve the
+   entry payment in Privy, close the wallet receipt and start your run. All five
+   accounts pay the same locked coin amount. Use five real X accounts, then verify the
    public transaction links for the split, refund and withdrawal. Finish or refund
    all test pots and use/resolve leftover tickets before switching the official mint.
 

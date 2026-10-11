@@ -38,8 +38,9 @@ KOL shown as a racer.
 - **Normal website coin-only test (2026-10-11):** owner authorized temporary `$RACE`
   mint `BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump` in the normal player screens,
   visibly labeled temporary and using real SOL. Owner chose coin buying first because
-  the treasury is underfunded. Paid tickets, cosmetics and paid lobby entries stay closed
-  via the server's persisted `paidEnabled: false` flag; `mode: test` supplies the label.
+  the treasury was initially underfunded. After the successful owner buy and treasury
+  top-up, paid testing is now live with `paidEnabled: true`; `mode: test` supplies the
+  temporary-coin label. Paid entries and sponsored fees are enabled for this test.
   `/private-coin-check.html` redirects to `/#/buy`; its API returns 410. The old ownership
   message/proof flow and modules were removed. Privy transaction approval uses
   Solana `useSignTransaction`, visible UI and cancellation; no agent signs the owner wallet.
@@ -53,11 +54,12 @@ KOL shown as a racer.
   Total debit was 0.003865039 SOL including fees/account setup. Public receipt:
   `3jvxAE6KE8ZiythF7qhDnmjHc4B9D79zoFWMa9G8nvctN8FrLNofvcgjkW6wr7coCLeNM2155DDvSsr7S7o99zC7`.
   The owner signed in Privy; Codex verified mainnet RPC results and signed nothing.
-  Treasury: `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`, 0.00089088 SOL.
-  Full mainnet paid testing still requires treasury funding and further owner approvals.
+  Treasury: `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`, 0.085103838 SOL
+  after the owner's confirmed top-up. The payout signer, team address and funding
+  checks passed. Full mainnet paid testing still requires real player approvals/runs.
   They selected the same public treasury address
   for the team share; `TEAM_WALLET` is now configured. The read-only operational
-  `check` reports no outstanding pots/payouts/tickets and an underfunded SOL reserve.
+  `check` reports no outstanding pots/payouts/tickets at activation and paidReady true.
   The first owner coin purchase is verified. Fresh client X login, wallet persistence
   after sign-out/in and the mainnet paid flows remain to verify. The official
   client CA is pending. See COIN_LAUNCH.md for the exact player steps and switch procedure.
@@ -67,18 +69,19 @@ KOL shown as a racer.
   Server Pump SDK reads now explicitly select the configured cluster on the verification
   proxy; previously a missing cluster query incorrectly read devnet during mainnet activation.
   Real server-proxy mainnet verification and runtime prepare/enable both passed.
-  Public configuration confirms revision `coin_1sF8rStR3xEUU7iV`, status live,
-  buyEnabled true, mode test, paidEnabled false, sponsor null and the authorized test mint.
+  Public configuration confirms revision `coin_1IW81Dz-DGQipqGD`, status live,
+  buyEnabled true, mode test, paidEnabled true, sponsor equal to the treasury and the
+  authorized test mint. Activation honored the two-minute pause before prepare/enable.
   The operations credential remains in gitignored `.devnet/coin-launch-admin.key`;
   never display it or read house/player private keys. Existing purchase recovery,
   submissions and withdrawals remain available. The WebSocket close fix remains deployed.
-  This opens coin buying only. The first owner mainnet coin buy passed; full paid-flow
+  Coin buying and paid testing are open. The first owner mainnet coin buy passed; full paid-flow
   mainnet tests and the official coin launch remain pending.
 
 - **Frontend release (2026-10-11):** normal `/#/buy` flow shows amount presets, selected
   mint/route, receiving wallet, balance and an unsigned total including fees/account setup.
   The temporary-coin disclosure appears across the site. Account menu links directly to
-  buying; ticket/paid friend-lobby controls are closed. Login/wallet SDK preloads for
+  buying; ticket/paid friend-lobby controls are enabled for the funded test. Login/wallet SDK preloads for
   existing sessions. Active approval survives account refresh and page navigation;
   uncertain submissions retain their signed transaction ID and block repeat buys.
   Validation: 181 tests in 26 files, production build, Worker dry-run, mobile/desktop
@@ -91,7 +94,9 @@ KOL shown as a racer.
   Twitter option; published-page checks at 375/768/1440 px found no page errors or CSP
   violations. Completing OAuth and signing a purchase still require the owner/client.
   Deployment verification and exact player steps are recorded in COIN_LAUNCH.md.
-  Latest production frontend: `solvnant-i30euawbp-yousser-ayman.vercel.app`.
+  Latest production frontend: `solvnant-oc6l7ujsy-yousser-ayman.vercel.app`.
+  Live mobile/desktop browser checks show paid testing open, $0.01 custom entries
+  selectable and a working X login window. No test payment was sent by those checks.
   Account-scoped payment receipts survive RPC/login errors and block duplicate
   checkout while pending. Withdrawals keep known signatures before broadcast, show
   pending honestly and check the same signature on retry; finalized expiry/history

@@ -28,7 +28,7 @@ export function renderBuyPage() {
     <h2>${ready ? `Buy ${sym}.` : 'Coin buying is paused.'}</h2>
     ${!ready ? '<p class="muted">Buying opens once the selected coin is verified. Practice is free.</p><a class="btn btn-lime" href="#/drive">Practice for free</a>' : `
       <p class="muted">Pay with SOL. Receive coins in your PumpKart wallet.</p>
-      ${test ? '<p class="coin-test-note">This is a temporary coin for testing, bought with real SOL. It is not the official PumpKart coin. Paid races are closed.</p>' : ''}
+      ${test ? `<p class="coin-test-note">This is a temporary coin for testing, bought with real SOL. It is not the official PumpKart coin. ${paid ? 'Paid test races are open.' : 'Paid races are closed.'}</p>` : ''}
       <ol class="coin-steps" aria-label="Purchase steps"><li class="active">1 <span>Choose</span></li><li>2 <span>Review</span></li><li>3 <span>Approve</span></li></ol>
       <form id="coin-buy-form"><label for="coin-sol">Spend in SOL</label>
         <div class="coin-amount"><input id="coin-sol" type="number" min="0.001" max="10" step="any" inputmode="decimal" value="${test ? '0.001' : '0.01'}" required/><span>SOL</span></div>

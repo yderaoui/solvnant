@@ -64,7 +64,8 @@ testBanner.hidden = true;
 document.querySelector('.topbar')?.insertAdjacentElement('afterend', testBanner);
 account.onChange(() => {
   testBanner.hidden = account.cfg?.coinLaunch?.mode !== 'test';
-  testBanner.innerHTML = 'Temporary test coin · uses real SOL · paid races closed. <a href="#/buy">Buy test coins</a>';
+  const paid = account.cfg?.coinLaunch?.status === 'live' && account.cfg.coinLaunch.paidEnabled !== false;
+  testBanner.innerHTML = `Temporary test coin · uses real SOL · ${paid ? 'paid test races open' : 'paid races closed'}. <a href="#/buy">Buy test coins</a>`;
 });
 await document.fonts.ready; // badges on the map measure their text, so the real font must be loaded first
 const renderer = await RaceRenderer.create($('stage-canvas'));

@@ -1,0 +1,14 @@
+[
+  {
+    "file": "fomo-v2",
+    "prompt": "Use case: background-extraction / identity-preserve. Edit target: attached Fomo racer illustration. Make a polished transparent cutout for a premium dark racing-game garage card, landscape 4:3 composition. Preserve this exact white Fomo symbol-shaped head, purple eyes, tongue-out grin, black orange hoodie, orange/purple kart and Fomo logos, same design and identity, glossy detailed 3D render quality and three-quarter FRONT view. Reframe slightly wider so the ENTIRE kart, every wheel, spoiler, mascot head and modest exhaust effect fit completely inside the frame with at least 8% transparent margin on all edges. Keep character upright, centered and filling most of the card, kart nose points to lower right. Clean studio lighting with restrained rim reflections matched to its existing colors. Remove grey background and floor entirely; true alpha transparency, no grey/white rectangle, no cast floor shadow, no UI, no labels outside the existing vehicle branding, no added characters. Maintain accurate existing brand logos and readable fomo on the kart. The output is an asset, not a mockup.",
+    "tool": "Built-in image_gen",
+    "reference": "186e72e0-5c5c-4128-8685-a9b631b48025.png"
+  },
+  {
+    "file": "axiom",
+    "prompt": "Use case: background-extraction / identity-preserve. Edit target: attached Axiom racer illustration. Make a polished transparent cutout for a premium dark racing-game garage card, landscape 4:3 composition. Preserve this exact silver triangular mascot head, blue glowing eyes, tongue-out grin, black blue hoodie, black silver blue kart and exact AXIOM lettering, same design and identity, glossy detailed 3D render quality and three-quarter FRONT view. Reframe slightly wider so the ENTIRE kart, every wheel, spoiler, mascot head and modest exhaust effect fit completely inside the frame with at least 8% transparent margin on all edges. Keep character upright, centered and filling most of the card, kart nose points to lower right. Clean studio lighting with restrained rim reflections matched to its existing colors. Remove grey background and floor entirely; true alpha transparency, no grey/white rectangle, no cast floor shadow, no UI, no labels outside the existing vehicle branding, no added characters. Maintain accurate existing brand logos and readable AXIOM on the kart. The output is an asset, not a mockup.",
+    "tool": "Built-in image_gen",
+    "reference": "ed61f4ea-57f4-418d-b387-0bc9fb5f017e.png"
+  }
+]

@@ -26,7 +26,7 @@ new_sqlite_classes = ["Hub"]
 #   SESSION_SECRET, X_CLIENT_ID, X_CLIENT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 [vars]
 # Bump on backend code releases so a resident Hub reloads through x-config-stamp.
-SERVER_RELEASE = "2026-10-12-mascots-1"
+SERVER_RELEASE = "2026-10-12-mascots-2"
 # Safe before launch. Runtime /api/admin/coin settings take precedence once prepared.
 COIN_LAUNCH_READY = "false"
 COIN_BUY_ENABLED = "false"

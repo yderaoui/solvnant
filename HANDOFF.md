@@ -47,10 +47,11 @@ KOL shown as a racer.
   with textures, shader rigs, correct 3.25 m length and separate near/far geometry.
   Axiom's download subsequently completed as `triangular go-kart 3d model.glb`;
   its centimetre coordinates were normalized too, with 477/206 KB near/far models.
-  Fomo and Axiom now use polished generated cutouts based on the owner's PNGs;
-  960x720 transparent WebPs are 125/119 KB. Fomo uses a new `fomo-v2.webp` URL so
-  previously cached renders are replaced. Originals and exact prompts are saved
-  in `brand/character-art/` (`mascot-prompts.json`); all artwork consumers share
+  Fomo, Axiom and Pump now use polished generated cutouts based on the owner's PNGs;
+  960x720 transparent WebPs are 125/119/107 KB. Fomo and Pump use new `fomo-v2.webp`
+  and `pump-v2.webp` URLs so previously cached renders are replaced. Originals and
+  exact prompts are saved in `brand/character-art/` (`mascot-prompts.json` and
+  `pump-prompt.json`); all artwork consumers share
   `src/client/portraits.ts`. Axiom retains the five-ticket price and free test drive.
   Follow-up checks: Axiom garage selection and actual acceleration passed without
   browser errors; generated artwork alpha, phone/desktop layout and cache-safe

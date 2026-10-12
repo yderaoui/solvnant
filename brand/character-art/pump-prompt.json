@@ -1,0 +1,6 @@
+{
+  "file": "pump-v2",
+  "prompt": "Use case: background-extraction / identity-preserve. Edit target: supplied Pump racer illustration. Create the matching polished transparent garage portrait for a premium dark kart-racing game, landscape 4:3 canvas. Preserve this exact green and white pill mascot, black sunglasses with lightning symbols, cheeky tongue-out grin, black pump.fun hoodie, gold chain and pill pendant, white gloves, green sneakers, green-black kart, pump.fun lettering and pill logos. Preserve character identity, glossy detailed 3D illustration quality and three-quarter FRONT view. Reframe wider to include the ENTIRE vehicle, all wheels, spoiler, mascot head and a modest green exhaust effect, with at least 8% empty transparent margin on EVERY edge. Center the racer and kart, nose facing lower right. Crisp studio key light, restrained green rim reflections. Remove the white backdrop and floor completely; true alpha transparency, no white/grey rectangle, no floor shadow sheet, no mockup or UI. No extra characters, captions, labels or watermark. Existing pump.fun branding must stay readable and correctly spelled. This is the character card artwork asset.",
+  "tool": "Built-in image_gen",
+  "reference": "d066cd93-86f2-4695-ab46-cbb709a7fb87.png"
+}

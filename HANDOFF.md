@@ -35,6 +35,19 @@ KOL shown as a racer.
 
 ## 2. Current state (read this first)
 
+- **Unattended readiness audit (October 12):** all 214 regression tests, build,
+  Worker dry-run, nine production pages, all 15 models/portraits, failure recovery,
+  isolated ~60 FPS desktop profiling and real local Live entry passed. Fresh funded
+  devnet tests verified the full split, alarm-only refund, client withdrawal,
+  public ticket, all 14 paid cosmetics, once-only recovery and shared treasury/team
+  retention. Existing mainnet buy/refund/196-coin withdrawal receipts remain finalized.
+  Production maintenance is healthy with zero open paid obligations at inspection.
+  No gameplay/payment defect was reproduced; no production coin setting was changed.
+  See `LAUNCH_READINESS.md`. `COIN_LAUNCH.md` now contains only current steps;
+  prior instructions are preserved in `COIN_LAUNCH_HISTORY.md`. Official CA/ticker,
+  requested official homepage CA display, fresh client login/wallet persistence,
+  small official purchase and multi-user mainnet settlement remain release checks.
+
 - **Mascot models (October 12):** Axiom, Fomo and Pump are added to the shared cosmetic
   catalog, garage, practice selection and bot rotation. Sources are the owner's
   `go-kart 3d model.glb` (Fomo) and `kart racing 3d model.glb` (Pump) from Downloads.

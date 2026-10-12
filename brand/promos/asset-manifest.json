@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "art_direction_brief": "art-direction.md",
+  "assets": [
+    {
+      "id": "full-grid",
+      "role": "Complete 15-racer promotional roster",
+      "path": "pumpkart-full-grid.png",
+      "sharing_copy": "pumpkart-full-grid.jpg",
+      "status": "reviewed",
+      "technical": {
+        "dimensions": "1619x971",
+        "scene_background": "opaque",
+        "format": "PNG master / JPEG sharing copy",
+        "png_bytes": 3505238,
+        "jpg_bytes": 1117806
+      },
+      "source": {
+        "kind": "generated",
+        "tool": "Built-in image_gen",
+        "reference_images": [
+          "references/roster-1.png",
+          "references/roster-2.png",
+          "references/roster-3.png",
+          "../../public/pumpkart-logo.png"
+        ],
+        "created_at": "2026-10-12",
+        "prompt_record": "prompts.json",
+        "rights_note": "Generated from project artwork supplied by the owner; no new stock source."
+      },
+      "verification": {
+        "native_scale_reviewed": true,
+        "character_count_reviewed": true,
+        "copy_reviewed": true,
+        "technical_checks_passed": true,
+        "actual_racer_count": 15,
+        "reviewed_by": "Codex"
+      }
+    },
+    {
+      "id": "big-three",
+      "role": "Axiom vs Fomo vs Pump race promotion",
+      "path": "pumpkart-big-three.png",
+      "sharing_copy": "pumpkart-big-three.jpg",
+      "status": "reviewed",
+      "technical": {
+        "dimensions": "1536x1024",
+        "scene_background": "opaque",
+        "format": "PNG master / JPEG sharing copy",
+        "png_bytes": 2922351,
+        "jpg_bytes": 911678
+      },
+      "source": {
+        "kind": "generated",
+        "tool": "Built-in image_gen",
+        "reference_images": [
+          "../../public/assets/characters/portraits/axiom.webp",
+          "../../public/assets/characters/portraits/fomo-v2.webp",
+          "../../public/assets/characters/portraits/pump-v2.webp",
+          "../../public/pumpkart-logo.png"
+        ],
+        "created_at": "2026-10-12",
+        "prompt_record": "prompts.json",
+        "rights_note": "Generated from project artwork supplied by the owner; no new stock source."
+      },
+      "verification": {
+        "native_scale_reviewed": true,
+        "character_count_reviewed": true,
+        "copy_reviewed": true,
+        "technical_checks_passed": true,
+        "actual_racer_count": 3,
+        "reviewed_by": "Codex"
+      }
+    },
+    {
+      "id": "ansem-finish",
+      "role": "ansem solo finish-line promotion",
+      "path": "pumpkart-ansem-finish.png",
+      "sharing_copy": "pumpkart-ansem-finish.jpg",
+      "status": "reviewed",
+      "technical": {
+        "dimensions": "1536x1024",
+        "scene_background": "opaque",
+        "format": "PNG master / JPEG sharing copy",
+        "png_bytes": 3151677,
+        "jpg_bytes": 950341
+      },
+      "source": {
+        "kind": "generated",
+        "tool": "Built-in image_gen",
+        "reference_images": [
+          "../../public/assets/characters/portraits/ansem.webp",
+          "../../public/pumpkart-logo.png"
+        ],
+        "created_at": "2026-10-12",
+        "prompt_record": "prompts.json",
+        "rights_note": "Generated from the existing owner-supplied project character artwork."
+      },
+      "verification": {
+        "native_scale_reviewed": true,
+        "character_count_reviewed": true,
+        "copy_reviewed": true,
+        "finish_line_reviewed": true,
+        "technical_checks_passed": true,
+        "actual_racer_count": 1,
+        "reviewed_by": "Codex"
+      }
+    },
+    {
+      "id": "banks-finish",
+      "role": "banks solo finish-line promotion",
+      "path": "pumpkart-faze-banks-finish.png",
+      "sharing_copy": "pumpkart-faze-banks-finish.jpg",
+      "status": "reviewed",
+      "technical": {
+        "dimensions": "1536x1024",
+        "scene_background": "opaque",
+        "format": "PNG master / JPEG sharing copy",
+        "png_bytes": 3010304,
+        "jpg_bytes": 924683
+      },
+      "source": {
+        "kind": "generated",
+        "tool": "Built-in image_gen",
+        "reference_images": [
+          "../../public/assets/characters/portraits/banks.webp",
+          "../../public/pumpkart-logo.png"
+        ],
+        "created_at": "2026-10-12",
+        "prompt_record": "prompts.json",
+        "rights_note": "Generated from the existing owner-supplied project character artwork."
+      },
+      "verification": {
+        "native_scale_reviewed": true,
+        "character_count_reviewed": true,
+        "copy_reviewed": true,
+        "finish_line_reviewed": true,
+        "technical_checks_passed": true,
+        "actual_racer_count": 1,
+        "reviewed_by": "Codex"
+      }
+    },
+    {
+      "id": "rasmr-finish",
+      "role": "rasmr solo finish-line promotion",
+      "path": "pumpkart-rasmr-finish.png",
+      "sharing_copy": "pumpkart-rasmr-finish.jpg",
+      "status": "reviewed",
+      "technical": {
+        "dimensions": "1536x1024",
+        "scene_background": "opaque",
+        "format": "PNG master / JPEG sharing copy",
+        "png_bytes": 3010058,
+        "jpg_bytes": 903983
+      },
+      "source": {
+        "kind": "generated",
+        "tool": "Built-in image_gen",
+        "reference_images": [
+          "../../public/assets/characters/portraits/cart.webp",
+          "../../public/pumpkart-logo.png"
+        ],
+        "created_at": "2026-10-12",
+        "prompt_record": "prompts.json",
+        "rights_note": "Generated from the existing owner-supplied project character artwork."
+      },
+      "verification": {
+        "native_scale_reviewed": true,
+        "character_count_reviewed": true,
+        "copy_reviewed": true,
+        "finish_line_reviewed": true,
+        "technical_checks_passed": true,
+        "actual_racer_count": 1,
+        "reviewed_by": "Codex"
+      }
+    }
+  ]
+}

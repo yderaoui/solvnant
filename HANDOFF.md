@@ -49,6 +49,13 @@ KOL shown as a racer.
   keeping an active status attached during account refresh. The owner was asked to
   refresh, check the old pending receipt, then approve a fresh 2-coin withdrawal only
   after proven expiry. Never clear storage or re-sign blindly while pending.
+  Receipt links now restore on profile reopen: pending takes precedence over an
+  account-scoped last-confirmed receipt. 25 focused recovery tests, TypeScript/build
+  and browser close/reopen checks pass. Frontend `solvnant-6bfpqylfd-yousser-ayman.vercel.app`
+  is Ready. The owner selected "Confirmed" in the follow-up, but checks of the known
+  wallet and sponsored IDs still show no outgoing transfer. Their exact Solscan link
+  (or current public game-wallet address if the link is absent) is needed before
+  recording mainnet withdrawal success. Do not claim success from that selection alone.
 
 - **Payment audit and real solo refund (October 12 Casablanca):** Worker
   `deb3e24e-479c-46ea-9ce9-902e09891c95`, SERVER_RELEASE

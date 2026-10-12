@@ -3,6 +3,23 @@
 Main website: **https://www.pumpkart.racing**
 Coin buying page: **https://www.pumpkart.racing/#/buy**
 
+**Current verification status (October 12):** owner coin buying, sponsored paid friend
+entry, accepted real run, full automatic coin refund and withdrawal are verified on
+mainnet. The latest owner-approved withdrawal finalized and delivered **196 test $RACE**
+(`196000000` raw units) from the game wallet to their selected treasury recipient.
+Player SOL debit was zero; the treasury paid **0.000011 SOL**, including the bounded
+priority fee. Player coin balance is now **46,000.549711**.
+[Verified withdrawal](https://solscan.io/tx/4LzbpKHVSRHXVxTWYPqVscL9bidpise9HC1fbk4br84EtowkTww2s1xvAW5ah19HzTftNVP5mPtr1J7gxvmt6gZD).
+The owner selected 196 on this successful approval; the earlier requested 2-coin
+attempts did not land. Operations show healthy completed maintenance, paidReady true,
+and zero open lobbies, unresolved payouts or unused tickets. The 196 test coins now
+in the treasury are the owner's withdrawal destination receipt, not an unsettled pot.
+Ready for client testing with the temporary coin. Public official-coin launch still
+needs the client's CA/ticker, a small verified official-coin purchase after switching,
+and a real multi-user mainnet prize/burn/team settlement. Fresh client X login and
+wallet persistence should also be checked before announcing. Earlier pending-withdrawal
+notes below are historical and superseded by this verified receipt.
+
 We are keeping **X login and Privy Solana wallets**. The separate private wallet
 verification page is retired: its URL redirects to the normal Buy coins page and
 its API returns HTTP 410. There is no free ownership-signature step before buying.

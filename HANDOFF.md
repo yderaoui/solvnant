@@ -35,6 +35,20 @@ KOL shown as a racer.
 
 ## 2. Current state (read this first)
 
+- **Mainnet withdrawal verified (October 12):** signature
+  `4LzbpKHVSRHXVxTWYPqVscL9bidpise9HC1fbk4br84EtowkTww2s1xvAW5ah19HzTftNVP5mPtr1J7gxvmt6gZD`
+  finalized successfully. Exactly 196 test $RACE left the owner's game wallet and
+  reached their selected WXzD5...NFVHc treasury wallet. The owner approved 196 on this
+  successful attempt, different from the earlier unlanded 2-coin attempts. Treasury
+  fee 0.000011 SOL, player SOL debit zero, remaining player balance 46,000.549711.
+  Coin buying, sponsored custom entry, real accepted race, full automatic refund and
+  withdrawal are now verified on mainnet. Maintenance is completing and operations
+  report paidReady true with no open lobbies, unresolved payouts or unused tickets.
+  Client testing can proceed with the temporary coin. Official CA/ticker, a verified
+  small official purchase, real multi-player mainnet prize/burn/team settlement and
+  fresh client X/wallet-persistence checks remain. Do not call the official public
+  launch verified until those checks pass. Earlier pending-withdrawal notes are history.
+
 - **Withdrawal follow-up (October 12):** two owner withdrawal broadcasts were accepted
   by RPC but did not land; no mainnet withdrawal success is claimed. Actual client devnet
   withdrawal delivered 2 test coins. New client checks approval expiry, exposes a receipt

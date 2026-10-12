@@ -326,6 +326,21 @@ function renderMenu(toast: (t: string) => void) {
   };
   document.getElementById('am-wlink')?.addEventListener('click', () => void linkWallet(toast));
   if (cfg.privy && document.getElementById('am-mywallet')) void paintMyWallet(cfg.tickets?.rpcUrl);
+  const withdrawalStep = document.getElementById('am-wd-step');
+  const showReceipt = (signature: string) => {
+    if (!withdrawalStep?.isConnected || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature)) return;
+    let link = document.getElementById('am-wd-receipt');
+    if (!link) { link = document.createElement('p'); link.id = 'am-wd-receipt'; link.className = 'small'; withdrawalStep.after(link); }
+    const dev = cfg.tickets?.cluster === 'devnet' ? '?cluster=devnet' : '';
+    link.innerHTML = `<a href="https://solscan.io/tx/${escapeHtml(signature)}${dev}" target="_blank" rel="noopener">View withdrawal transaction ↗</a>`;
+  };
+  if (withdrawalStep) void import('./tickets').then(({ savedWithdrawalReceipt }) => {
+    const receipt = savedWithdrawalReceipt();
+    if (!receipt || !withdrawalStep.isConnected || account.me?.id !== me.id || withdrawalUiUid === me.id) return;
+    showReceipt(receipt.signature);
+    withdrawalStep.textContent = receipt.confirmed ? 'Last withdrawal confirmed.' : 'Previous withdrawal pending. Check it before sending again.';
+    if (!receipt.confirmed) (document.getElementById('am-wd-go') as HTMLButtonElement).textContent = 'Check withdrawal';
+  }).catch(() => {});
   document.getElementById('am-wd-max')?.addEventListener('click', async () => {
     const { coinBalance } = await import('./tickets');
     const b = await coinBalance().catch(() => null);
@@ -336,13 +351,6 @@ function renderMenu(toast: (t: string) => void) {
     const btn = document.getElementById('am-wd-go') as HTMLButtonElement;
     btn.disabled = true;
     withdrawalUiUid = account.me?.id ?? null;
-    const showReceipt = (signature: string) => {
-      if (!step.isConnected || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature)) return;
-      let link = document.getElementById('am-wd-receipt');
-      if (!link) { link = document.createElement('p'); link.id = 'am-wd-receipt'; link.className = 'small'; step.after(link); }
-      const dev = cfg.tickets?.cluster === 'devnet' ? '?cluster=devnet' : '';
-      link.innerHTML = `<a href="https://solscan.io/tx/${escapeHtml(signature)}${dev}" target="_blank" rel="noopener">View withdrawal transaction ↗</a>`;
-    };
     try {
       const { withdrawCoins } = await import('./tickets');
       const to = (document.getElementById('am-wd-to') as HTMLInputElement).value;

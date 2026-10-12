@@ -549,6 +549,18 @@ export async function coinBalance(signal?: AbortSignal): Promise<number | null> 
 }
 
 /** Send coins out of the game wallet to any Solana address. The game pays the fee when it can. */
+export function savedWithdrawalReceipt(): { signature: string; confirmed: boolean } | null {
+  const uid = account.me?.id;
+  if (!uid) return null;
+  const pending = saved(`tl-pending-withdrawal:${uid}`);
+  const previous = saved(`tl-last-withdrawal:${uid}`);
+  try {
+    const receipt = JSON.parse(pending ?? previous ?? 'null');
+    if (!/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(receipt?.signature ?? '')) return null;
+    return { signature: receipt.signature, confirmed: !pending && receipt.confirmed === true };
+  } catch { return null; }
+}
+
 export async function withdrawCoins(to: string, amount: number, step: (text: string) => void, receiptReady?: (signature: string) => void): Promise<{ signature: string; confirmed: boolean }> {
   const configured = account.cfg?.tickets;
   if (!configured || !account.me) throw new Error('Sign in first.');
@@ -653,6 +665,7 @@ export async function withdrawCoins(to: string, amount: number, step: (text: str
           throw new Error('The withdrawal failed on-chain. No coins were transferred.');
         }
         if (s && (s.confirmationStatus === 'confirmed' || s.confirmationStatus === 'finalized')) {
+          remember(`tl-last-withdrawal:${uid}`, JSON.stringify({ signature: receipt.signature, confirmed: true }));
           remember(key, null);
           return { signature: receipt.signature, confirmed: true };
         }

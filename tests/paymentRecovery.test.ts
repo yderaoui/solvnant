@@ -5,7 +5,7 @@ vi.mock('@solana/spl-token', async original => ({ ...await original<object>(), g
 vi.mock('../src/client/account', () => ({ account: { me: { id: 'alice' }, cfg: { tickets: {} }, api: mocks.api, refresh: mocks.refresh } }));
 vi.mock('../src/client/privy/client', () => ({ privyOn: () => true, privyWallet: mocks.wallet }));
 import { account } from '../src/client/account';
-import { buyTicket, claimPendingTicket, withdrawCoins } from '../src/client/tickets';
+import { buyTicket, claimPendingTicket, withdrawCoins, savedWithdrawalReceipt } from '../src/client/tickets';
 import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js';
 import { base58Encode } from '../src/game/solana';
 
@@ -235,4 +235,18 @@ it('re-broadcasts only the exact saved withdrawal wire without a second wallet a
   statuses.mockResolvedValue({ context: { slot: 1 }, value: [{ slot: 1, confirmations: 1, err: null, confirmationStatus: 'confirmed' }] });
   expect(await withdrawCoins('', 0, vi.fn())).toEqual({ signature: first.signature, confirmed: true });
   expect(fixture.sign).toHaveBeenCalledOnce(); expect(mocks.api).toHaveBeenCalledOnce(); expect(send).toHaveBeenCalledTimes(2);
+});
+it('retains a confirmed receipt link when the pending payment is cleared', async () => {
+  const signature = '5'.repeat(88);
+  store.set('tl-pending-withdrawal:alice', JSON.stringify({ signature, rpcUrl: 'https://rpc.fixture', lastValidBlockHeight: 100 }));
+  vi.spyOn(Connection.prototype, 'getSignatureStatuses').mockResolvedValue({ context: { slot: 1 }, value: [{ slot: 1, confirmations: 1, err: null, confirmationStatus: 'confirmed' }] });
+  await withdrawCoins('', 0, vi.fn());
+  expect(store.has('tl-pending-withdrawal:alice')).toBe(false);
+  expect(savedWithdrawalReceipt()).toEqual({ signature, confirmed: true });
+  account.me = { id: 'bob' } as typeof account.me; expect(savedWithdrawalReceipt()).toBeNull();
+});
+it('a pending receipt takes precedence over the previous confirmed link', () => {
+  store.set('tl-last-withdrawal:alice', JSON.stringify({ signature: '5'.repeat(88), confirmed: true }));
+  store.set('tl-pending-withdrawal:alice', JSON.stringify({ signature: '6'.repeat(88) }));
+  expect(savedWithdrawalReceipt()).toEqual({ signature: '6'.repeat(88), confirmed: false });
 });

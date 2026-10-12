@@ -18,7 +18,7 @@ Core loop (from the client's "Build Summary" spec):
   30 minutes, every ticket is refunded (as a ticket).
 - **Pot split:** 80% to the winner, 15% burned (direct burn of the coin received), 5% to the team.
   Full lobby: $100 pot -> $80 / $15 / $5. Four players: $80 -> $64 / $12 / $4.
-- **KOL Cars (garage):** 12 cosmetic racers (meme characters of crypto KOLs). Orangie is free; the others cost
+- **KOL Cars (garage):** 14 cosmetic racers (crypto KOLs and trading mascots). Orangie is free; the others cost
   **$100** (5 tickets) in the coin. Off-chain ownership, not NFTs, no stat advantage.
 - **Free modes:** Test drive (vs bots, any racer), Live event (real-time multiplayer with bots filling seats, play
   points only), AI League (LLM-written drivers race each other every 5 minutes, spectators bet play points),
@@ -34,6 +34,21 @@ KOL shown as a racer.
 ---
 
 ## 2. Current state (read this first)
+
+- **Mascot models (October 12):** Fomo and Pump are added to the shared cosmetic
+  catalog, garage, practice selection and bot rotation. Sources are the owner's
+  `go-kart 3d model.glb` (Fomo) and `kart racing 3d model.glb` (Pump) from Downloads.
+  Fomo's source coordinates were normalized from centimetres to metres before
+  optimization. Near/far Meshopt + WebP models are 388/163 KB and 656/179 KB;
+  transparent 960x720 portraits are rendered from the actual supplied models.
+  Both retain the existing five-ticket cosmetic price and can be test driven free.
+  Validation: 214 tests passed, TypeScript and production build passed; browser
+  checks verified garage portraits at phone/desktop widths and actual race models
+  with textures, shader rigs, correct 3.25 m length and separate near/far geometry.
+  Axiom's reference PNG exists, but its GLB has not been found; the third newest
+  Downloads GLB is identical to the existing CookerFlips source. Do not duplicate
+  CookerFlips or call Axiom added until the owner supplies the missing model.
+  Treasury stays the recipient of the 5% team share, as the owner reconfirmed.
 
 - **Mainnet withdrawal verified (October 12):** signature
   `4LzbpKHVSRHXVxTWYPqVscL9bidpise9HC1fbk4br84EtowkTww2s1xvAW5ah19HzTftNVP5mPtr1J7gxvmt6gZD`
@@ -641,6 +656,8 @@ git push origin main        # Vercel deploys the site automatically
 | rowdy | Rowdy | Black supercar (Lambo badge), RETIRED plates (retopologized Tripo model) | $100 |
 | cooker | CookerFlips | Pink heart kart, cute driver | $100 |
 | banks | FaZe Banks | Colorful brick-built race car, cash on the hood | $100 |
+| fomo | Fomo | Orange and purple kart, twin rocket exhausts | $100 |
+| pump | Pump | Green pill racer, gold chain | $100 |
 
 Models are Tripo AI single-mesh statues (no skeleton). `racer3d.ts` animates them in the vertex shader using
 hand-measured rigs in `skins.ts` (head/neck, body, wheels, optional bobbling part, `face` offset for Orangie's turned

@@ -200,6 +200,28 @@ export const SKINS: Skin[] = [
     ],
     rig: { head: [-0.02, 0.43, 0, 0.075], neck: 0.36, body: [-0.07, 0.195, 0.15, 0.17], wheels: [[-0.31, 0.082, 0.082], [0.30, 0.082, 0.082]] },
   },
+  {
+    id: 'fomo',
+    name: 'Fomo',
+    tagline: 'Orange and purple kart, twin rocket exhausts',
+    price: 500,
+    file: 'fomo',
+    yaw: Math.PI / 2,
+    length: 3.25,
+    exhaust: [[-0.45, 0.235, -0.18], [-0.45, 0.235, 0.18]],
+    rig: { head: [0.025, 0.54, 0, 0.17], neck: 0.405, body: [-0.045, 0.255, 0.13, 0.15], wheels: [[-0.30, 0.102, 0.105], [0.285, 0.085, 0.09]] },
+  },
+  {
+    id: 'pump',
+    name: 'Pump',
+    tagline: 'Green pill racer, gold chain and full send',
+    price: 500,
+    file: 'pump',
+    yaw: Math.PI / 2,
+    length: 3.25,
+    exhaust: [[-0.44, 0.22, -0.19], [-0.44, 0.22, 0.19]],
+    rig: { head: [-0.015, 0.61, 0, 0.17], neck: 0.455, body: [-0.055, 0.295, 0.14, 0.20], wheels: [[-0.305, 0.12, 0.125], [0.28, 0.105, 0.11]] },
+  },
 ];
 
 export const DEFAULT_SKIN = SKINS[0].id;

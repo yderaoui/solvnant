@@ -1,6 +1,7 @@
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
 import { buyTicket } from './tickets';
+import { account } from './account';
 
 let active: Promise<number> | null = null;
 let activeCode: string | undefined;
@@ -62,9 +63,11 @@ async function openCheckout(code?: string): Promise<number> {
       const usd = quote.usd ?? quote.priceUsd;
       modal.querySelector('#checkout-review')!.innerHTML = `
         ${quote.cluster === 'devnet' ? '<p class="checkout-test">Test network · test coins only, no real money</p>' : ''}
+        ${quote.cluster === 'mainnet-beta' && account.cfg?.coinLaunch.mode === 'test' ? '<p class="checkout-test">Temporary test coin · real Solana payment</p>' : ''}
         <div class="checkout-total"><span>${code ? 'Entry per player · value when lobby was created' : 'Total for 1 ticket'}</span><strong>${usd ? `$${usd.toLocaleString('en-US')}` : `${quote.price.toLocaleString('en-US')} ${sym}`}</strong>
           <small>Pay ${quote.price.toLocaleString('en-US', { maximumFractionDigits: quote.decimals })} ${sym}</small></div>
         <p class="muted">${sponsored ? 'PumpKart covers the network fee. You do not need SOL.' : 'Your wallet pays the Solana network fee separately.'}</p>
+        <p class="checkout-refund">${icon('history', 16)}<span>${code ? 'If fewer than 4 players finish by the lobby deadline, your full entry is refunded automatically.' : 'If fewer than 4 players finish by the race deadline, your ticket is returned automatically.'}</span></p>
         <details class="checkout-funding"><summary>Need ${sym} in your game wallet?</summary>
           <a class="btn btn-lime small" id="checkout-get-coins" href="#/buy">Get the game coin${icon('overtake', 14)}</a>
           <p>Send ${sym} to the address below on ${quote.cluster === 'devnet' ? 'Solana devnet' : 'Solana'}. Payments come from this wallet and race prizes arrive here.</p>

@@ -208,7 +208,7 @@ export function initAccountUi(toast: (t: string) => void) {
       $('acct-signin').onclick = () => showAuthModal();
       return;
     }
-    host.innerHTML = `<button class="acct-chip" id="acct-chip" aria-haspopup="dialog" aria-expanded="false">
+    host.innerHTML = `<button class="acct-chip" id="acct-chip" aria-haspopup="dialog" aria-controls="acct-menu" aria-expanded="${!$('acct-menu').hidden}">
         ${avatarHtml(me)}<span class="acct-who"><b>${escapeHtml(me.handle ? '@' + me.handle : me.name)}</b><small>${me.kind === 'guest' ? 'guest' : me.kind === 'privy' ? 'signed in' : 'X account'}</small></span>
         <span class="acct-pts"><b id="acct-points">${account.cfg?.tickets ? me.tickets ?? 0 : fmtPts(me.points)}</b><small>${account.cfg?.tickets ? 'TICKETS' : 'PTS'}</small></span></button>`;
     $('acct-chip').onclick = () => toggleMenu(toast);
@@ -224,7 +224,7 @@ export function initAccountUi(toast: (t: string) => void) {
   });
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (!$('acct-menu').hidden) closeMenu();
+    if (!$('acct-menu').hidden) closeMenu(true);
     if (!$('auth-modal').hidden) closeAuthModal();
   });
   $('auth-modal').addEventListener('click', (e) => {
@@ -246,26 +246,39 @@ function toggleMenu(toast: (t: string) => void) {
     renderMenu(toast);
     $('acct-menu').hidden = false;
     $('acct-chip')?.setAttribute('aria-expanded', 'true');
+    document.getElementById('am-close')?.focus();
     void account.refresh();
   } else closeMenu();
 }
 
-function closeMenu() {
+function closeMenu(restoreFocus = false) {
   $('acct-menu').hidden = true;
   document.getElementById('acct-chip')?.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) document.getElementById('acct-chip')?.focus();
 }
 
 let withdrawalUiUid: string | null = null;
+let menuOwner: string | null = null;
 function renderMenu(toast: (t: string) => void) {
   const me = account.me;
   const cfg = account.cfg;
   const el = $('acct-menu');
   if (!me || !cfg) {
+    menuOwner = null;
     closeMenu();
     return;
   }
   // Keep the active receipt/status controls attached while account refreshes finish.
   if (withdrawalUiUid === me.id) return;
+  const owner = `${me.id}:${cfg.tickets?.mint ?? ''}`;
+  const sameOwner = menuOwner === owner;
+  const draftTo = sameOwner ? (document.getElementById('am-wd-to') as HTMLInputElement | null)?.value ?? '' : '';
+  const draftAmount = sameOwner ? (document.getElementById('am-wd-amt') as HTMLInputElement | null)?.value ?? '' : '';
+  const withdrawalOpen = sameOwner && !!el.querySelector<HTMLDetailsElement>('.am-withdraw')?.open;
+  const focusedId = sameOwner && el.contains(document.activeElement) ? document.activeElement?.id : null;
+  const addressSelection = focusedId === 'am-wd-to' ? (document.activeElement as HTMLInputElement).selectionStart : null;
+  const scrollTop = sameOwner ? el.scrollTop : 0;
+  menuOwner = owner;
   const dailyIn = me.dailyAt - Date.now();
   const coinReady = cfg.coinLaunch?.status === 'live';
   const paidReady = coinReady && cfg.coinLaunch.paidEnabled !== false;
@@ -284,10 +297,7 @@ function renderMenu(toast: (t: string) => void) {
         }</section>`
     : '';
   el.innerHTML = `
-    <div class="acct-head">${avatarHtml(me)}<div><b>${escapeHtml(me.name)}</b><small>${me.handle ? '@' + escapeHtml(me.handle) : me.kind === 'privy' ? 'Signed in with Privy' : 'Guest account'}</small></div></div>
-    <div class="acct-balance"><span>Free-play points</span><b>${fmtPts(me.points)} <small>PTS</small></b></div>
-    <p class="muted small">Points are play money: no cash value, nothing to withdraw.</p>
-    <button class="btn btn-lime small" id="am-daily" ${dailyIn > 0 ? 'disabled' : ''}>${icon('zap', 14)}${dailyIn > 0 ? `Daily bonus in ${Math.ceil(dailyIn / 3600_000)} h` : `Claim daily +${cfg.points.daily}`}</button>
+    <div class="acct-head">${avatarHtml(me)}<div><b>${escapeHtml(me.name)}</b><small>${me.handle ? '@' + escapeHtml(me.handle) : me.kind === 'privy' ? 'Signed in with Privy' : 'Guest account'}</small></div><button class="icon-btn" id="am-close" aria-label="Close account">${icon('x', 18)}</button></div>
     ${race}
     ${
       cfg.tickets
@@ -297,18 +307,30 @@ function renderMenu(toast: (t: string) => void) {
             ${coinReady && cfg.coinLaunch.buyEnabled ? '<a class="btn small" href="#/buy">Buy coins</a>' : ''}
             ${cfg.tickets.cluster === 'devnet' ? `<button class="btn small btn-ghost" id="am-faucet">Get free test ${escapeHtml(cfg.tickets.symbol)}</button>` : ''}</div>
             <p class="muted small" id="am-buystep">${!paidReady ? coinReady ? 'Coin buying is open for testing. Paid races follow after payment checks.' : 'Buying opens once the official coin is verified. Practice is free.' : cfg.tickets.cluster === 'devnet' ? 'Test network (devnet): uses test coins with no real value.' : ''}</p></section>
-          ${cfg.privy ? `<section><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">${coinReady ? paidReady ? 'Send the game coin here to buy tickets. Race prizes arrive in this wallet too.' : 'Your test coins arrive here. Coin purchases use your SOL; paid races are closed.' : 'Your Solana wallet. Wait for the verified official coin before funding race tickets.'}</p>
+          ${cfg.privy ? `<section class="acct-money"><h4>Your wallet</h4><div class="acct-wallet" id="am-mywallet"><span class="muted small">Loading…</span></div><p class="muted small">${coinReady ? paidReady ? 'Coins for tickets, prizes and refunds arrive here.' : 'Your test coins arrive here. Coin purchases use your SOL; paid races are closed.' : 'Your Solana wallet. Wait for the verified official coin before funding race tickets.'}</p>
             <details class="am-withdraw"><summary>Withdraw ${escapeHtml(cfg.tickets?.symbol ?? '')}</summary>
-              <input id="am-wd-to" placeholder="Send to (Solana address)" autocomplete="off" spellcheck="false" />
-              <div class="acct-row"><input id="am-wd-amt" type="number" min="0" step="any" placeholder="Amount" /><button class="btn small btn-ghost" id="am-wd-max">Max</button></div>
+              <label for="am-wd-to">Receiving Solana address</label>
+              <input id="am-wd-to" placeholder="Paste the full wallet address" autocomplete="off" spellcheck="false" autocapitalize="off" />
+              <label for="am-wd-amt">Amount in ${escapeHtml(cfg.tickets?.symbol ?? 'coins')}</label>
+              <div class="acct-row"><input id="am-wd-amt" type="number" min="0" step="any" inputmode="decimal" placeholder="0.00" /><button class="btn small btn-ghost" id="am-wd-max">Max</button></div>
               <button class="btn small btn-lime" id="am-wd-go">Withdraw</button>
-              <p class="muted small" id="am-wd-step"></p>
+              <p class="muted small" id="am-wd-step" role="status" aria-live="polite"></p>
             </details></section>` : ''}`
         : ''
     }
     ${wallet}
-    <section><h4>Recent activity</h4><ol class="acct-ledger" id="am-ledger"><li class="muted">Loading…</li></ol></section>
+    <section class="acct-play"><div class="acct-balance"><span>Free-play points</span><b>${fmtPts(me.points)} <small>PTS</small></b></div>
+      <p class="muted small">Play money. No cash value or withdrawals.</p>
+      <button class="btn small btn-ghost" id="am-daily" ${dailyIn > 0 ? 'disabled' : ''}>${icon('zap', 14)}${dailyIn > 0 ? `Daily bonus in ${Math.ceil(dailyIn / 3600_000)} h` : `Claim daily +${cfg.points.daily}`}</button></section>
+    <section><h4>Points activity</h4><ol class="acct-ledger" id="am-ledger"><li class="muted">Loading…</li></ol></section>
     <div class="acct-row"><a class="btn small btn-ghost" href="#/agent">${icon('code', 14)}My agent</a><button class="btn small btn-ghost" id="am-out">Sign out</button></div>`;
+  $('am-close').onclick = () => closeMenu(true);
+  if (draftTo) (document.getElementById('am-wd-to') as HTMLInputElement).value = draftTo;
+  if (draftAmount) (document.getElementById('am-wd-amt') as HTMLInputElement).value = draftAmount;
+  if (withdrawalOpen) el.querySelector<HTMLDetailsElement>('.am-withdraw')!.open = true;
+  if (focusedId) document.getElementById(focusedId)?.focus({ preventScroll: true });
+  if (addressSelection !== null) (document.getElementById('am-wd-to') as HTMLInputElement).setSelectionRange(addressSelection, addressSelection);
+  el.scrollTop = scrollTop;
   $('am-out').onclick = () => {
     closeMenu();
     account.signOut();
@@ -427,7 +449,7 @@ async function paintMyWallet(rpcUrl: string | undefined) {
     const { privyWallet } = await import('./privy/client');
     const w = await privyWallet(15_000);
     if (!current()) return;
-    box.innerHTML = `<code title="${escapeHtml(w.address)}">${escapeHtml(w.address.slice(0, 6))}…${escapeHtml(w.address.slice(-6))}</code><span class="muted small" id="am-wallet-balance">Checking balance…</span><button class="btn small btn-ghost" id="am-copyw">${icon('copy', 14)}Copy</button>`;
+    box.innerHTML = `<div class="acct-address-row"><code title="${escapeHtml(w.address)}">${escapeHtml(w.address.slice(0, 6))}…${escapeHtml(w.address.slice(-6))}</code><button class="btn small btn-ghost" id="am-copyw" aria-label="Copy wallet address">${icon('copy', 14)}Copy</button></div><div class="acct-coin-balances" id="am-wallet-balance" role="status"><span class="muted small">Checking balances…</span></div>`;
     box.querySelector<HTMLButtonElement>('#am-copyw')!.onclick = async () => {
       try { await navigator.clipboard.writeText(w.address); toastFn?.('Wallet address copied'); }
       catch { toastFn?.(`Wallet address: ${w.address}`); }
@@ -441,8 +463,8 @@ async function paintMyWallet(rpcUrl: string | undefined) {
       import('./tickets').then(t => t.coinBalance(AbortSignal.timeout(8_000))).catch(() => null),
     ]);
     if (!current()) return;
-    const balances = [coins !== null ? `${coins.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${account.cfg?.tickets?.symbol ?? ''}` : null, sol].filter(Boolean);
-    box.querySelector('#am-wallet-balance')!.textContent = balances.join(' · ') || 'Balance unavailable. Your address is ready.';
+    const sym = escapeHtml(account.cfg?.tickets?.symbol ?? 'Coins');
+    box.querySelector('#am-wallet-balance')!.innerHTML = `<div><span>${sym}</span><b>${coins !== null ? coins.toLocaleString('en-US', { maximumFractionDigits: 2 }) : 'Unavailable'}</b></div><div><span>SOL for fees</span><b>${sol ? escapeHtml(sol.replace(' SOL', '')) : 'Unavailable'}</b></div>`;
   } catch (e) {
     if (!current()) return;
     box.innerHTML = `<span class="muted small">${escapeHtml((e as Error).message)}</span><button class="btn small btn-ghost" id="am-wallet-retry">Retry wallet</button>`;

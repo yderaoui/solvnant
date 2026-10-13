@@ -4,6 +4,14 @@
 
 Site: https://www.pumpkart.racing
 
+## Player-screen refinement — October 13
+
+- Account menu now puts tickets and the game wallet above free-play points. Coin and SOL balances have separate rows; the address and Copy button stay together. The opaque panel has a persistent Close button.
+- Withdrawal fields have visible labels and preserve their draft, cursor and expanded section during account refreshes. Drafts clear when the account or mint changes. Existing pending/confirmed transaction receipts remain available.
+- Buying now highlights the selected amount, emphasizes the total including fees, shows the actual quote lifetime and offers a nearby Refresh price button after expiry or cancellation. Confirmed purchases replace the form with the receipt and next action.
+- Checkout states the temporary-coin/mainnet distinction and explains automatic coin refunds versus returned public tickets before approval.
+- Verification: **214 regression tests passed**, production build passed, existing withdrawal receipt/recovery UI check passed, responsive wallet/buy/checkout checks passed at **320 / 375 / 768 / 1440 px**. Fresh unsigned mainnet PumpSwap quote/simulation and cancellation/stale-quote checks passed with **zero submitted transactions**. Browser checkout and completion states use fixtures; these do not complete the real-account/mainnet release checks below.
+
 ## Checks completed
 
 | Area | Result and evidence |

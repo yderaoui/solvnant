@@ -35,6 +35,14 @@ KOL shown as a racer.
 
 ## 2. Current state (read this first)
 
+- **Player UI refinement (October 13):** money-first account panel with separate
+  balances, opaque surface/sticky Close header and labeled withdrawal inputs.
+  Same-account/mint withdrawal drafts and cursor survive menu repaint; ownership
+  changes clear drafts. Buy presets, fee-total emphasis, actual quote countdown,
+  refresh/retry and receipt-only success state are polished. Checkout explains
+  automatic refunds and temporary-mainnet payments. Build and 214 tests pass;
+  320–1440px browser fixtures and unsigned PumpSwap review pass. No mainnet funds
+  moved or runtime coin/treasury settings changed for this refinement.
 - **Unattended readiness audit (October 12):** all 214 regression tests, build,
   Worker dry-run, nine production pages, all 15 models/portraits, failure recovery,
   isolated ~60 FPS desktop profiling and real local Live entry passed. Fresh funded

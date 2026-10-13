@@ -12,6 +12,7 @@
 .coin-amount span { font-weight: bold; color: var(--muted); }
 .coin-presets { display: flex; gap: 8px; margin: 12px 0 20px; }
 .coin-presets .btn { flex: 1; justify-content: center; }
+.coin-presets .btn[aria-pressed="true"] { color: var(--lime-hi); border-color: var(--lime); background: rgba(255,0,110,.1); box-shadow: 0 0 16px rgba(255,0,110,.08); }
 .coin-action { width: 100%; justify-content: center; margin-top: 10px; }
 .coin-review-panel { padding: 24px; margin-top: 24px; border: 1px solid rgba(255,0,110,.3); border-radius: 12px; background: rgba(255,0,110,.025); animation: coin-review-in .22s ease-out both; }
 .coin-receive { display: block; font: 700 clamp(24px,4vw,34px) var(--mono); color: var(--text); margin: 8px 0 20px; overflow-wrap: anywhere; }
@@ -20,9 +21,17 @@
 .coin-totals div { display: flex; gap: 16px; justify-content: space-between; }
 .coin-totals dt { color: var(--muted); }
 .coin-totals dd { margin: 0; text-align: right; flex-shrink: 0; }
+.coin-total-primary { padding: 14px 0; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
+.coin-total-primary dd { color: var(--info); font-weight: 700; font-size: 14px; }
 .coin-address { display: block; overflow-wrap: anywhere; font-size: 12px; line-height: 1.8; margin-bottom: 12px; }
 .coin-status { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.coin-status[data-tone="pending"] { color: var(--info); padding: 12px 16px; border-radius: var(--r); background: rgba(0,255,255,.04); }
+.coin-status[data-tone="error"] { color: #ff91a6; padding: 12px 16px; border-radius: var(--r); background: rgba(255,77,109,.08); }
+.coin-status[data-tone="success"] { color: var(--info); }
 .coin-status:empty { display: none; }
+.coin-price-clock { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.coin-links { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+.coin-links .hero-link { font-size: 12px; }
 .coin-details { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 18px; }
 .coin-details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .coin-complete > svg { color: #00ffff; }

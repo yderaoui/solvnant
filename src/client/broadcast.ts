@@ -541,6 +541,9 @@ export class Broadcast {
   }
 
   private showResults() {
+    // Result verification can arrive after the next-race lobby takes over the stage.
+    // Keep its betting controls intact; the verified result remains available in replay.
+    if (this.mode === 'live' && document.body.classList.contains('league-lobby')) return;
     const rec = this.record!;
     const race = this.race!;
     this.resultsShown = true;

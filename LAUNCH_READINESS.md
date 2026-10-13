@@ -12,6 +12,7 @@ Site: https://www.pumpkart.racing
 - Settlement uses complete authoritative results and the existing durable payout queue. Receipts are saved before broadcasting, recover after leaving the page, and retire only after on-chain failure or proven finalized expiry. Funded pools block a mint switch until settlement/refunds complete. Receipt links and automatic payout/refund status appear in History and the account menu.
 - **Funded devnet verified:** 14 test coins staked; two winning bettors received exactly 11.2 coins total, 2.1 were burned and 0.7 remained in the shared team/treasury wallet. A separate two-coin unbacked-winner stake was fully refunded; the player's SOL debit was zero. A Hub restart did not pay twice. Additional sponsored preparation verified a server-derived expiry bound with zero broadcast or debit.
 - **239 tests in 30 files pass**, along with the production build and Worker dry-run. Browser fixtures pass review/cancel, expiry, receipts during account refresh, payout polling and 320/375/768/1440px layouts. Regression tests include post-reveal payment rejection and proven receipt expiry. No real-account mainnet AI bet was placed by the agent. Devnet receipts and logs are in `scratch/league-coin-*`.
+- Production checks confirm the coin betting panel, 80/15/5 split, responsive layouts and real X sign-in window. The live treasury readiness check passes. A browser regression check also confirms late result verification cannot replace the next-race lobby or its betting controls.
 
 ## Player-screen refinement — October 13
 

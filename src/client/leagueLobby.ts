@@ -18,7 +18,7 @@ const clock = (ms: number) => {
 
 export class LeagueLobby {
   private betHost = document.createElement('div');
-  private bets = new BetWidget(this.betHost, 'BET ON THE WINNER', toast);
+  private bets = new BetWidget(this.betHost, 'BET ON THE WINNER', toast, 'league');
   private picks: { name: string; color: string }[] = [];
   private winners: HistoryRow[] = [];
   private shownFor = -1; // slot whose lobby is on screen

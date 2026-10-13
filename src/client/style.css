@@ -771,6 +771,9 @@ body[data-page='lab'].is-replay .lab-panel { display: none; }
 .res-prizes span { color: var(--text); }
 
 /* betting widget (live spectator bar + AI League panel) */
+.bw-coin-rules { width: 100%; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.bw-coin-rules a { color: var(--info); display: inline-block; }
+.bw-mine a { color: var(--info); }
 .bw { flex-direction: column; align-items: stretch !important; gap: var(--s2) !important; }
 .bw-head { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
 .bw-title { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; color: var(--muted); }

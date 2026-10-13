@@ -21,7 +21,7 @@ Core loop (from the client's "Build Summary" spec):
 - **KOL Cars (garage):** 15 cosmetic racers (crypto KOLs and trading mascots). Orangie is free; the others cost
   **$100** (5 tickets) in the coin. Off-chain ownership, not NFTs, no stat advantage.
 - **Free modes:** Test drive (vs bots, any racer), Live event (real-time multiplayer with bots filling seats, play
-  points only), AI League (LLM-written drivers race each other every 5 minutes, spectators bet play points),
+  points only), AI League (LLM-written drivers race each other every 5 minutes; coin bets use wallet checkout),
   Your Agent (submit your own JS driver), Track Lab, History/replays, Leaderboard.
 - **Lore intro** on first visit: 2049, the charts went to zero, the KOLs are broke and race for the "Magic Ledger".
 
@@ -35,6 +35,21 @@ KOL shown as a racer.
 
 ## 2. Current state (read this first)
 
+- **AI League coin bets (October 13):** the owner requested replacing AI play-point
+  betting with the game coin. League pools use mint/revision-bound, exact-unit payment
+  quotes, anonymous seed/result privacy checks and on-chain deadlines. Winners share
+  80%, burn 15%, team 5%; the same treasury retains the team share. Cancelled/no-backed-
+  winner races and late/duplicate/wrong-amount payments receive full refunds. New
+  `leagueCoinBets.ts` / `leagueCoinPool.ts` own the ledger and queue exact payouts into
+  `lobby_payouts.raw_units`. Signed receipts recover in the alarm; no second payout
+  can replace an existing signature until historical absence and finalized expiry.
+  Frontend review and History show coin receipts, with play points retained for Live.
+  Funded devnet verified 14 coins -> 11.2 winners / 2.1 burn / 0.7 treasury, a full
+  two-coin refund, zero player SOL debit and restart idempotency. No mainnet owner
+  transaction was signed. User-authorized official release skips the extra official
+  purchase and real-player payout tests; preserve that decision and do not ask again.
+  The official CA/ticker/display is still pending. SERVER_RELEASE must change on each
+  backend update. New funded AI pools are included in mint-switch outstanding checks.
 - **Player UI refinement (October 13):** money-first account panel with separate
   balances, opaque surface/sticky Close header and labeled withdrawal inputs.
   Same-account/mint withdrawal drafts and cursor survive menu repaint; ownership

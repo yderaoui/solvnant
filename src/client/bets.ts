@@ -1,6 +1,5 @@
-// Betting widget (PLAY-MONEY points, pool betting) shared by the live race spectator bar and the
-// AI League "next race" panel. Odds come from the pools: winners split everything that was bet
-// (minus a small rake), in proportion to their stake.
+// Pool betting widget: live spectators use play points; AI League coin markets use wallet checkout.
+// The server supplies the currency. Pool return estimates change until betting closes.
 import { account, fmtPts, showAuthModal } from './account';
 import { escapeHtml } from './codeViewer';
 import { icon } from './icons';
@@ -10,7 +9,8 @@ export interface MarketView {
   pools: Record<string, number>;
   odds: Record<string, number | null>;
   total: number;
-  mine: { pick: string; amount: number; payout: number | null }[];
+  mine: { pick: string; amount: number; payout: number | null; state?: string; signature?: string; paymentStatus?: string | null; payoutSignature?: string | null; reason?: string | null }[];
+  currency?: 'coin' | 'points'; symbol?: string; mint?: string; cluster?: string; enabled?: boolean; minUsd?: number; maxUsd?: number;
   youDrive: boolean;
   yourPick: string | null; // live races: a driver may only back their own car
 }
@@ -20,6 +20,7 @@ export class BetWidget {
   private view: MarketView | null = null;
   private pick: string | null = null;
   private amount = 50;
+  private usd = 1;
   private timer: ReturnType<typeof setInterval> | null = null;
   private busy = false;
   private msg = '';
@@ -32,6 +33,7 @@ export class BetWidget {
     private el: HTMLElement,
     private title: string,
     private toast: (t: string) => void,
+    private kind: 'live' | 'league' = 'live',
   ) {
     account.onChange(() => {
       if (this.id) void this.load();
@@ -77,11 +79,14 @@ export class BetWidget {
     const v = this.view;
     const m = v?.market;
     if (!this.id || !m) {
-      this.el.innerHTML = `<div class="bw-head"><span class="bw-title">${this.title}</span><span class="bw-status">${this.id ? 'Loading…' : 'Betting opens when the race starts'}</span></div>`;
+      this.el.innerHTML = `<div class="bw-head"><span class="bw-title">${this.title}</span><span class="bw-status">${this.id ? 'Loading…' : this.kind === 'league' ? 'Waiting for the next AI race' : 'Betting opens when the race starts'}</span></div>`;
       return;
     }
     const closesIn = m.closesAt ? m.closesAt - Date.now() : null;
-    const open = m.status === 'open' && this.open && (closesIn === null || closesIn > 0);
+    const coin = v.currency === 'coin';
+    const fmt = (n: number) => coin ? n.toLocaleString('en-US',{maximumFractionDigits:6}) : fmtPts(n);
+    const sym = coin ? escapeHtml(v.symbol ?? 'coins') : 'pts';
+    const open = m.status === 'open' && this.open && (closesIn === null || closesIn > 0) && (!coin || v.enabled !== false);
     const winner = m.winner !== null ? m.picks.find((p) => p.id === m.winner) : null;
     const status =
       m.status === 'settled'
@@ -96,7 +101,7 @@ export class BetWidget {
       .map((p) => {
         const odds = v.odds[p.id];
         const on = this.pick === p.id;
-        const allowed = open && (v.yourPick === null || v.yourPick === p.id);
+        const allowed = open && !this.busy && (v.yourPick === null || v.yourPick === p.id);
         return `<button class="bw-pick ${on ? 'on' : ''} ${v.yourPick === p.id ? 'you' : ''}" data-pick="${escapeHtml(p.id)}" aria-pressed="${on}" ${allowed ? '' : 'disabled'}>
           <span class="sw" style="background:${escapeHtml(p.color)}"></span><span class="n">${escapeHtml(p.name)}</span><b>${odds ? `${odds.toFixed(1)}x` : '–'}</b></button>`;
       })
@@ -105,8 +110,10 @@ export class BetWidget {
       ? `<div class="bw-mine">Your bets: ${v.mine
           .map((b) => {
             const p = m.picks.find((x) => x.id === b.pick);
-            const res = b.payout === null ? '' : b.payout > 0 ? ` <b class="up">+${fmtPts(b.payout)}</b>` : ' <b class="down">lost</b>';
-            return `${fmtPts(b.amount)} on ${escapeHtml(p?.name ?? '?')}${res}`;
+            const res = b.payout === null ? '' : b.payout > 0 ? ` <b class="up">${b.state === 'refund' ? 'Refund' : '+'}${fmt(b.payout)} ${sym}${coin ? b.paymentStatus === 'paid' ? ' · paid' : ' · pending' : ''}</b>` : ' <b class="down">lost</b>';
+            const dev = v.cluster === 'devnet' ? '?cluster=devnet' : '';
+            const receipt = b.payoutSignature ? ` <a href="https://solscan.io/tx/${encodeURIComponent(b.payoutSignature)}${dev}" target="_blank" rel="noopener">Receipt${icon('overtake',12)}</a>` : '';
+            return `${fmt(b.amount)} ${sym} on ${escapeHtml(p?.name ?? '?')}${res}${receipt}`;
           })
           .join(' · ')}</div>`
       : '';
@@ -115,13 +122,17 @@ export class BetWidget {
     let action: string;
     if (!open) action = '';
     else if (!me) action = `<button class="btn btn-lime" id="bw-signin">Sign in to bet</button>`;
+    else if (coin)
+      action = `<label class="bw-amt"><span class="sr-only">Bet value in dollars, paid in ${sym}</span><small>$</small><input id="bw-amount" type="number" inputmode="decimal" min="${v.minUsd ?? .01}" max="${v.maxUsd ?? 100}" step="0.01" value="${this.usd}" ${this.busy ? 'disabled' : ''}/></label>
+        <button class="btn btn-lime" id="bw-go" ${this.pick === null || this.busy ? 'disabled' : ''}>${this.busy ? 'CHECKING BET…' : 'REVIEW COIN BET'}</button>`;
     else
       action = `<label class="bw-amt"><span class="sr-only">Points to bet</span><input id="bw-amount" type="number" inputmode="numeric" min="${cfg?.points.betMin ?? 10}" max="${cfg?.points.betMax ?? 5000}" step="10" value="${this.amount}" /><small>PTS</small></label>
         <button class="btn btn-lime" id="bw-go" ${this.pick === null || this.busy ? 'disabled' : ''}>${v.yourPick !== null ? 'BACK YOURSELF' : 'PLACE BET'}</button>
         ${v.yourPick !== null ? '<span class="bw-note">You’re driving: you can only bet on yourself.</span>' : ''}`;
     this.el.innerHTML = `
-      <div class="bw-head"><span class="bw-title">${this.title}</span><span class="bw-status ${open ? 'is-open' : ''}">${status}</span><span class="bw-pool">Pool <b>${fmtPts(v.total)}</b> pts</span></div>
+      <div class="bw-head"><span class="bw-title">${coin ? `BET WITH ${sym}` : this.title}</span><span class="bw-status ${open ? 'is-open' : ''}">${status}</span><span class="bw-pool">Pool <b>${fmt(v.total)}</b> ${sym}</span></div>
       <div class="bw-picks" role="group" aria-label="Pick a winner">${picks}</div>
+      ${coin ? `<p class="bw-coin-rules">Estimated pool returns · 80% to winning bets, 15% burned, 5% treasury. <a href="#/history">My bets &amp; receipts</a></p>` : ''}
       <div class="bw-foot">${action}${mine}${this.msg ? `<span class="bw-msg" role="status">${escapeHtml(this.msg)}</span>` : ''}</div>`;
     for (const b of this.el.querySelectorAll<HTMLButtonElement>('[data-pick]'))
       b.onclick = () => {
@@ -131,7 +142,7 @@ export class BetWidget {
       };
     this.el.querySelector<HTMLButtonElement>('#bw-signin')?.addEventListener('click', () => showAuthModal());
     const amt = this.el.querySelector<HTMLInputElement>('#bw-amount');
-    if (amt) amt.oninput = () => (this.amount = Math.max(0, Math.floor(Number(amt.value) || 0)));
+    if (amt) amt.oninput = () => { if (coin) this.usd = Number(amt.value); else this.amount = Math.max(0,Math.floor(Number(amt.value)||0)); };
     this.el.querySelector<HTMLButtonElement>('#bw-go')?.addEventListener('click', () => void this.place());
   }
 
@@ -139,7 +150,16 @@ export class BetWidget {
     if (!this.id || this.pick === null || this.busy) return;
     this.busy = true;
     this.render();
+    const id = this.id, pick = this.pick;
     try {
+      if (this.view?.currency === 'coin') {
+        const { coinBetCheckout } = await import('./coinBetCheckout');
+        const r = await coinBetCheckout(id,pick,this.usd);
+        if (this.id === r.market) this.view = r.view;
+        this.toast(r.refunded ? 'Full coin refund queued. Check your bet history.' : 'Coin bet confirmed. Good luck!');
+        this.msg = '';
+        return;
+      }
       const r = await account.api<{ points: number; view: MarketView }>('/api/bet', { market: this.id, pick: this.pick, amount: this.amount });
       this.view = r.view;
       account.setPoints(r.points);

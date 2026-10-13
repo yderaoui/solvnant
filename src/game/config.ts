@@ -1,8 +1,8 @@
 // Game server settings, read from Worker vars/secrets (wrangler.toml [vars], `wrangler secret put`,
 // or .dev.vars locally). Everything has a safe default so `npm run game` works with no setup.
 //
-// Points are PLAY MONEY. There are no real-money pots in the game server. The optional on-chain
-// pots (onchain/) run on Solana DEVNET only.
+// Points are PLAY MONEY. Ticketed races and AI League coin pools use the configured Solana mint;
+// those wallet funds never become points or share the point ledger.
 
 export interface XConfig {
   clientId: string;
@@ -58,7 +58,8 @@ export interface GameConfig {
   houseSecret: string | null;
   teamWallet: string | null; // receives the 5% team share of each pot
   points: PointsConfig;
-  supabase: { url: string; key: string } | null;
+  supabase: { url: string; key: string; anonKey?: string } | null;
+  leagueCoinBets?: boolean;
   betsCloseAt: number; // live races: bets close when the leader has done this fraction of the distance
 }
 
@@ -120,7 +121,8 @@ export function readConfig(env: Env): GameConfig {
       betMax: num(env.BET_MAX, 5000),
       rakePct: num(env.BET_RAKE_PCT, 5),
     },
-    supabase: env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY ? { url: env.SUPABASE_URL.replace(/\/+$/, ''), key: env.SUPABASE_SERVICE_ROLE_KEY } : null,
+    supabase: env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY ? { url: env.SUPABASE_URL.replace(/\/+$/, ''), key: env.SUPABASE_SERVICE_ROLE_KEY, anonKey: env.SUPABASE_ANON_KEY || undefined } : null,
+    leagueCoinBets: env.LEAGUE_COIN_BETS === 'true',
     betsCloseAt: num(env.BETS_CLOSE_AT, 0.4),
   };
 }
@@ -151,6 +153,7 @@ export function publicConfig(c: GameConfig) {
     points: c.points,
     betsCloseAt: c.betsCloseAt,
     leagueBets: !!c.supabase,
+    leagueCoinBets: !!c.leagueCoinBets && !!c.supabase?.anonKey && !!c.tickets,
   };
 }
 export type PublicConfig = ReturnType<typeof publicConfig>;

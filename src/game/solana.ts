@@ -115,6 +115,7 @@ interface TokenBalance {
 }
 
 interface ParsedTx {
+  blockTime?: number | null;
   meta: { err: unknown; preTokenBalances?: TokenBalance[]; postTokenBalances?: TokenBalance[] } | null;
   transaction: {
     message: {
@@ -129,6 +130,8 @@ export interface Payment {
   amount: number; // coins received by the treasury
   memos: string[];
   units?: string; // exact raw token delta for locked friend-lobby entries
+  blockTime?: number | null;
+  payerUnits?: string; // exact debit from the signed payer's token accounts
 }
 
 /**
@@ -144,6 +147,7 @@ export async function readPayment(cfg: TicketConfig, signature: string, fetchFn:
     const url = cfg.verifyUrl ? `${cfg.verifyUrl}${cfg.verifyUrl.includes('?') ? '&' : '?'}cluster=${cfg.cluster}` : cfg.rpcUrl;
     r = await fetchFn(url, {
       method: 'POST',
+      signal: AbortSignal.timeout(15_000),
       headers: { 'content-type': 'application/json', ...(cfg.verifyKey ? { 'x-rpc-key': cfg.verifyKey } : {}) },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTransaction', params: [signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }] }),
     });
@@ -166,7 +170,10 @@ export async function readPayment(cfg: TicketConfig, signature: string, fetchFn:
   const units = relevant.length && relevant.every(b => /^\d+$/.test(b.uiTokenAmount.amount ?? '')) ? String(raw(tx.meta.postTokenBalances) - raw(tx.meta.preTokenBalances)) : undefined;
   // who paid: the signer that isn't the house (the house co-signs sponsored payments as fee payer)
   const wallet = tx.transaction.message.accountKeys.find((k) => k.signer && k.pubkey !== cfg.treasury)?.pubkey ?? '';
-  return { wallet, amount: units === undefined ? amount : Number(units) / 10 ** cfg.decimals, memos, units };
+  const payerRaw = (list: TokenBalance[] | undefined) => (list ?? []).filter(b => b.owner === wallet && b.mint === cfg.mint).reduce((sum, b) => sum + BigInt(b.uiTokenAmount.amount ?? '0'), 0n);
+  const payerBalances = [...(tx.meta.preTokenBalances ?? []), ...(tx.meta.postTokenBalances ?? [])].filter(b => b.owner === wallet && b.mint === cfg.mint);
+  const payerUnits = payerBalances.length && payerBalances.every(b => /^\d+$/.test(b.uiTokenAmount.amount ?? '')) ? String(payerRaw(tx.meta.preTokenBalances) - payerRaw(tx.meta.postTokenBalances)) : undefined;
+  return { wallet, amount: units === undefined ? amount : Number(units) / 10 ** cfg.decimals, memos, units, blockTime: tx.blockTime, payerUnits };
 }
 
 /**

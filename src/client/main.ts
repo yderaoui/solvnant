@@ -81,6 +81,7 @@ void accountLoading;
 // Once per visit, when signed in: credit any coin payment that reached the treasury but wasn't counted.
 const recovered = new Set<string>();
 account.onChange(() => {
+  if (document.body.dataset.page === 'history') void renderHistory();
   if (!account.me || recovered.has(account.me.id) || !account.cfg?.tickets || !account.cfg.privy) return;
   const uid = account.me.id;
   recovered.add(uid);
@@ -408,7 +409,7 @@ async function openPractice() {
 // ---------------------------------------------------------------- AI League betting
 // Bets on a league race close when its slot opens (the seed is revealed then), so the panel always
 // offers the NEXT race while the current one plays.
-const leagueBets = new BetWidget($('league-bet'), 'BET ON THE NEXT RACE', toast);
+const leagueBets = new BetWidget($('league-bet'), 'BET ON THE NEXT RACE', toast, 'league');
 async function pollLeagueMarket() {
   if (document.body.dataset.page !== 'league' || !account.cfg?.leagueBets) {
     leagueBets.setMarket(null);
@@ -605,6 +606,8 @@ async function renderHistory() {
   } catch (e) {
     el.innerHTML = empty('alert', `Couldn't load history: ${escapeHtml(String(e))}`, `<button class="btn" onclick="location.reload()">${icon('replay')}Try again</button>`);
   }
+  const { mountCoinBetHistory } = await import('./coinBetHistory');
+  mountCoinBetHistory(el);
 }
 
 route();

@@ -323,6 +323,7 @@ function renderMenu(toast: (t: string) => void) {
       <p class="muted small">Play money. No cash value or withdrawals.</p>
       <button class="btn small btn-ghost" id="am-daily" ${dailyIn > 0 ? 'disabled' : ''}>${icon('zap', 14)}${dailyIn > 0 ? `Daily bonus in ${Math.ceil(dailyIn / 3600_000)} h` : `Claim daily +${cfg.points.daily}`}</button></section>
     <section><h4>Points activity</h4><ol class="acct-ledger" id="am-ledger"><li class="muted">Loading…</li></ol></section>
+    ${cfg.leagueCoinBets ? '<a class="btn small btn-ghost" href="#/history">AI bet receipts &amp; payouts</a>' : ''}
     <div class="acct-row"><a class="btn small btn-ghost" href="#/agent">${icon('code', 14)}My agent</a><button class="btn small btn-ghost" id="am-out">Sign out</button></div>`;
   $('am-close').onclick = () => closeMenu(true);
   if (draftTo) (document.getElementById('am-wd-to') as HTMLInputElement).value = draftTo;

@@ -204,6 +204,16 @@ export async function blockHeight(cfg: TicketConfig): Promise<number> {
   return rpc<number>(cfg, 'getBlockHeight', [{ commitment: 'finalized' }]);
 }
 
+/** A server-derived upper bound for an already validated recent blockhash's lifetime. */
+export async function purchaseExpiryBound(cfg: TicketConfig, blockhash: string): Promise<number> {
+  const [valid, latest] = await Promise.all([
+    rpc<{ value: boolean }>(cfg, 'isBlockhashValid', [blockhash, { commitment: 'confirmed' }]),
+    rpc<{ value: { lastValidBlockHeight: number } }>(cfg, 'getLatestBlockhash', [{ commitment: 'confirmed' }]),
+  ]);
+  if (!valid.value || !Number.isSafeInteger(latest.value.lastValidBlockHeight)) throw new Error('This bet transaction expired. Review a fresh bet. Nothing was sent.');
+  return latest.value.lastValidBlockHeight;
+}
+
 // ---------------------------------------------------------------------------------- sponsored payments
 export interface SponsorCheck {
   /** The memo's price in coins if it was handed to this player (else null: refuse). */
@@ -237,6 +247,7 @@ export async function cosignPurchase(cfg: TicketConfig, house: House, wireBase64
   const houseAta = await ataOf(house.address, cfg.mint, m.program);
   const tx = getTransactionDecoder().decode(getBase64Encoder().encode(wireBase64));
   const msg = getCompiledTransactionMessageDecoder().decode(tx.messageBytes) as unknown as {
+    lifetimeToken: string;
     header: { numSignerAccounts: number; numReadonlySignerAccounts: number; numReadonlyNonSignerAccounts: number };
     staticAccounts: string[];
     instructions: { programAddressIndex: number; accountIndices?: number[]; data?: Uint8Array }[];
@@ -288,7 +299,7 @@ export async function cosignPurchase(cfg: TicketConfig, house: House, wireBase64
   const sig = await signBytes(house.signer.keyPair.privateKey, tx.messageBytes);
   const signed = { ...tx, signatures: { ...tx.signatures, [house.address]: sig } };
   const wire = getBase64Decoder().decode(getTransactionEncoder().encode(signed as never));
-  return { wire, signature: getBase58Decoder().decode(sig), player, memo };
+  return { wire, signature: getBase58Decoder().decode(sig), player, memo, blockhash: msg.lifetimeToken };
 }
 
 /**

@@ -5,7 +5,7 @@ vi.mock('@solana/spl-token', async original => ({ ...await original<object>(), g
 vi.mock('../src/client/account', () => ({ account: { me: { id: 'alice' }, cfg: { tickets: {} }, api: mocks.api, refresh: mocks.refresh } }));
 vi.mock('../src/client/privy/client', () => ({ privyOn: () => true, privyWallet: mocks.wallet }));
 import { account } from '../src/client/account';
-import { buyTicket, claimPendingTicket, withdrawCoins, savedWithdrawalReceipt } from '../src/client/tickets';
+import { buyTicket, claimPendingTicket, withdrawCoins, savedWithdrawalReceipt, placeLeagueBet } from '../src/client/tickets';
 import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js';
 import { base58Encode } from '../src/game/solana';
 
@@ -156,6 +156,28 @@ function sponsoredFixture() {
   };
   return { sign, destination: destination.toBase58(), tickets, prepare };
 }
+it('recovers an earlier coin bet without signing or paying the newly clicked driver', async () => {
+  store.set('tl-pending-league-bet:alice','old-bet-signature');
+  mocks.api.mockResolvedValue({ok:true,kind:'bet',accepted:true,market:'league:1',pick:'0',signature:'old-bet-signature'});
+  const result=await placeLeagueBet('league:2','1',5,vi.fn(),vi.fn(),vi.fn());
+  expect(result).toMatchObject({market:'league:1',pick:'0'});expect(mocks.wallet).not.toHaveBeenCalled();expect(store.has('tl-pending-league-bet:alice')).toBe(false);
+});
+it('validates a coin bet quote before approval, uses bet preflights and persists a receipt before broadcast', async () => {
+  const f=sponsoredFixture(),receipt=vi.fn(),review=vi.fn();
+  mocks.api.mockImplementation(async(path,body)=>path==='/api/league/bet/intent'?{...f.tickets,memo:'PumpKart league bet fixture',entryUnits:'1000000',betMarket:'league:1',betPick:'0'}:path==='/api/pay/sponsor'?f.prepare(body):path==='/api/league/bet/claim'?{ok:true,kind:'bet',accepted:true,market:'league:1',pick:'0'}:{});
+  const send=vi.spyOn(Connection.prototype,'sendRawTransaction').mockImplementation(async()=>{expect(store.has('tl-pending-league-bet:alice')).toBe(true);expect(receipt).toHaveBeenCalled();return 'sent';});
+  expect((await placeLeagueBet('league:1','0',1,vi.fn(),review,receipt)).accepted).toBe(true);
+  expect(review).toHaveBeenCalledOnce();expect(f.sign).toHaveBeenCalledOnce();expect(send).toHaveBeenCalledOnce();
+  const checks=mocks.api.mock.calls.filter(c=>c[0]==='/api/coin/preflight');expect(checks.length).toBeGreaterThan(1);expect(checks.every(c=>c[1].purpose==='bet')).toBe(true);
+  expect(store.has('tl-pending-league-bet:alice')).toBe(false);
+});
+it('never signs a mismatched AI bet quote or a cancelled review', async () => {
+  const f=sponsoredFixture();
+  mocks.api.mockResolvedValue({...f.tickets,memo:'PumpKart league bet fixture',entryUnits:'1000000',betMarket:'league:999',betPick:'0'});
+  await expect(placeLeagueBet('league:1','0',1,vi.fn(),vi.fn(),vi.fn())).rejects.toThrow('does not match');expect(f.sign).not.toHaveBeenCalled();
+  mocks.api.mockResolvedValue({...f.tickets,memo:'PumpKart league bet fixture',entryUnits:'1000000',betMarket:'league:1',betPick:'0'});
+  await expect(placeLeagueBet('league:1','0',1,vi.fn(),async()=>{throw Error('Review closed');},vi.fn())).rejects.toThrow('Review closed');expect(f.sign).not.toHaveBeenCalled();
+});
 it('persists a sponsored withdrawal before broadcast and checks the same ID after an uncertain send', async () => {
   const fixture = sponsoredFixture();
   mocks.api.mockImplementation(async (_path, body) => fixture.prepare(body));

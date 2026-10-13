@@ -103,6 +103,14 @@ export async function payer(): Promise<Payer> {
 
 export type PaymentReview = (quote: TicketConfig & { usd?: number | null }, address: string, sponsored: boolean) => Promise<void>;
 
+export interface LeagueBetResult {
+  ok: boolean; accepted: boolean; refunded: boolean; market: string; pick: string; signature: string;
+  view: import('./bets').MarketView;
+}
+export async function placeLeagueBet(market: string, pick: string, usd: number, step: (text: string) => void, review: PaymentReview, receipt: (signature: string) => void): Promise<LeagueBetResult> {
+  return await payCoins('/api/league/bet/intent', { market, pick, usd }, '/api/league/bet/claim', 'tl-pending-league-bet', step, review, receipt) as LeagueBetResult;
+}
+
 export async function buyTicket(step: (text: string) => void, review?: PaymentReview, code?: string): Promise<number> {
   const r = await payCoins(
     "/api/ticket/intent",
@@ -145,6 +153,7 @@ async function payCoins(
   pendingKey: string,
   step: (text: string) => void,
   review?: PaymentReview,
+  receipt?: (signature: string) => void,
 ): Promise<object> {
   if (!account.me) throw new Error("Sign in first.");
   const uid = account.me.id;
@@ -161,17 +170,19 @@ async function payCoins(
     step("Connecting your wallet…");
     const wallet = await payer();
     const publicKey = { toString: () => wallet.address };
-    const intent = await account.api<TicketConfig & { memo: string; code?: string; entryUnits?: string }>(
+    const intent = await account.api<TicketConfig & { memo: string; code?: string; entryUnits?: string; betMarket?: string; betPick?: string }>(
       intentPath,
       { ...intentBody, coinRevision: account.cfg?.coinLaunch?.revision },
     );
     const expectedCode = (intentBody as { code?: string }).code;
+    if (intentPath === '/api/league/bet/intent' && (intent.betMarket !== (intentBody as { market?: string }).market || intent.betPick !== (intentBody as { pick?: string }).pick || !/^[1-9]\d*$/.test(intent.entryUnits ?? ''))) throw new Error('The bet quote does not match your selected race and driver. Nothing was sent.');
+    const purpose = intent.betMarket ? 'bet' : 'ticket';
     if (expectedCode && (intent.code !== expectedCode || !/^\d+$/.test(intent.entryUnits ?? '') || BigInt(intent.entryUnits!) <= 0n)) {
       throw new Error('This game server needs the friend-lobby update. No payment was made.');
     }
     if (review) await review(intent, wallet.address, !!(account.cfg as { sponsor?: string | null } | null)?.sponsor && !!wallet.signOnly);
     const coinRevision = (intent as TicketConfig & { coinRevision?: string }).coinRevision;
-    await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose: 'ticket', memo: intent.memo });
+    await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose, memo: intent.memo });
     step("Preparing the payment…");
     // The Solana libraries expect Node's Buffer: give the browser one before loading them.
     const { Buffer } = await import("buffer");
@@ -192,6 +203,7 @@ async function payCoins(
     const programId = mintInfo.owner;
     const decimals = (await spl.getMint(conn, mint, "confirmed", programId))
       .decimals;
+    if (intent.betMarket && decimals !== intent.decimals) throw new Error('The coin decimals changed. Review a fresh bet. Nothing was sent.');
     const from = spl.getAssociatedTokenAddressSync(mint, owner, false, programId);
     const to = spl.getAssociatedTokenAddressSync(mint, treasury, true, programId);
     const exactUnits = (intent as TicketConfig & { entryUnits?: string }).entryUnits;
@@ -266,9 +278,10 @@ async function payCoins(
     tx.feePayer = sponsor ?? owner;
     const latest = await conn.getLatestBlockhash("confirmed");
     tx.recentBlockhash = latest.blockhash;
-    await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose: 'ticket', memo: intent.memo });
+    await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose, memo: intent.memo });
     if (account.me?.id !== uid) throw new Error('Account changed. Open checkout again. Nothing was sent.');
     step(`Approve ${intent.price.toLocaleString('en-US')} ${intent.symbol}${(intent as { usd?: number | null }).usd ? ` (≈ $${(intent as { usd?: number }).usd})` : ''} in your wallet…`);
+    if (intent.betMarket && account.cfg?.privy) step('Approve the bet in Privy, then click Close to finish it here.');
     if (sponsor) {
       let signedTx: Uint8Array;
       try {
@@ -288,7 +301,7 @@ async function payCoins(
         { tx: Buffer.from(signedTx).toString("base64"), coinRevision, prepareOnly: true },
       );
       const wire = await preparedWire(prepared, tx);
-      await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose: 'ticket', memo: intent.memo });
+      await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose, memo: intent.memo });
       if (account.me?.id !== uid) throw new Error('Account changed during approval. Nothing was sent.');
       rememberPurchase(pendingKey, prepared.signature);
       step('Sending (the game pays the network fee)…');
@@ -298,7 +311,7 @@ async function payCoins(
     }
     let signature: string;
     let known: string | null = null;
-    await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose: 'ticket', memo: intent.memo });
+    await account.api('/api/coin/preflight', { mint: intent.mint, coinRevision, purpose, memo: intent.memo });
     try {
       signature = await wallet.send(tx, conn, (sig) => {
         known = sig;
@@ -332,12 +345,18 @@ async function payCoins(
     async function confirm(signature: string): Promise<object> {
       step("Waiting for the network to confirm…");
       rememberPurchase(pendingKey, signature);
-      for (let i = 0; i < 30; i++) {
+      const deadline = intent.betMarket ? Date.now() + 12_000 : Infinity;
+      for (let i = 0; i < 30 && Date.now() < deadline; i++) {
         let r: { ok: boolean; pending?: boolean };
         try {
-          r = await account.api<{ ok: boolean; pending?: boolean }>(claimPath, {
+          const request = account.api<{ ok: boolean; pending?: boolean }>(claimPath, {
             signature,
           });
+          if (intent.betMarket) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try { r = await Promise.race([request, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Confirmation pending.')), Math.max(1, deadline - Date.now())); })]); }
+            finally { clearTimeout(timer); }
+          } else r = await request;
         } catch (e) {
           const msg = (e as Error).message;
           if (/already used|memo|costs|failed on-chain|expired/i.test(msg)) {
@@ -360,6 +379,8 @@ async function payCoins(
 
     function rememberPurchase(key: string, signature: string) {
       remember(key, JSON.stringify({ signature, rpcUrl: intent.rpcUrl, lastValidBlockHeight: latest.lastValidBlockHeight }));
+      receipt?.(signature);
+      if (intent.betMarket) void account.api('/api/league/bet/track', { signature, memo: intent.memo }).catch(() => {});
     }
   }
 }
@@ -433,7 +454,8 @@ function remember(key: string, sig: string | null) {
 export async function claimPendingTicket(): Promise<boolean> {
   const a = await claimPending("tl-pending-ticket", "/api/ticket/claim");
   const b = await claimPending("tl-pending-skin", "/api/skin/claim");
-  return a || b;
+  const c = await claimPending('tl-pending-league-bet', '/api/league/bet/claim');
+  return a || b || c;
 }
 
 async function claimPending(key: string, path: string): Promise<boolean> {

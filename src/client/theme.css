@@ -336,6 +336,15 @@ body.in-lobby .center.show { background: rgba(10, 0, 20, .82); }
 .checkout-total small { overflow-wrap: anywhere; color: var(--info); }
 .checkout-refund { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: var(--r); background: rgba(0,255,255,.04); color: var(--muted); }
 .checkout-refund svg { margin-top: 4px; color: var(--info); }
+.coin-bet-checkout #cb-actions { display: grid; gap: 10px; }
+.coin-bet-checkout #cb-actions .btn { width: 100%; justify-content: center; }
+.coin-bet-checkout #cb-receipt { overflow-wrap: anywhere; }
+.coin-bet-history-body { display: grid; gap: 12px; }
+.coin-bet-record { padding: 20px; }
+.coin-bet-record h3 { margin: 0 0 12px; font-size: 15px; }
+.coin-bet-record-line + .coin-bet-record-line { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.coin-bet-record-line p { margin: 4px 0; font-size: 12px; overflow-wrap: anywhere; }
+.coin-bet-record-line .info { color: var(--info); }
 .checkout-funding { font-size: 13px; padding: 12px 0; }
 .checkout-funding summary { color: var(--info); cursor: pointer; }
 .checkout-funding code { display: block; overflow-wrap: anywhere; white-space: normal; margin: 12px 0; font-size: 12px; user-select: all; }

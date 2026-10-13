@@ -1,8 +1,17 @@
 # PumpKart readiness audit — October 12, 2026
 
-**The deployed temporary-coin site passes the checks below and is ready for client testing. The official public coin launch is not yet verified.** The final official mint/ticker and wallet-operated release checks are still outstanding.
+**The temporary-coin site passes the checks below and is ready for client testing. The official public coin launch is not yet verified.** The official mint/ticker is still required. On October 13 the owner explicitly authorized skipping the extra official-coin purchase and real-player mainnet payout tests; that waiver does not turn them into verified results.
 
 Site: https://www.pumpkart.racing
+
+## AI League coin betting — October 13
+
+- AI League markets now take the configured game coin through wallet review and the shared sponsored-payment flow. Amounts start at $0.01, quoted in coins at the live price, with a $100 per-race account limit. Play points remain separate and still fund Live spectator bets.
+- Wagers bind the account, immutable race/driver selection, mint, revision, exact token units and quote deadline. The server checks anonymous database access before taking coins so a public seed or result closes betting. Payments must be confirmed and accepted by the server before seed disclosure, as well as satisfy their chain/quote deadline. Late confirmations, duplicate and wrong-amount payments receive full refunds. An estimated blockchain timestamp alone never authorizes a wager after the outcome can be computed. [Solana block-time documentation](https://solana.com/docs/rpc/http/getblocktime).
+- Winning bettors share 80% of the pool proportionally; 15% is burned and 5% stays at the existing treasury. Base-unit arithmetic preserves every token unit. Cancelled races, no backed winner and unavailable results after the timeout refund every stake with no deductions.
+- Settlement uses complete authoritative results and the existing durable payout queue. Receipts are saved before broadcasting, recover after leaving the page, and retire only after on-chain failure or proven finalized expiry. Funded pools block a mint switch until settlement/refunds complete. Receipt links and automatic payout/refund status appear in History and the account menu.
+- **Funded devnet verified:** 14 test coins staked; two winning bettors received exactly 11.2 coins total, 2.1 were burned and 0.7 remained in the shared team/treasury wallet. A separate two-coin unbacked-winner stake was fully refunded; the player's SOL debit was zero. A Hub restart did not pay twice. Additional sponsored preparation verified a server-derived expiry bound with zero broadcast or debit.
+- **239 tests in 30 files pass**, along with the production build and Worker dry-run. Browser fixtures pass review/cancel, expiry, receipts during account refresh, payout polling and 320/375/768/1440px layouts. Regression tests include post-reveal payment rejection and proven receipt expiry. No real-account mainnet AI bet was placed by the agent. Devnet receipts and logs are in `scratch/league-coin-*`.
 
 ## Player-screen refinement — October 13
 
@@ -65,8 +74,8 @@ The first profile ran alongside other browser tests and was affected by that loa
 ## Remaining official-release checks
 
 1. Receive and verify the client's **official Solana CA and ticker**; complete the existing pause/drain/prepare/enable switch. Publish the requested official CA/Copy/explorer/pump.fun display using that real mint.
-2. Complete a small owner/client-approved purchase of the official coin and inspect its exact receipt.
-3. Complete a real multi-user mainnet race and verify the winner payout, burn and team share on-chain. Devnet settlement does not replace this check.
+2. **Skipped by the owner's explicit October 13 instruction:** extra owner/client-approved official-coin purchase check. It remains unverified.
+3. **Skipped by the owner's explicit October 13 instruction:** real multi-user mainnet winner/burn/team check. Devnet settlement remains the verified evidence.
 4. Complete fresh client X login and verify the same embedded wallet and ownership persist after sign-out/in.
 
 These depend on details or wallet/account interactions unavailable to this unattended run. No question or approval request was sent to the sleeping owner. See `COIN_LAUNCH.md` for the current steps; old instructions are preserved separately as history.

@@ -26,7 +26,7 @@ new_sqlite_classes = ["Hub"]
 #   SESSION_SECRET, X_CLIENT_ID, X_CLIENT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 [vars]
 # Bump on backend code releases so a resident Hub reloads through x-config-stamp.
-SERVER_RELEASE = "2026-10-12-mascots-2"
+SERVER_RELEASE = "2026-10-13-ai-coin-bets-1"
 # Safe before launch. Runtime /api/admin/coin settings take precedence once prepared.
 COIN_LAUNCH_READY = "false"
 COIN_BUY_ENABLED = "false"
@@ -65,3 +65,8 @@ TICKET_VERIFY_URL = "https://solvnant.vercel.app/api/solana-rpc"
 # Privy: sign-in (X, email, Google, wallet) + an embedded Solana wallet for every player.
 # Public app id (dashboard.privy.io). Remove to go back to the built-in X / guest sign-in.
 PRIVY_APP_ID = "cmuxzi8fk01ja0bjtygjpghge"
+
+# AI League coin pools. This is the same PUBLIC anon key shipped to browsers,
+# used only to verify that future race seeds/results remain hidden by RLS.
+LEAGUE_COIN_BETS = "true"
+SUPABASE_ANON_KEY = "sb_publishable_TGIqZEohWoT8627bPznjNA_vACBwxmL"

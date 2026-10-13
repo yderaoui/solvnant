@@ -1,10 +1,10 @@
-+# PumpKart — current launch steps
+# PumpKart — current launch steps
 
 Website: **https://www.pumpkart.racing**
 
 Buy coins: **https://www.pumpkart.racing/#/buy**
 
-**Ready for client testing with the temporary coin. The official public coin launch still needs the final coin details and wallet-operated release checks.**
+**Ready for client testing with the temporary coin. The official coin CA/ticker is still required. The owner explicitly waived the extra official-coin purchase and real-player mainnet payout checks on October 13; those checks are skipped, not verified.**
 
 The unattended October 12 audit passed 214 regression tests, the production build, all 15 character checks, nine production pages, browser failure recovery, funded devnet payments/settlement/refunds/withdrawals and mainnet receipt rechecks. See [LAUNCH_READINESS.md](LAUNCH_READINESS.md) for evidence and limits.
 
@@ -30,6 +30,7 @@ Public receipts: [purchase](https://solscan.io/tx/3jvxAE6KE8ZiythF7qhDnmjHc4B9D7
 - Paid races use real players and ghost runs; **80% winner / 15% burn / 5% team**.
 - Insufficient-player ordinary races return the ticket; custom friend lobbies refund the original entry coins.
 - Practice and play-point modes are separate from paid coin entry.
+- AI League bets use the game coin. Winning bets split 80% in proportion to their stake; 15% is burned and 5% stays in the treasury. Full refunds apply to cancelled races, unbacked winners and late/invalid payments. Live spectator bets still use play points.
 
 The current **temporary mainnet test coin** is:
 
@@ -40,14 +41,12 @@ Mode is `test`; buying and paid testing are enabled and spend real SOL. This is 
 ## Final official-launch sequence
 
 1. Obtain the client's **official Solana CA and ticker**, plus the public coin name and pump.fun link for website branding. No new team wallet is needed.
-2. Inspect outstanding obligations again. Temporary-coin pots must settle/refund and unused tickets must be resolved before changing mints.
+2. Inspect outstanding obligations again. Temporary-coin race pots and funded AI bet pools must settle/refund; pending payouts and unused tickets must be resolved before changing mints.
 3. Pause new purchases, allow **at least two minutes** for in-flight quotes/transactions to drain, then prepare the official mint. Preparation verifies the mint, token program/extensions, decimals, authorities, pump.fun provenance and swap route. Purchases stay paused.
 4. Publish the requested official CA on the homepage with Copy, Solscan and pump.fun links, using the verified real mint.
 5. Enable after the official mint, live price, payout signer, team destination and treasury reserve checks pass. Runtime coin switching needs no frontend rebuild; open tabs refresh config every 30 seconds/on focus.
-6. Complete fresh client X login. Sign out/in and confirm the same embedded wallet, balances and owned characters persist.
-7. Approve one small official-coin purchase in the normal Buy coins screen and verify its exact public receipt.
-8. Complete a low-entry real multi-user mainnet race and verify winner payout, burn and team share on-chain. Five finished players settle immediately; four can settle after the normal deadline. Funded devnet settlement does not replace this mainnet check.
-9. Announce the official launch after those checks pass.
+6. Fresh client X login/wallet persistence remains a client-operated check; record its actual result separately from automated checks.
+7. Run the quick configuration/build/deployment checks and publish the official-coin release. The owner authorized proceeding without an extra wallet-operated official purchase or real-player mainnet payout test; record both as skipped rather than passed.
 
 The operator uses the existing separate admin credential inside a trusted local process. It is not a wallet key; do not print it or put it in command arguments. With `PUMPKART_API_URL` and `COIN_ADMIN_KEY` configured:
 

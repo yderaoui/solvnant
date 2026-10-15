@@ -5,6 +5,13 @@ Solana mainnet through this code: be careful, test on devnet first, and never ha
 
 ---
 
+## Latest production coin — October 15, 2026
+
+- Official **PumpKart ($PUMPKART)**: `56QM2aW731mRpDJs9qoJhafgkVvzco1RzZcjNKQVpump`, Token-2022, 6 decimals. Runtime mode `official`, status `live`, buy/paid entry enabled, revision `coin_rcRry7gfTT8cvJd2`. This supersedes all temporary-coin configuration mentioned in older notes below.
+- The temporary coin was paused for at least 120 seconds, with zero open paid obligations. Pump SDK verification, live price and treasury readiness checks passed. Treasury/team destination stays `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`.
+- `officialCoin.ts` displays the full runtime CA on the homepage with Copy, Solscan, pump.fun and Buy links. Keep this identity tied to configuration; do not hardcode a separate promotional mint. Official mode removes the temporary-coin banner.
+- 239 tests and build passed. Worker version `67bd0cda-72eb-45e2-a6c6-e48f1b9b262c`. **Owner explicitly waived extra official purchase and real-player mainnet payout checks; they remain skipped/unverified. Do not request them again.** No wallet transaction was submitted for the switch.
+
 ## 1. What the product is
 
 PumpKart is a browser 3D kart-racing game on Solana with a memecoin theme. Players sign in with X (Twitter) only,
@@ -48,7 +55,7 @@ KOL shown as a racer.
   two-coin refund, zero player SOL debit and restart idempotency. No mainnet owner
   transaction was signed. User-authorized official release skips the extra official
   purchase and real-player payout tests; preserve that decision and do not ask again.
-  The official CA/ticker/display is still pending. SERVER_RELEASE must change on each
+  The official CA/ticker/display was completed October 15; see the current configuration above. SERVER_RELEASE must change on each
   backend update. New funded AI pools are included in mint-switch outstanding checks.
 - **Player UI refinement (October 13):** money-first account panel with separate
   balances, opaque surface/sticky Close header and labeled withdrawal inputs.

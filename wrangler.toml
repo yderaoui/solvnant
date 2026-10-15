@@ -26,7 +26,7 @@ new_sqlite_classes = ["Hub"]
 #   SESSION_SECRET, X_CLIENT_ID, X_CLIENT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 [vars]
 # Bump on backend code releases so a resident Hub reloads through x-config-stamp.
-SERVER_RELEASE = "2026-10-13-ai-coin-bets-1"
+SERVER_RELEASE = "2026-10-15-official-pumpkart"
 # Safe before launch. Runtime /api/admin/coin settings take precedence once prepared.
 COIN_LAUNCH_READY = "false"
 COIN_BUY_ENABLED = "false"
@@ -43,22 +43,22 @@ POINTS_PRIORITY_FEE = "200"
 MAX_PRIORITY_PER_RACE = "3"
 BET_RAKE_PCT = "5"
 
-# Race tickets paid in the game coin: $RACE (Race Trench, pump.fun; Token-2022, no transfer fee, no mint
-# or freeze authority). Tickets cost TICKET_PRICE_USD, paid in $RACE at the live price (Jupiter /
+# Race tickets paid in the official $PUMPKART coin (PumpKart, pump.fun; Token-2022, no transfer fee,
+# mint or freeze authority). Tickets cost TICKET_PRICE_USD, paid in $PUMPKART at the live price (Jupiter /
 # DexScreener, the lower one); racers cost 5 tickets. TICKET_PRICE = 0: no fixed fallback, so if the price
 # can't be read, purchases are refused rather than sold at a stale amount. Payment codes, tickets and
 # lobbies are tied to the coin, so nothing from the $PTEST test (2EtATUYc...vk4C8) carries over.
 # Secret: TICKET_VERIFY_KEY (wrangler secret put) = the site's RPC_PROXY_KEY.
 # Browsers and Privy use TICKET_RPC_URL (the site's proxy, which forwards to Helius: SOLANA_UPSTREAM_MAINNET on Vercel).
 TICKET_CLUSTER = "mainnet-beta"
-TICKET_MINT = "BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump"
+TICKET_MINT = "56QM2aW731mRpDJs9qoJhafgkVvzco1RzZcjNKQVpump"
 TICKET_DECIMALS = "6"
 TICKET_TREASURY = "WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc"
 # Owner selected the treasury as the team receiving wallet; the 5% share stays here.
 TEAM_WALLET = "WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc"
 TICKET_PRICE = "0"
 TICKET_PRICE_USD = "20"
-TICKET_SYMBOL = "$RACE"
+TICKET_SYMBOL = "$PUMPKART"
 TICKET_RPC_URL = "https://solvnant.vercel.app/api/solana-rpc?cluster=mainnet-beta"
 TICKET_VERIFY_URL = "https://solvnant.vercel.app/api/solana-rpc"
 

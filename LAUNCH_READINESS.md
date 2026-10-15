@@ -1,8 +1,15 @@
 # PumpKart readiness audit — October 12, 2026
 
-**The temporary-coin site passes the checks below and is ready for client testing. The official public coin launch is not yet verified.** The official mint/ticker is still required. On October 13 the owner explicitly authorized skipping the extra official-coin purchase and real-player mainnet payout tests; that waiver does not turn them into verified results.
+**The official PumpKart coin is configured and enabled as of October 15.** The extra official-coin purchase and real-player mainnet payout tests were skipped under the owner's explicit instruction; they are not verified results. Historical temporary-coin audit results below remain historical evidence.
 
 Site: https://www.pumpkart.racing
+
+## Official coin switch — October 15
+
+- PumpKart **$PUMPKART**, CA `56QM2aW731mRpDJs9qoJhafgkVvzco1RzZcjNKQVpump`, Token-2022, 6 decimals. On-chain metadata identifies the coin; mint/freeze authority are null. The Pump SDK verified supported extensions, pump.fun provenance and the SOL buying route.
+- Paused the temporary mint for at least 120 seconds; outstanding paid lobbies, payouts, unused tickets and funded AI pools were all zero. Prepared and enabled official mode after live price and sponsorship/treasury checks passed. Revision: `coin_rcRry7gfTT8cvJd2`. Treasury and 5% recipient remain `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`.
+- Public config and AI coin markets return the official mint and symbol. The homepage displays the full CA, working Copy control, Solscan and pump.fun links; identity comes from the same configuration as payments. The buy page uses the official ticker and omits the temporary-coin disclosure. Local browser verification passed at 320/375/768/1280/1440px, including reading the copied CA from the clipboard.
+- **239 tests / 30 files and production build pass.** Worker release `2026-10-15-official-pumpkart`, version `67bd0cda-72eb-45e2-a6c6-e48f1b9b262c`. No real-account transaction submitted. Extra live purchase and real-player payout checks remain skipped, not passed. Evidence: `scratch/official-*`.
 
 ## Free demo entry — October 15
 
@@ -72,15 +79,15 @@ The first profile ran alongside other browser tests and was affected by that loa
 
 ## Current production settings
 
-- Mode: **temporary test coin**, real Solana mainnet; buying and paid testing enabled.
-- Mint: `BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump`; symbol `$RACE`.
-- Revision: `coin_1IW81Dz-DGQipqGD`.
+- Mode: **official coin**, real Solana mainnet; buying and paid entry enabled.
+- Mint: `56QM2aW731mRpDJs9qoJhafgkVvzco1RzZcjNKQVpump`; symbol `$PUMPKART`.
+- Revision: `coin_rcRry7gfTT8cvJd2`.
 - Treasury **and 5% team destination**: `WXzD5Ph7zbaAebNXGxtG2QjbENeUuypNqnqkNsNFVHc`.
-- No official coin was substituted or designated by this audit.
+- The October 12 audit used the old temporary mint. The October 15 switch above is the current configuration.
 
 ## Remaining official-release checks
 
-1. Receive and verify the client's **official Solana CA and ticker**; complete the existing pause/drain/prepare/enable switch. Publish the requested official CA/Copy/explorer/pump.fun display using that real mint.
+1. **Completed October 15:** verified official CA/ticker, paused/drained/prepared/enabled, and added the homepage CA/Copy/explorer/pump.fun display.
 2. **Skipped by the owner's explicit October 13 instruction:** extra owner/client-approved official-coin purchase check. It remains unverified.
 3. **Skipped by the owner's explicit October 13 instruction:** real multi-user mainnet winner/burn/team check. Devnet settlement remains the verified evidence.
 4. Complete fresh client X login and verify the same embedded wallet and ownership persist after sign-out/in.

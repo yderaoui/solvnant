@@ -129,6 +129,16 @@ body::after {
 .demo-cta-note { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 10px; line-height: 1.7; }
 .demo-cta-note .i { color: var(--info); }
 .hero-actions .hero-prize { justify-self: start; margin-top: 5px; min-height: 42px; font-size: 11px; }
+.official-coin { max-width: 520px; margin-top: 24px; padding: 16px; border: 1px solid #00ffff30; border-radius: 12px; background: linear-gradient(125deg, #00ffff06, #ff006e05); }
+.official-coin-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.official-coin-heading h2 { margin: 0; color: var(--info); font-family: var(--font); font-size: 11px; font-weight: 700; }
+.official-coin-heading > span { font-size: 10px; font-weight: 700; }
+.official-coin-address { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.official-coin-address code { min-width: 0; font-size: 11px; line-height: 1.9; overflow-wrap: anywhere; user-select: all; }
+.official-coin-address .btn { min-height: 40px; padding: 0 10px; font-size: 10px; }
+.official-coin-links { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 12px; }
+.official-coin-links a { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); text-decoration: none; font-size: 10px; }
+.official-coin-links a:hover { color: var(--info); text-decoration: underline; }
 @keyframes demo-glow { 0%, 100% { box-shadow: 0 8px 30px #ff006e30, inset 0 1px #ffffff70; } 50% { box-shadow: 0 8px 44px #ff006e55, inset 0 1px #ffffff70; } }
 @media (hover: hover) and (pointer: fine) {
   .hero-actions .demo-cta:hover { background: linear-gradient(115deg, #ff9dc8, #ff65a8 50%, #ff2583); border-color: #ffc1dd; }

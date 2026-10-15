@@ -18,6 +18,7 @@ import { renderGarage } from './garage';
 import { renderRacePage, takeTicketRun } from './ticketrace';
 import { paintSoundButton, toggleMuteQuick, toggleSoundPanel } from './soundPanel';
 import { PracticeDrive } from './practice';
+import { initOfficialCoin } from './officialCoin';
 import {
   db,
   fetchHistory,
@@ -39,6 +40,7 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 
 hydrateIcons();
 initControlFeedback();
+initOfficialCoin();
 const moreMenu = document.querySelector<HTMLDetailsElement>('.nav-more');
 moreMenu?.addEventListener('click', (e) => {
   if ((e.target as HTMLElement).closest('a')) moreMenu.open = false;

@@ -4,7 +4,13 @@ Website: **https://www.pumpkart.racing**
 
 Buy coins: **https://www.pumpkart.racing/#/buy**
 
-**Ready for client testing with the temporary coin. The official coin CA/ticker is still required. The owner explicitly waived the extra official-coin purchase and real-player mainnet payout checks on October 13; those checks are skipped, not verified.**
+**Official coin configured on October 15: PumpKart ($PUMPKART), Solana mainnet. Buying and paid entry are enabled. The owner explicitly waived the extra official-coin purchase and real-player mainnet payout checks; those checks are skipped, not verified.**
+
+Official CA: **`56QM2aW731mRpDJs9qoJhafgkVvzco1RzZcjNKQVpump`**
+
+[Solscan](https://solscan.io/token/56QM2aW731mRpDJs9qoJhafgkVvzco1RzZcjNKQVpump) · [pump.fun](https://pump.fun/coin/56QM2aW731mRpDJs9qoJhafgkVvzco1RzZcjNKQVpump) · [Official X](https://x.com/pumpkartonsol)
+
+The mint is Token-2022 with 6 decimals and no mint/freeze authority. The existing SDK verified supported extensions, SOL pairing and pump.fun provenance. Temporary-coin obligations were zero before switching; purchases paused for at least 120 seconds. Live price and treasury readiness checks passed. The homepage CA panel reads the same runtime configuration as buying, entry, bets and withdrawals. All 239 regression tests and the build pass. No owner transaction was signed or broadcast for this switch.
 
 The unattended October 12 audit passed 214 regression tests, the production build, all 15 character checks, nine production pages, browser failure recovery, funded devnet payments/settlement/refunds/withdrawals and mainnet receipt rechecks. See [LAUNCH_READINESS.md](LAUNCH_READINESS.md) for evidence and limits.
 
@@ -32,13 +38,13 @@ Public receipts: [purchase](https://solscan.io/tx/3jvxAE6KE8ZiythF7qhDnmjHc4B9D7
 - Practice and play-point modes are separate from paid coin entry.
 - AI League bets use the game coin. Winning bets split 80% in proportion to their stake; 15% is burned and 5% stays in the treasury. Full refunds apply to cancelled races, unbacked winners and late/invalid payments. Live spectator bets still use play points.
 
-The current **temporary mainnet test coin** is:
+The **retired temporary mainnet test coin** was:
 
 `BJLoxTq2dkU46hXzL2UNjDPEHWs5ugKirFERYffpump` — `$RACE`
 
-Mode is `test`; buying and paid testing are enabled and spend real SOL. This is **not the official PumpKart coin**. The retired private-check URL redirects to Buy coins; its API returns 410.
+It is no longer the configured payment coin. Old coin balances are not converted into the official coin. Current mode is `official`, revision `coin_rcRry7gfTT8cvJd2`; the treasury and 5% destination are unchanged. The retired private-check URL redirects to Buy coins; its API returns 410.
 
-## Final official-launch sequence
+## Sequence for any future coin change
 
 1. Obtain the client's **official Solana CA and ticker**, plus the public coin name and pump.fun link for website branding. No new team wallet is needed.
 2. Inspect outstanding obligations again. Temporary-coin race pots and funded AI bet pools must settle/refund; pending payouts and unused tickets must be resolved before changing mints.

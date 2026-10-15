@@ -4,6 +4,12 @@
 
 Site: https://www.pumpkart.racing
 
+## Free demo entry — October 15
+
+- The homepage now leads with a large glowing **Try a demo race** button, a play icon, checkered detail and the explicit label **Free · No sign-up · No wallet**. Paid race entry remains available below it. The header links to **Demo race** with a Free badge.
+- The demo setup explains that visitors race five bots without signing in, connecting a wallet or buying a ticket. It uses the existing free-practice route and controls.
+- Production build passes. Browser checks confirm the button is above the fold at 320, 375, 768, 1280, 1440 and 1920 px with no page/button overflow and reduced motion respected. Actual signed-out demo races start with keyboard acceleration and mobile touch acceleration; neither flow issues a payment request. Evidence: `scratch/demo-cta-local.json` and `scratch/demo-cta-local-touch.json`.
+
 ## AI League coin betting — October 13
 
 - AI League markets now take the configured game coin through wallet review and the shared sponsored-payment flow. Amounts start at $0.01, quoted in coins at the live price, with a $100 per-race account limit. Play points remain separate and still fund Live spectator bets.

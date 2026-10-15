@@ -20,7 +20,7 @@
       </a>
       <nav aria-label="Main">
         <a href="#/race"><i data-icon="flag"></i><span>Race</span></a>
-        <a href="#/drive"><i data-icon="pad"></i><span>Free practice</span></a>
+        <a class="nav-demo" href="#/drive"><i data-icon="play"></i><span>Demo race</span><span class="nav-demo-free">Free</span></a>
         <a href="#/garage"><i data-icon="car"></i><span>Garage</span></a>
         <a href="#/league"><i data-icon="pov"></i><span><span class="nav-watch-prefix">Watch </span>AI League</span></a>
         <details class="nav-more"><summary>More</summary><div class="nav-more-menu">
@@ -243,10 +243,15 @@
           <div class="race-hero-copy">
             <span class="hero-label"><i data-icon="flag" data-size="14"></i>Race real players</span>
             <h1 id="race-title">Five racers.<br /><em>One winner.</em></h1>
-            <p class="muted">Try a free practice run, then buy a ticket to race for a prize. The fastest run wins.</p>
+            <p class="muted">Your first lap is on us. Try a free demo against bots, then race real players for a prize.</p>
             <div class="hero-actions">
-              <button class="btn btn-lime" id="race-enter" type="button"><i data-icon="flag"></i>Play for a prize<i data-icon="overtake"></i></button>
-              <a class="hero-link" href="#/drive"><i data-icon="pad"></i>Practice for free</a>
+              <a class="btn demo-cta" id="race-demo" href="#/drive" aria-describedby="race-demo-note">
+                <span class="demo-cta-play"><i data-icon="play" data-size="26"></i></span>
+                <span class="demo-cta-copy"><strong>Try a demo race</strong><span>Free · No sign-up · No wallet</span></span>
+                <i data-icon="overtake" data-size="22"></i>
+              </a>
+              <p class="demo-cta-note" id="race-demo-note"><i data-icon="pad" data-size="14"></i>Pick a track. Hit the gas. See what you've got.</p>
+              <button class="btn btn-ghost hero-prize" id="race-enter" type="button"><i data-icon="flag"></i>Play for a prize<i data-icon="overtake"></i></button>
             </div>
           </div>
           <div class="race-hero-art">

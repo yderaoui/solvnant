@@ -242,9 +242,9 @@ export class PracticeDrive {
       return `<svg class="race-course-art" viewBox="0 0 180 100" aria-hidden="true"><polyline points="${points} ${points.split(' ')[0]}" /></svg>`;
     };
     this.center(`<form class="card race-setup" id="practice-setup" aria-label="Set up your practice race">
-      <div class="race-setup-heading"><span class="race-setup-badge">${icon('pad', 14)}Free practice</span><a class="icon-btn" href="#/race" aria-label="Close practice setup">${icon('x', 18)}</a></div>
-      <h2>Your track.<br><em>Your race.</em></h2>
-      <p class="muted">Pick your circuit. Race five bots. No ticket needed.</p>
+      <div class="race-setup-heading"><span class="race-setup-badge">${icon('pad', 14)}Free demo race</span><a class="icon-btn" href="#/race" aria-label="Close practice setup">${icon('x', 18)}</a></div>
+      <h2>Your track.<br><em>Your demo.</em></h2>
+      <p class="muted">Pick a track and race five bots. No sign-up, wallet or ticket needed.</p>
       <fieldset class="race-track-options"><legend>Choose a track</legend>
         <label class="race-choice race-track-card race-track-city">
           <input type="radio" name="practice-track" value="tokyo" required />

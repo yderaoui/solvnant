@@ -23,6 +23,10 @@ body::after {
 .p-mark { width: 28px; height: 28px; filter: drop-shadow(0 0 12px var(--lime-glow)); }
 .p-mark path[fill='url(#pg)'] { fill: var(--lime); }
 .topbar-right { grid-column: 3; grid-row: 1; gap: 12px; }
+.social-x { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 8px; min-width: 40px; min-height: 40px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--text); text-decoration: none; white-space: nowrap; font-size: 10px; transition: border-color var(--fast), color var(--fast), background-color var(--fast); }
+.social-x:hover { border-color: var(--info); color: var(--info); background: #00ffff08; }
+.social-x:focus-visible { outline: 2px solid var(--info); outline-offset: 4px; }
+@media (max-width: 760px) { .social-x { padding: 0; } .social-x span { display: none; } }
 .topbar nav {
   grid-column: 2; grid-row: 1; width: 100%; min-width: 0; gap: 4px;
   border-top: 0; padding: 0;
